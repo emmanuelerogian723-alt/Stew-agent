@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+Allow: /playground
+Allow: /plugins
+Allow: /docs
+Disallow: /security/block
+Disallow: /auth/
+Disallow: /admin/
+
+# Google bot specific
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
+
+# Sitemap
+Sitemap: https://stew-agent.onrender.com/sitemap.xml
+
+# Host
+Host: stew-agent.onrender.com

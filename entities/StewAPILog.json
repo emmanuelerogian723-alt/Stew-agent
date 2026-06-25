@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "developer_id": {
+      "type": "string"
+    },
+    "api_key": {
+      "type": "string"
+    },
+    "endpoint": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string"
+    },
+    "status_code": {
+      "type": "number"
+    },
+    "response_time_ms": {
+      "type": "number"
+    },
+    "ip_address": {
+      "type": "string"
+    },
+    "user_agent": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "name": "StewAPILog"
+}

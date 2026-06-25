@@ -1,0 +1,18 @@
+# Deploy STEW to Render.com — Docker runtime
+# Built by Emmanuel Ene Rejoice Gideon — MUTYINT
+
+services:
+  - type: web
+    name: stew-agent
+    runtime: docker
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: ENVIRONMENT
+        value: production
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+    healthCheckPath: /heartbeat
+    autoDeploy: true

@@ -1,0 +1,4 @@
+AUTH_URL = https://superagent-55bc0d3a.base44.app/functions/stewAuth
+PAYMENT_URL = https://superagent-55bc0d3a.base44.app/functions/stewPayment
+GATEWAY_URL = https://superagent-55bc0d3a.base44.app/functions/stewAPIGateway
+PAYSTACK_PK = pk_live_b73d27d70e64ebb36f0...

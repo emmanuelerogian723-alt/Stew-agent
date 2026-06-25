@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S.T.E.W — Africa's Most Powerful AI Agent API | MUTYINT Nigeria</title>
+
+<!-- ══ GOOGLE SEARCH VERIFICATION ══ -->
+<meta name="google-site-verification" content="BBHLR0945oVzFsu-C0G8NRNHkvYdCEDCxf3Mpho30A">
+<meta name="google-site-verification" content="google4414167ffddc8a5f">
+
+<!-- ══ PRIMARY SEO META TAGS ══ -->
+<meta name="description" content="S.T.E.W (Secret Task Execution Worker) is Africa's most powerful AI agent API. 60+ skills including browser automation, deep research, code generation, vision AI, and 100-agent swarm. Built by MUTYINT Nigeria. Get your free API key today.">
+<meta name="keywords" content="AI API Nigeria, AI agent Africa, STEW AI, MUTYINT, Nigeria AI, African AI, browser automation API, code generation API, web research AI, Yoruba AI translation, AI developer tool, Nigerian AI startup, autonomous AI agent, GPT alternative Africa">
+<meta name="author" content="Emmanuel Ene Rejoice Gideon - MUTYINT Nigeria">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="language" content="English">
+<meta name="revisit-after" content="3 days">
+<meta name="theme-color" content="#7B2FBE">
+<link rel="canonical" href="https://stew-agent.onrender.com/">
+
+<!-- ══ OPEN GRAPH ══ -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://stew-agent.onrender.com/">
+<meta property="og:title" content="S.T.E.W — Africa's Most Powerful AI Agent API">
+<meta property="og:description" content="60+ AI skills. Browser automation. Deep research. Code generation. Vision AI. 100-agent swarm. Built in Nigeria for the world.">
+<meta property="og:image" content="https://stew-agent.onrender.com/og-image.png">
+<meta property="og:site_name" content="S.T.E.W API by MUTYINT">
+<meta property="og:locale" content="en_NG">
+
+<!-- ══ TWITTER CARD ══ -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@MUTYINT_AI">
+<meta name="twitter:title" content="S.T.E.W — Africa's Most Powerful AI Agent API">
+<meta name="twitter:description" content="60+ AI skills. Browser automation. Code generation. Vision AI. 100-agent swarm. Built in Nigeria 🇳🇬 by MUTYINT.">
+<meta name="twitter:image" content="https://stew-agent.onrender.com/og-image.png">
+
+<!-- ══ STRUCTURED DATA ══ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "S.T.E.W API",
+  "alternateName": "Secret Task Execution Worker",
+  "description": "Africa's most powerful AI agent API with 60+ skills including browser automation, deep research, code generation, vision AI, translation, and 100-agent swarm deployment.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Any",
+  "url": "https://stew-agent.onrender.com",
+  "author": {
+    "@type": "Person",
+    "name": "Emmanuel Ene Rejoice Gideon"
+  },
+  "offers": [
+    {"@type":"Offer","name":"Starter Plan","price":"0","priceCurrency":"NGN"},
+    {"@type":"Offer","name":"Pro Plan","price":"9900","priceCurrency":"NGN"},
+    {"@type":"Offer","name":"Business Plan","price":"29000","priceCurrency":"NGN"},
+    {"@type":"Offer","name":"Enterprise Plan","price":"49000","priceCurrency":"NGN"}
+  ],
+  "softwareVersion": "4.0 ULTRA",
+  "countryOfOrigin": "NG"
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#05050f;--s:#0a0a18;--card:#10101e;--b:#1e1e30;
+  --p:#7c3aed;--p2:#5b21b6;--c:#06b6d4;--g:#10b981;
+  --r:#ef4444;--y:#f59e0b;--t:#e2e8f0;--m:#64748b;
+  --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--t);font-family:var(--font);min-height:100vh;overflow-x:hidden;}
+
+/* ══ 3D CANVAS BG ══ */
+#bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;}
+.bg-overlay{position:fixed;inset:0;z-index:1;background:radial-gradient(ellipse at 50% 0%,rgba(124,58,237,.18) 0%,transparent 60%),radial-gradient(ellipse at 0% 100%,rgba(6,182,212,.08) 0%,transparent 50%),radial-gradient(ellipse at 100% 50%,rgba(16,185,129,.06) 0%,transparent 50%);pointer-events:none;}
+
+/* ══ NAV ══ */
+nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(5,5,15,.85);backdrop-filter:blur(24px);border-bottom:1px solid rgba(124,58,237,.15);display:flex;align-items:center;justify-content:space-between;padding:0 2rem;transition:all .3s;}
+nav.scrolled{background:rgba(5,5,15,.97);box-shadow:0 4px 30px rgba(0,0,0,.5);}
+.nav-logo{display:flex;align-items:center;gap:10px;font-weight:900;font-size:1rem;cursor:pointer;}
+.logo-box{width:36px;height:36px;background:linear-gradient(135deg,var(--p),var(--c));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;box-shadow:0 0 20px rgba(124,58,237,.5);animation:logoPulse 3s ease-in-out infinite;}
+@keyframes logoPulse{0%,100%{box-shadow:0 0 20px rgba(124,58,237,.5)}50%{box-shadow:0 0 40px rgba(124,58,237,.9),0 0 80px rgba(6,182,212,.3)}}
+.nav-links{display:flex;align-items:center;gap:.25rem;}
+.nav-link{padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;color:var(--m);text-decoration:none;transition:all .15s;cursor:pointer;background:none;border:none;font-family:var(--font);}
+.nav-link:hover{color:var(--t);background:rgba(255,255,255,.06);}
+.nav-cta{padding:8px 18px;background:linear-gradient(135deg,var(--p),var(--p2));border-radius:9px;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:var(--font);transition:all .2s;box-shadow:0 0 20px rgba(124,58,237,.35);}
+.nav-cta:hover{transform:translateY(-1px);box-shadow:0 0 30px rgba(124,58,237,.7);}
+.sdot{width:7px;height:7px;border-radius:50%;background:var(--g);box-shadow:0 0 10px var(--g);animation:sdpulse 2s infinite;display:inline-block;margin-right:6px;}
+@keyframes sdpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.burger{display:none;background:none;border:none;color:var(--t);font-size:1.4rem;cursor:pointer;padding:8px;}
+@media(max-width:768px){
+  .nav-links{display:none;position:fixed;top:64px;left:0;right:0;background:rgba(5,5,15,.98);flex-direction:column;padding:1rem;gap:.5rem;z-index:199;border-bottom:1px solid var(--b);}
+  .nav-links.open{display:flex;}
+  .burger{display:block;}
+}
+
+/* ══ HERO ══ */
+.hero{position:relative;z-index:5;text-align:center;padding:140px 2rem 80px;}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 20px;border-radius:24px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:2rem;animation:fadeUp .8s ease both;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.hero h1{font-size:clamp(2.8rem,7vw,4.8rem);font-weight:900;line-height:1.0;margin-bottom:1.5rem;background:linear-gradient(135deg,#ffffff 0%,#c4b5fd 30%,#22d3ee 65%,#6ee7b7 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:fadeUp .8s .2s ease both;}
+.hero-sub{color:#94a3b8;font-size:1.15rem;max-width:640px;margin:0 auto 2.5rem;line-height:1.75;animation:fadeUp .8s .4s ease both;}
+.hero-btns{display:flex;align-items:center;justify-content:center;gap:1rem;flex-wrap:wrap;margin-bottom:3.5rem;animation:fadeUp .8s .5s ease both;}
+.btn-primary{padding:15px 36px;background:linear-gradient(135deg,var(--p),var(--p2));border:none;border-radius:12px;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer;font-family:var(--font);transition:all .2s;box-shadow:0 4px 30px rgba(124,58,237,.5);}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 40px rgba(124,58,237,.7);}
+.btn-secondary{padding:15px 36px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:var(--t);font-weight:600;font-size:.95rem;cursor:pointer;font-family:var(--font);transition:all .2s;}
+.btn-secondary:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);}
+.hero-stats{display:flex;justify-content:center;gap:4rem;flex-wrap:wrap;animation:fadeUp .8s .6s ease both;}
+.stat{text-align:center;}
+.sn{font-size:2.5rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--p),var(--c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.sl{font-size:10px;color:var(--m);text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;}
+
+/* ══ LIVE DEMO BADGE ══ */
+.live-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:20px;font-size:11px;color:#6ee7b7;font-weight:700;margin-bottom:1.5rem;animation:fadeUp .8s .7s ease both;}
+
+/* ══ SECTIONS ══ */
+section{position:relative;z-index:5;padding:5rem 2rem;}
+.section-hd{text-align:center;margin-bottom:3.5rem;}
+.section-hd h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;margin-bottom:.75rem;background:linear-gradient(135deg,#fff 0%,#a78bfa 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.section-hd p{color:var(--m);font-size:1.05rem;max-width:540px;margin:0 auto;}
+.container{max-width:1200px;margin:0 auto;}
+
+/* ══ CHAT BOX ══ */
+.chat-section{position:relative;z-index:5;max-width:920px;margin:0 auto;padding:0 1.5rem 5rem;}
+.chat-card{background:var(--card);border:1px solid var(--b);border-radius:24px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5);position:relative;}
+.chat-card::before{content:'';position:absolute;inset:0;border-radius:24px;background:linear-gradient(135deg,rgba(124,58,237,.05),rgba(6,182,212,.03));pointer-events:none;}
+.chat-hd{padding:20px 24px;border-bottom:1px solid var(--b);background:rgba(255,255,255,.02);display:flex;align-items:center;justify-content:space-between;}
+.chat-title{display:flex;align-items:center;gap:12px;font-weight:700;}
+.chat-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--p),var(--c));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 15px rgba(124,58,237,.4);}
+.chat-msgs{padding:20px;min-height:300px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;}
+.chat-msgs::-webkit-scrollbar{width:4px;}
+.chat-msgs::-webkit-scrollbar-thumb{background:var(--b);border-radius:4px;}
+.msg{display:flex;gap:10px;animation:msgIn .35s ease;}
+@keyframes msgIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.msg-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;}
+.msg-stew .msg-avatar{background:linear-gradient(135deg,var(--p),var(--c));box-shadow:0 0 10px rgba(124,58,237,.4);}
+.msg-user .msg-avatar{background:rgba(100,116,139,.2);color:var(--m);}
+.msg-user{flex-direction:row-reverse;}
+.msg-bubble{max-width:75%;padding:12px 16px;border-radius:16px;font-size:13.5px;line-height:1.65;}
+.msg-stew .msg-bubble{background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.2);color:var(--t);border-radius:4px 16px 16px 16px;}
+.msg-user .msg-bubble{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;border-radius:16px 4px 16px 16px;}
+.msg-time{font-size:10px;color:var(--m);margin-top:4px;text-align:right;}
+.typing-row{display:flex;gap:10px;align-items:center;}
+.typing-bubble{padding:12px 16px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.2);border-radius:4px 16px 16px 16px;display:none;}
+.typing-bubble.on{display:flex;gap:5px;align-items:center;}
+.td{width:7px;height:7px;border-radius:50%;background:var(--p);animation:bounce 1.4s infinite ease-in-out;}
+.td:nth-child(2){animation-delay:.2s;}.td:nth-child(3){animation-delay:.4s;}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-6px);opacity:1}}
+.chat-footer{padding:16px 20px;border-top:1px solid var(--b);background:rgba(255,255,255,.01);}
+.chat-pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+.pill{padding:5px 13px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.2);border-radius:20px;font-size:11px;color:#a78bfa;cursor:pointer;transition:all .15s;font-family:var(--font);}
+.pill:hover{background:rgba(124,58,237,.2);border-color:rgba(124,58,237,.4);}
+.chat-input-row{display:flex;gap:10px;align-items:flex-end;}
+.chat-input{flex:1;background:var(--s);border:1px solid var(--b);border-radius:14px;padding:13px 16px;color:var(--t);font-family:var(--font);font-size:13px;resize:none;min-height:48px;max-height:120px;outline:none;transition:border-color .2s;line-height:1.5;}
+.chat-input:focus{border-color:rgba(124,58,237,.5);box-shadow:0 0 0 3px rgba(124,58,237,.08);}
+.chat-input::placeholder{color:var(--m);}
+.chat-send{width:48px;height:48px;background:linear-gradient(135deg,var(--p),var(--p2));border:none;border-radius:14px;color:#fff;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;box-shadow:0 4px 16px rgba(124,58,237,.4);}
+.chat-send:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(124,58,237,.6);}
+.chat-send:disabled{opacity:.4;pointer-events:none;}
+
+/* ══ SKILLS GRID ══ */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem;}
+.skill-card{background:var(--card);border:1px solid var(--b);border-radius:16px;padding:1.5rem;transition:all .25s;cursor:default;position:relative;overflow:hidden;}
+.skill-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(6,182,212,.04));}
+.skill-card:hover{transform:translateY(-4px);border-color:rgba(124,58,237,.35);box-shadow:0 16px 40px rgba(0,0,0,.3);}
+.skill-card:hover::before{opacity:1;}
+.skill-icon{font-size:2rem;margin-bottom:.75rem;}
+.skill-name{font-weight:700;font-size:.95rem;margin-bottom:.4rem;}
+.skill-desc{color:var(--m);font-size:.82rem;line-height:1.6;}
+.skill-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;margin-top:.6rem;background:rgba(124,58,237,.12);color:#a78bfa;border:1px solid rgba(124,58,237,.2);}
+.skill-tag.new{background:rgba(16,185,129,.12);color:#34d399;border-color:rgba(16,185,129,.2);}
+.skill-tag.hot{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.2);}
+
+/* ══ CONNECTORS ══ */
+.connectors-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;}
+.connector-card{background:var(--card);border:1px solid var(--b);border-radius:14px;padding:1.2rem;text-align:center;transition:all .2s;cursor:pointer;}
+.connector-card:hover{transform:translateY(-3px);border-color:rgba(124,58,237,.3);box-shadow:0 8px 24px rgba(0,0,0,.25);}
+.connector-icon{font-size:2rem;margin-bottom:.6rem;}
+.connector-name{font-weight:700;font-size:.85rem;margin-bottom:.25rem;}
+.connector-cat{font-size:10px;color:var(--m);text-transform:uppercase;letter-spacing:1px;}
+.conn-auth-tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;margin-top:.4rem;}
+.conn-auth-tag.oauth{background:rgba(59,130,246,.12);color:#60a5fa;border:1px solid rgba(59,130,246,.2);}
+.conn-auth-tag.apikey{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.2);}
+.conn-auth-tag.mcp{background:rgba(16,185,129,.12);color:#34d399;border:1px solid rgba(16,185,129,.2);}
+
+/* ══ PRICING ══ */
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:1.5rem;max-width:1100px;margin:0 auto;}
+.price-card{background:var(--card);border:1px solid var(--b);border-radius:20px;padding:2rem;transition:all .3s;position:relative;overflow:hidden;}
+.price-card.popular{border-color:rgba(124,58,237,.6);box-shadow:0 0 40px rgba(124,58,237,.15);}
+.price-card.popular::before{content:'Most Popular';position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-size:10px;font-weight:800;padding:4px 16px;border-radius:0 0 12px 12px;letter-spacing:1px;}
+.price-card:hover{transform:translateY(-6px);border-color:rgba(124,58,237,.4);box-shadow:0 24px 60px rgba(0,0,0,.3);}
+.plan-name{font-size:.85rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--m);font-weight:700;margin-bottom:.5rem;}
+.plan-price{font-size:2.5rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--p),var(--c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.plan-period{font-size:.85rem;color:var(--m);margin-left:4px;}
+.plan-usd{font-size:.75rem;color:var(--m);margin-bottom:1.25rem;}
+.plan-features{list-style:none;margin-bottom:1.5rem;}
+.plan-features li{font-size:.87rem;color:#94a3b8;padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:.5rem;align-items:flex-start;}
+.plan-features li::before{content:'✓';color:var(--g);font-weight:700;flex-shrink:0;margin-top:1px;}
+.plan-btn{width:100%;padding:12px;border-radius:12px;font-weight:700;font-size:.88rem;cursor:pointer;font-family:var(--font);transition:all .2s;border:none;}
+.plan-btn.free-btn{background:rgba(255,255,255,.07);color:var(--t);border:1px solid var(--b);}
+.plan-btn.free-btn:hover{background:rgba(255,255,255,.12);}
+.plan-btn.pay-btn{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;box-shadow:0 4px 20px rgba(124,58,237,.4);}
+.plan-btn.pay-btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(124,58,237,.6);}
+
+/* ══ AUTH MODAL ══ */
+.auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(12px);z-index:1000;display:none;align-items:center;justify-content:center;padding:1rem;}
+.auth-overlay.show{display:flex;}
+.auth-modal{background:var(--card);border:1px solid rgba(124,58,237,.3);border-radius:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 40px 100px rgba(0,0,0,.7),0 0 60px rgba(124,58,237,.15);}
+.auth-modal::-webkit-scrollbar{width:4px;}
+.auth-modal::-webkit-scrollbar-thumb{background:var(--b);}
+.auth-hd{padding:1.5rem 1.5rem 1rem;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between;}
+.auth-hd h3{font-size:1.15rem;font-weight:800;}
+.auth-close{background:none;border:none;color:var(--m);font-size:1.5rem;cursor:pointer;line-height:1;padding:4px;transition:color .2s;}
+.auth-close:hover{color:var(--t);}
+.auth-tabs{display:flex;border-bottom:1px solid var(--b);}
+.auth-tab{flex:1;padding:1rem;text-align:center;font-size:.85rem;font-weight:600;color:var(--m);cursor:pointer;background:none;border:none;font-family:var(--font);transition:all .2s;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.auth-tab.active{color:#a78bfa;border-bottom-color:var(--p);}
+.auth-body{padding:1.5rem;}
+.auth-panel{display:none;}
+.auth-panel.active{display:block;}
+.auth-field{margin-bottom:1rem;}
+.auth-field label{display:block;font-size:.8rem;font-weight:600;color:var(--m);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.8px;}
+.auth-field input,.auth-field select{width:100%;background:var(--s);border:1px solid var(--b);border-radius:10px;padding:11px 14px;color:var(--t);font-family:var(--font);font-size:.9rem;outline:none;transition:border-color .2s;}
+.auth-field input:focus,.auth-field select:focus{border-color:rgba(124,58,237,.5);box-shadow:0 0 0 3px rgba(124,58,237,.08);}
+.auth-field select option{background:var(--card);}
+.auth-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--p),var(--p2));border:none;border-radius:12px;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer;font-family:var(--font);transition:all .2s;box-shadow:0 4px 20px rgba(124,58,237,.35);margin-top:.5rem;}
+.auth-btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(124,58,237,.55);}
+.auth-btn:disabled{opacity:.5;pointer-events:none;}
+.auth-btn.secondary-btn{background:rgba(255,255,255,.06);box-shadow:none;border:1px solid var(--b);}
+.auth-btn.secondary-btn:hover{background:rgba(255,255,255,.1);}
+.auth-result{border-radius:10px;padding:12px 14px;font-size:.87rem;line-height:1.6;margin-top:1rem;display:none;}
+.auth-result.success{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);color:#6ee7b7;}
+.auth-result.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#fca5a5;}
+.auth-result.info{background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.25);color:#67e8f9;}
+.api-key-display{background:var(--s);border:1px solid rgba(124,58,237,.3);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:.8rem;color:#a78bfa;word-break:break-all;margin:.75rem 0;cursor:text;user-select:all;}
+.copy-key-btn{padding:7px 14px;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:8px;color:#a78bfa;font-size:.8rem;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;margin-right:.4rem;margin-top:.25rem;}
+.copy-key-btn:hover{background:rgba(124,58,237,.3);}
+.plan-option{padding:1rem;border:1px solid var(--b);border-radius:10px;cursor:pointer;transition:all .2s;margin-bottom:.75rem;background:rgba(255,255,255,.02);}
+.plan-option:hover{border-color:rgba(124,58,237,.4);}
+.plan-option.selected{border-color:var(--p);background:rgba(124,58,237,.1);}
+.plan-option-name{font-weight:700;font-size:.9rem;margin-bottom:.2rem;}
+.plan-option-price{font-family:var(--mono);color:#a78bfa;font-size:.95rem;font-weight:700;}
+.plan-option-desc{font-size:.78rem;color:var(--m);margin-top:.25rem;}
+.dash-stat{display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.dash-stat:last-child{border:none;}
+.dash-stat-label{font-size:.82rem;color:var(--m);}
+.dash-stat-value{font-size:.88rem;font-weight:700;color:var(--t);}
+.usage-bar{height:6px;background:var(--s);border-radius:4px;overflow:hidden;margin:.5rem 0;}
+.usage-fill{height:100%;background:linear-gradient(90deg,var(--p),var(--c));border-radius:4px;transition:width .5s ease;}
+
+/* ══ MONITORING PANEL ══ */
+.monitor-section{position:relative;z-index:5;background:var(--s);border-top:1px solid var(--b);border-bottom:1px solid var(--b);}
+.monitor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;}
+.monitor-card{background:var(--card);border:1px solid var(--b);border-radius:14px;padding:1.25rem;text-align:center;}
+.monitor-num{font-size:2rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--p),var(--c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.monitor-label{font-size:.78rem;color:var(--m);text-transform:uppercase;letter-spacing:1px;margin-top:.3rem;}
+.monitor-trend{font-size:.75rem;margin-top:.25rem;}
+.trend-up{color:var(--g);}
+.trend-down{color:var(--r);}
+
+/* ══ API DOCS / CODE ══ */
+.code-block{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:1.25rem;font-family:var(--mono);font-size:.82rem;line-height:1.8;overflow-x:auto;margin:1rem 0;position:relative;}
+.code-block pre{white-space:pre-wrap;word-break:break-word;}
+.code-copy{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.06);border:1px solid var(--b);border-radius:7px;padding:4px 10px;font-size:.75rem;color:var(--m);cursor:pointer;font-family:var(--font);transition:all .15s;}
+.code-copy:hover{color:var(--t);background:rgba(255,255,255,.1);}
+.kw{color:#a78bfa;}
+.str{color:#34d399;}
+.cm{color:var(--m);}
+.num{color:#fbbf24;}
+.fn{color:#60a5fa;}
+
+/* ══ STEW WORKING OVERLAY ══ */
+.stew-overlay{position:fixed;inset:0;background:rgba(0,0,0,.9);backdrop-filter:blur(20px);z-index:2000;display:none;flex-direction:column;align-items:center;justify-content:center;}
+.stew-overlay.show{display:flex;}
+.stew-working-box{background:var(--card);border:1px solid rgba(124,58,237,.4);border-radius:24px;padding:2.5rem;max-width:540px;width:90%;text-align:center;box-shadow:0 0 60px rgba(124,58,237,.25);}
+.stew-glow-ring{width:100px;height:100px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--c));display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 1.5rem;box-shadow:0 0 40px rgba(124,58,237,.6),0 0 80px rgba(124,58,237,.3);animation:glowRing 2s ease-in-out infinite;}
+@keyframes glowRing{0%,100%{box-shadow:0 0 40px rgba(124,58,237,.6),0 0 80px rgba(124,58,237,.3)}50%{box-shadow:0 0 60px rgba(124,58,237,1),0 0 120px rgba(6,182,212,.4)}}
+.stew-status{font-size:1.1rem;font-weight:700;color:#a78bfa;margin-bottom:.5rem;}
+.stew-step{font-size:.88rem;color:var(--m);margin-bottom:1.5rem;min-height:2rem;}
+.stew-progress{height:4px;background:var(--s);border-radius:4px;overflow:hidden;margin-bottom:1.5rem;}
+.stew-progress-bar{height:100%;background:linear-gradient(90deg,var(--p),var(--c));border-radius:4px;width:0%;transition:width .5s ease;}
+.stew-log{background:var(--s);border:1px solid var(--b);border-radius:10px;padding:1rem;font-family:var(--mono);font-size:.78rem;text-align:left;max-height:140px;overflow-y:auto;color:#6ee7b7;margin-bottom:1.5rem;}
+.stew-log::-webkit-scrollbar{width:3px;}
+.stew-log::-webkit-scrollbar-thumb{background:var(--b);}
+
+/* ══ TOAST ══ */
+.toast{position:fixed;bottom:2rem;right:2rem;background:var(--card);border:1px solid var(--b);border-radius:12px;padding:12px 18px;font-size:.87rem;font-weight:600;z-index:9999;transform:translateY(100px);opacity:0;transition:all .3s;max-width:340px;box-shadow:0 8px 30px rgba(0,0,0,.4);}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.ok{border-color:rgba(16,185,129,.4);color:#6ee7b7;}
+.toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5;}
+
+/* ══ FOOTER ══ */
+footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2rem;background:var(--s);}
+.footer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2rem;max-width:1200px;margin:0 auto 2rem;}
+.footer-brand p{color:var(--m);font-size:.85rem;line-height:1.7;margin-top:.75rem;}
+.footer-col h4{font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--m);margin-bottom:1rem;}
+.footer-col a,.footer-col span{display:block;font-size:.85rem;color:#64748b;text-decoration:none;margin-bottom:.5rem;cursor:pointer;transition:color .15s;}
+.footer-col a:hover,.footer-col span:hover{color:var(--t);}
+.footer-bottom{text-align:center;font-size:.8rem;color:var(--m);padding-top:1.5rem;border-top:1px solid var(--b);}
+.footer-bottom span{color:#a78bfa;}
+
+/* ══ RESPONSIVE ══ */
+@media(max-width:640px){
+  .hero-stats{gap:2rem;}
+  .sn{font-size:1.8rem;}
+  .pricing-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- 3D PARTICLE CANVAS -->
+<canvas id="bg-canvas"></canvas>
+<div class="bg-overlay"></div>
+
+<!-- NAV -->
+<nav id="main-nav">
+  <div class="nav-logo" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+    <div class="logo-box">S</div>
+    <span>S.T.E.W <span style="color:var(--m);font-weight:400;font-size:.8rem;">by MUTYINT</span></span>
+  </div>
+  <button class="burger" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">☰</button>
+  <div class="nav-links">
+    <button class="nav-link" onclick="scrollTo('skills-section')">Skills</button>
+    <button class="nav-link" onclick="scrollTo('connectors-section')">Connectors</button>
+    <button class="nav-link" onclick="scrollTo('pricing-section')">Pricing</button>
+    <button class="nav-link" onclick="scrollTo('docs-section')">Docs</button>
+    <button class="nav-link" onclick="openAuth('dashboard')">Dashboard</button>
+    <button class="nav-cta" onclick="openAuth('register')">🚀 Free API Key</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="eyebrow"><span class="sdot"></span> Africa's Most Powerful AI Agent · v4.0 ULTRA</div>
+  <div class="live-badge">🟢 Live & Running · Beat <span id="hero-beat">—</span></div>
+  <h1>The AI Agent That<br>Does Everything</h1>
+  <p class="hero-sub">
+    S.T.E.W (Secret Task Execution Worker) is a fully autonomous AI agent API — browse the web, write code, research deeply, process documents, connect any API, and run across all your apps.
+    <strong style="color:#a78bfa;"> Faster than Manus. Smarter than Kimi. Built in Nigeria 🇳🇬</strong>
+  </p>
+  <div class="hero-btns">
+    <button class="btn-primary" onclick="openAuth('register')">🚀 Get Free API Key</button>
+    <button class="btn-secondary" onclick="scrollTo('chat-demo')">⚡ Live Demo</button>
+    <button class="btn-secondary" onclick="scrollTo('docs-section')">📖 API Docs</button>
+  </div>
+  <div class="hero-stats">
+    <div class="stat"><div class="sn">60+</div><div class="sl">AI Skills</div></div>
+    <div class="stat"><div class="sn">100</div><div class="sl">Agents Swarm</div></div>
+    <div class="stat"><div class="sn">24/7</div><div class="sl">Always Alive</div></div>
+    <div class="stat"><div class="sn">₦0</div><div class="sl">Free Tier</div></div>
+    <div class="stat"><div class="sn" id="stat-devs">0</div><div class="sl">Developers</div></div>
+  </div>
+</div>
+
+<!-- LIVE CHAT DEMO -->
+<div class="chat-section" id="chat-demo">
+  <div class="section-hd">
+    <h2>Try S.T.E.W Live</h2>
+    <p>Ask STEW anything — it connects to the internet in real-time, no hallucinations</p>
+  </div>
+  <div class="chat-card">
+    <div class="chat-hd">
+      <div class="chat-title">
+        <div class="chat-icon">🤖</div>
+        <div>
+          <div style="font-size:.95rem;">S.T.E.W Agent <span style="font-size:.75rem;color:var(--m);">v4.0 ULTRA</span></div>
+          <div style="font-size:.75rem;color:var(--g);"><span class="sdot" style="width:5px;height:5px;margin-right:3px;"></span>Online · Real-time</div>
+        </div>
+      </div>
+      <div style="font-size:.78rem;color:var(--m);">Free demo · No key needed</div>
+    </div>
+    <div class="chat-msgs" id="chat-msgs">
+      <div class="msg msg-stew">
+        <div class="msg-avatar">S</div>
+        <div>
+          <div class="msg-bubble">👋 Hello! I'm <strong>S.T.E.W</strong> — Secret Task Execution Worker.<br><br>I can browse the web in real-time, write &amp; run code, do deep research, translate, generate documents, and connect to any API. What would you like me to do?</div>
+          <div class="msg-time">S.T.E.W · now</div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-footer">
+      <div class="chat-pills">
+        <span class="pill" onclick="sendDemo('What is the latest AI news today?')">📰 Latest AI news</span>
+        <span class="pill" onclick="sendDemo('What is the current Bitcoin price?')">₿ Bitcoin price</span>
+        <span class="pill" onclick="sendDemo('Write a Python web scraper')">💻 Python scraper</span>
+        <span class="pill" onclick="sendDemo('What is the weather in Lagos?')">🌤️ Lagos weather</span>
+        <span class="pill" onclick="sendDemo('Search for top 5 AI tools in 2025')">🔍 AI tools 2025</span>
+      </div>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chat-input" placeholder="Ask STEW anything — it searches the real internet..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+        <button class="chat-send" id="chat-send" onclick="sendChat()">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE MONITORING -->
+<section class="monitor-section" id="monitor-section">
+  <div class="container">
+    <div class="section-hd">
+      <h2>Live System Monitor</h2>
+      <p>Real-time API performance & usage metrics</p>
+    </div>
+    <div class="monitor-grid" id="monitor-grid">
+      <div class="monitor-card">
+        <div class="monitor-num" id="m-uptime">99.9%</div>
+        <div class="monitor-label">Uptime</div>
+        <div class="monitor-trend trend-up">↑ All systems nominal</div>
+      </div>
+      <div class="monitor-card">
+        <div class="monitor-num" id="m-devs">—</div>
+        <div class="monitor-label">Registered Developers</div>
+        <div class="monitor-trend trend-up">↑ Growing daily</div>
+      </div>
+      <div class="monitor-card">
+        <div class="monitor-num" id="m-version">4.0</div>
+        <div class="monitor-label">API Version</div>
+        <div class="monitor-trend" style="color:var(--y);">ULTRA Edition</div>
+      </div>
+      <div class="monitor-card">
+        <div class="monitor-num" id="m-skills">60+</div>
+        <div class="monitor-label">Active Skills</div>
+        <div class="monitor-trend trend-up">↑ Self-evolving</div>
+      </div>
+      <div class="monitor-card">
+        <div class="monitor-num" id="m-models">5</div>
+        <div class="monitor-label">AI Models</div>
+        <div class="monitor-trend" style="color:var(--c);">Multi-model routing</div>
+      </div>
+      <div class="monitor-card">
+        <div class="monitor-num" id="m-beat">—</div>
+        <div class="monitor-label">Heartbeats</div>
+        <div class="monitor-trend trend-up">↑ Always alive</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SKILLS -->
+<section id="skills-section">
+  <div class="container">
+    <div class="section-hd">
+      <h2>60+ Built-In Skills</h2>
+      <p>Every skill is production-ready and runs on demand via API</p>
+    </div>
+    <div class="skills-grid">
+      <div class="skill-card"><div class="skill-icon">🌐</div><div class="skill-name">Live Web Browse</div><div class="skill-desc">Navigate any website with real Chromium/Playwright — click, fill, scroll, screenshot. Human-like interaction.</div><span class="skill-tag hot">🔥 Popular</span></div>
+      <div class="skill-card"><div class="skill-icon">🔍</div><div class="skill-name">Deep Web Research</div><div class="skill-desc">Multi-source research with cross-validation. Real-time Serper API search. No hallucinations — always current.</div><span class="skill-tag hot">🔥 Hot</span></div>
+      <div class="skill-card"><div class="skill-icon">💻</div><div class="skill-name">Code Generation</div><div class="skill-desc">Write, execute, and debug code in 60+ languages. Python, JS, TypeScript, Go, Rust, Swift, and more.</div><span class="skill-tag">Dev</span></div>
+      <div class="skill-card"><div class="skill-icon">👁️</div><div class="skill-name">Vision & OCR</div><div class="skill-desc">Analyze any image, extract text with OCR, understand charts, read screenshots, and more.</div><span class="skill-tag new">✨ New</span></div>
+      <div class="skill-card"><div class="skill-icon">📄</div><div class="skill-name">Document Builder</div><div class="skill-desc">Generate Word docs, Excel spreadsheets, PDFs, and HTML reports from data or prompts.</div><span class="skill-tag">Build</span></div>
+      <div class="skill-card"><div class="skill-icon">🌍</div><div class="skill-name">African Languages</div><div class="skill-desc">Native translation for Yoruba, Igbo, Hausa, Pidgin, Swahili, Amharic, and 100+ languages.</div><span class="skill-tag new">✨ Africa</span></div>
+      <div class="skill-card"><div class="skill-icon">💱</div><div class="skill-name">Currency & Finance</div><div class="skill-desc">Real-time Naira ↔ USD ↔ 160+ currencies. Stock prices, crypto, and market data.</div><span class="skill-tag">Finance</span></div>
+      <div class="skill-card"><div class="skill-icon">📧</div><div class="skill-name">Email & Messaging</div><div class="skill-desc">Send emails programmatically, integrate with Gmail, Outlook, Slack, and WhatsApp.</div><span class="skill-tag">Comm</span></div>
+      <div class="skill-card"><div class="skill-icon">🤖</div><div class="skill-name">100-Agent Swarm</div><div class="skill-desc">Deploy up to 100 autonomous sub-agents simultaneously for parallel task execution.</div><span class="skill-tag hot">🔥 Powerful</span></div>
+      <div class="skill-card"><div class="skill-icon">🔗</div><div class="skill-name">API Connector</div><div class="skill-desc">Connect to any REST API — OAuth, API keys, webhooks. STEW works across all your apps.</div><span class="skill-tag new">✨ New</span></div>
+      <div class="skill-card"><div class="skill-icon">🗄️</div><div class="skill-name">Data Extraction</div><div class="skill-desc">Bulk web scraping, structured data extraction, CSV/JSON/Excel export from any website.</div><span class="skill-tag">Data</span></div>
+      <div class="skill-card"><div class="skill-icon">🛡️</div><div class="skill-name">Self-Evolving Skills</div><div class="skill-desc">STEW can write and deploy its own new Python skills at runtime via /skills/auto-create.</div><span class="skill-tag hot">🔥 Unique</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CONNECTORS -->
+<section id="connectors-section" style="background:var(--s);border-top:1px solid var(--b);border-bottom:1px solid var(--b);">
+  <div class="container">
+    <div class="section-hd">
+      <h2>Connect to Any App</h2>
+      <p>STEW works across all your tools — OAuth, API keys, or MCP protocol</p>
+    </div>
+    <div class="connectors-grid">
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📧</div><div class="connector-name">Gmail</div><div class="connector-cat">Email</div><span class="conn-auth-tag oauth">OAuth</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📅</div><div class="connector-name">Google Calendar</div><div class="connector-cat">Productivity</div><span class="conn-auth-tag oauth">OAuth</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">💬</div><div class="connector-name">Slack</div><div class="connector-cat">Messaging</div><span class="conn-auth-tag oauth">OAuth</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🐙</div><div class="connector-name">GitHub</div><div class="connector-cat">Dev Tools</div><span class="conn-auth-tag oauth">OAuth</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📊</div><div class="connector-name">Google Sheets</div><div class="connector-cat">Data</div><span class="conn-auth-tag oauth">OAuth</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📝</div><div class="connector-name">Notion</div><div class="connector-cat">Productivity</div><span class="conn-auth-tag apikey">API Key</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🛒</div><div class="connector-name">Shopify</div><div class="connector-cat">eCommerce</div><span class="conn-auth-tag apikey">API Key</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">💳</div><div class="connector-name">Paystack</div><div class="connector-cat">Payments</div><span class="conn-auth-tag apikey">API Key</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📢</div><div class="connector-name">Twitter/X</div><div class="connector-cat">Social</div><span class="conn-auth-tag oauth">OAuth</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🔗</div><div class="connector-name">Zapier MCP</div><div class="connector-cat">Automation</div><span class="conn-auth-tag mcp">MCP</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🌐</div><div class="connector-name">Any REST API</div><div class="connector-cat">Universal</div><span class="conn-auth-tag apikey">Custom</span></div>
+      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">➕</div><div class="connector-name">Add Your App</div><div class="connector-cat">Connect Anything</div><span class="conn-auth-tag mcp">Coming Soon</span></div>
+    </div>
+    <div style="text-align:center;margin-top:2rem;">
+      <button class="btn-primary" onclick="openAuth('register')">🔗 Connect Your Apps</button>
+      <p style="color:var(--m);font-size:.82rem;margin-top:.75rem;">Authorize via OAuth, paste your API key, or use MCP server URL</p>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing-section">
+  <div class="container">
+    <div class="section-hd">
+      <h2>Simple Naira Pricing</h2>
+      <p>No USD barriers. Pay with Paystack in Naira. Cancel anytime.</p>
+    </div>
+    <div class="pricing-grid">
+      <!-- FREE -->
+      <div class="price-card">
+        <div class="plan-name">Starter</div>
+        <div><span class="plan-price">₦0</span><span class="plan-period">/month</span></div>
+        <div class="plan-usd">Always free · No card needed</div>
+        <ul class="plan-features">
+          <li>1,000 API calls/month</li>
+          <li>10 core skills</li>
+          <li>Web search & research</li>
+          <li>Code generation</li>
+          <li>Community support</li>
+        </ul>
+        <button class="plan-btn free-btn" onclick="openAuth('register')">🚀 Get Free Key</button>
+      </div>
+      <!-- PRO -->
+      <div class="price-card popular">
+        <div class="plan-name">Pro</div>
+        <div><span class="plan-price">₦9,900</span><span class="plan-period">/month</span></div>
+        <div class="plan-usd">~$6 USD · Billed monthly</div>
+        <ul class="plan-features">
+          <li>50,000 API calls/month</li>
+          <li>All 60+ skills</li>
+          <li>Browser automation</li>
+          <li>Vision & OCR</li>
+          <li>App connectors (5 apps)</li>
+          <li>Priority support</li>
+        </ul>
+        <button class="plan-btn pay-btn" onclick="openPaystack('pro')">💳 Pay with Paystack</button>
+      </div>
+      <!-- BUSINESS -->
+      <div class="price-card">
+        <div class="plan-name">Business</div>
+        <div><span class="plan-price">₦29,000</span><span class="plan-period">/month</span></div>
+        <div class="plan-usd">~$18 USD · Best for teams</div>
+        <ul class="plan-features">
+          <li>200,000 API calls/month</li>
+          <li>All skills + swarm agents</li>
+          <li>Unlimited connectors</li>
+          <li>Custom skill creation</li>
+          <li>Webhook automation</li>
+          <li>Priority support + SLA</li>
+        </ul>
+        <button class="plan-btn pay-btn" onclick="openPaystack('business')">💳 Pay with Paystack</button>
+      </div>
+      <!-- ENTERPRISE -->
+      <div class="price-card">
+        <div class="plan-name">Enterprise</div>
+        <div><span class="plan-price">₦49,000</span><span class="plan-period">/month</span></div>
+        <div class="plan-usd">~$30 USD · Full power</div>
+        <ul class="plan-features">
+          <li>Unlimited API calls</li>
+          <li>100-agent swarm</li>
+          <li>Dedicated infrastructure</li>
+          <li>Custom AI fine-tuning</li>
+          <li>White-label option</li>
+          <li>24/7 dedicated support</li>
+        </ul>
+        <button class="plan-btn pay-btn" onclick="openPaystack('enterprise')">💳 Pay with Paystack</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- API DOCS -->
+<section id="docs-section" style="background:var(--s);border-top:1px solid var(--b);">
+  <div class="container">
+    <div class="section-hd">
+      <h2>Quick Start API Docs</h2>
+      <p>One endpoint. Any language. Anywhere in the world.</p>
+    </div>
+    <div style="max-width:800px;margin:0 auto;">
+      <h3 style="font-size:1rem;font-weight:700;margin-bottom:.75rem;color:#a78bfa;">1. Register for a Free Key</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/auth/register
+
+{
+  <span class="str">"name"</span>: <span class="str">"Your Name"</span>,
+  <span class="str">"email"</span>: <span class="str">"you@example.com"</span>,
+  <span class="str">"plan"</span>: <span class="str">"free"</span>
+}
+
+<span class="cm">// Response:</span>
+{
+  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>,
+  <span class="str">"plan"</span>: <span class="str">"free"</span>,
+  <span class="str">"calls_limit"</span>: <span class="num">1000</span>
+}</pre>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2. Call the STEW Agent</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/chat
+
+{
+  <span class="str">"message"</span>: <span class="str">"What is the latest AI news today?"</span>,
+  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>
+}
+
+<span class="cm">// Response:</span>
+{
+  <span class="str">"response"</span>: <span class="str">"Here are the latest AI developments..."</span>,
+  <span class="str">"model_used"</span>: <span class="str">"llama-4-maverick"</span>,
+  <span class="str">"sources"</span>: [...]
+}</pre>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">3. Browse the Web</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/browse/navigate
+
+{
+  <span class="str">"url"</span>: <span class="str">"https://techcrunch.com"</span>,
+  <span class="str">"question"</span>: <span class="str">"What are today's top stories?"</span>,
+  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>
+}</pre>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">4. Connect an API (Universal Connector)</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/api/call
+
+{
+  <span class="str">"url"</span>: <span class="str">"https://api.openweathermap.org/data/2.5/weather"</span>,
+  <span class="str">"method"</span>: <span class="str">"GET"</span>,
+  <span class="str">"params"</span>: { <span class="str">"q"</span>: <span class="str">"Lagos"</span>, <span class="str">"appid"</span>: <span class="str">"YOUR_KEY"</span> },
+  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>
+}</pre>
+      </div>
+
+      <div style="text-align:center;margin-top:2rem;">
+        <button class="btn-primary" onclick="openAuth('register')">🚀 Get Your Free Key Now</button>
+        <a href="https://stew-agent.onrender.com/docs" target="_blank" style="display:inline-block;margin-left:1rem;padding:13px 28px;background:rgba(255,255,255,.06);border:1px solid var(--b);border-radius:12px;color:var(--t);font-weight:600;font-size:.92rem;text-decoration:none;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,.1)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">📚 Full API Reference</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <div class="nav-logo" style="margin-bottom:.75rem;">
+        <div class="logo-box">S</div>
+        <span>S.T.E.W</span>
+      </div>
+      <p>Africa's most powerful AI agent API. Built in Nigeria 🇳🇬 by MUTYINT. Free tier available — no card needed.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Product</h4>
+      <span onclick="scrollTo('skills-section')">Skills (60+)</span>
+      <span onclick="scrollTo('connectors-section')">Connectors</span>
+      <span onclick="scrollTo('pricing-section')">Pricing</span>
+      <span onclick="scrollTo('docs-section')">API Docs</span>
+    </div>
+    <div class="footer-col">
+      <h4>Developers</h4>
+      <span onclick="openAuth('register')">Get API Key</span>
+      <a href="https://stew-agent.onrender.com/playground" target="_blank">Playground</a>
+      <a href="https://stew-agent.onrender.com/docs" target="_blank">Full Docs</a>
+      <span onclick="openAuth('dashboard')">Dashboard</span>
+    </div>
+    <div class="footer-col">
+      <h4>Company</h4>
+      <span>MUTYINT Nigeria</span>
+      <span>Emmanuel Ene R. Gideon</span>
+      <a href="mailto:support@mutyint.com">Support</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 S.T.E.W by MUTYINT · All rights reserved · Built in Nigeria 🇳🇬 for the World</span>
+  </div>
+</footer>
+
+<!-- AUTH MODAL -->
+<div class="auth-overlay" id="auth-overlay" onclick="if(event.target===this)closeAuth()">
+  <div class="auth-modal">
+    <div class="auth-hd">
+      <div>
+        <h3>🔑 Developer Access</h3>
+        <p style="font-size:.8rem;color:var(--m);margin-top:.2rem;">Free API key in seconds — no card needed</p>
+      </div>
+      <button class="auth-close" onclick="closeAuth()">✕</button>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">🚀 Register</button>
+      <button class="auth-tab" id="tab-dashboard" onclick="switchAuthTab('dashboard')">📊 Dashboard</button>
+      <button class="auth-tab" id="tab-upgrade" onclick="switchAuthTab('upgrade')">⚡ Upgrade</button>
+    </div>
+    <div class="auth-body">
+
+      <!-- REGISTER PANEL -->
+      <div class="auth-panel" id="panel-register">
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.85rem;color:var(--m);margin-bottom:1rem;">Choose your plan:</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
+            <div class="plan-option selected" id="plan-free" onclick="selectPlan('free',this)">
+              <div class="plan-option-name">⚡ Starter</div>
+              <div class="plan-option-price">₦0/mo</div>
+              <div class="plan-option-desc">1,000 calls · No card</div>
+            </div>
+            <div class="plan-option" id="plan-pro" onclick="selectPlan('pro',this)">
+              <div class="plan-option-name">🚀 Pro</div>
+              <div class="plan-option-price">₦9,900/mo</div>
+              <div class="plan-option-desc">50,000 calls · All skills</div>
+            </div>
+          </div>
+        </div>
+        <div class="auth-field"><label>Full Name *</label><input type="text" id="reg-name" placeholder="Your full name"></div>
+        <div class="auth-field"><label>Email Address *</label><input type="email" id="reg-email" placeholder="you@example.com"></div>
+        <div class="auth-field"><label>Company (optional)</label><input type="text" id="reg-company" placeholder="Your company or project"></div>
+        <button class="auth-btn" id="reg-btn" onclick="doRegister()">🚀 Create Free Account</button>
+        <div class="auth-result" id="reg-result"></div>
+        <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">By registering you agree to our fair use policy. Your API key is created instantly.</p>
+      </div>
+
+      <!-- DASHBOARD PANEL -->
+      <div class="auth-panel" id="panel-dashboard">
+        <div class="auth-field"><label>Your API Key</label><input type="text" id="dash-key" placeholder="stew_xxxxxxxxxxxx" autocomplete="off"></div>
+        <button class="auth-btn secondary-btn" onclick="loadDashboard()">📊 Load Dashboard</button>
+        <div class="auth-result" id="dash-result"></div>
+        <div id="dash-data" style="display:none;margin-top:1rem;">
+          <div class="dash-stat"><span class="dash-stat-label">Name</span><span class="dash-stat-value" id="d-name">—</span></div>
+          <div class="dash-stat"><span class="dash-stat-label">Email</span><span class="dash-stat-value" id="d-email">—</span></div>
+          <div class="dash-stat"><span class="dash-stat-label">Plan</span><span class="dash-stat-value" id="d-plan">—</span></div>
+          <div class="dash-stat"><span class="dash-stat-label">Status</span><span class="dash-stat-value" id="d-status">—</span></div>
+          <div class="dash-stat"><span class="dash-stat-label">Expires</span><span class="dash-stat-value" id="d-expires">—</span></div>
+          <div style="margin-top:1rem;">
+            <div style="display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:.4rem;"><span style="color:var(--m);">API Usage</span><span id="d-usage" style="font-weight:700;">—</span></div>
+            <div class="usage-bar"><div class="usage-fill" id="d-bar" style="width:0%"></div></div>
+          </div>
+          <div style="margin-top:1rem;">
+            <div style="font-size:.82rem;color:var(--m);margin-bottom:.5rem;">Your API Key:</div>
+            <div class="api-key-display" id="d-key-display">—</div>
+            <button class="copy-key-btn" onclick="copyDashKey()">📋 Copy</button>
+            <button class="copy-key-btn" onclick="switchAuthTab('upgrade')">⚡ Upgrade</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- UPGRADE / BILLING PANEL -->
+      <div class="auth-panel" id="panel-upgrade">
+        <div class="auth-field"><label>Your API Key</label><input type="text" id="up-key" placeholder="stew_xxxxxxxxxxxx" autocomplete="off"></div>
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.82rem;color:var(--m);margin-bottom:.75rem;">Select upgrade plan:</div>
+          <div class="plan-option" id="plan-opt-pro" onclick="selectUpgradePlan('pro',this)">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div><div class="plan-option-name">🚀 Pro</div><div class="plan-option-desc">50,000 calls/mo · All 60+ skills · Browser automation</div></div>
+              <div class="plan-option-price">₦9,900/mo</div>
+            </div>
+          </div>
+          <div class="plan-option" id="plan-opt-business" onclick="selectUpgradePlan('business',this)">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div><div class="plan-option-name">💼 Business</div><div class="plan-option-desc">200,000 calls/mo · Swarm agents · Unlimited connectors</div></div>
+              <div class="plan-option-price">₦29,000/mo</div>
+            </div>
+          </div>
+          <div class="plan-option" id="plan-opt-enterprise" onclick="selectUpgradePlan('enterprise',this)">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div><div class="plan-option-name">🏢 Enterprise</div><div class="plan-option-desc">Unlimited calls · Dedicated infra · White-label</div></div>
+              <div class="plan-option-price">₦49,000/mo</div>
+            </div>
+          </div>
+        </div>
+        <button class="auth-btn" id="up-btn" onclick="doUpgrade()">💳 Pay with Paystack</button>
+        <div class="auth-result" id="up-result"></div>
+        <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">Secure payment via Paystack · Naira only · Cancel anytime</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- STEW WORKING OVERLAY -->
+<div class="stew-overlay" id="stew-overlay">
+  <div class="stew-working-box">
+    <div class="stew-glow-ring">🤖</div>
+    <div class="stew-status" id="stew-status">S.T.E.W is working...</div>
+    <div class="stew-step" id="stew-step">Initializing task execution...</div>
+    <div class="stew-progress"><div class="stew-progress-bar" id="stew-bar"></div></div>
+    <div class="stew-log" id="stew-log">S.T.E.W v4.0 ULTRA activated...</div>
+    <button onclick="hideStewOverlay()" style="background:rgba(255,255,255,.07);border:1px solid var(--b);border-radius:10px;padding:9px 20px;color:var(--m);font-size:.85rem;cursor:pointer;font-family:var(--font);">Hide (task continues in background)</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════
+const STEW_URL = 'https://stew-agent.onrender.com';
+const PAY_FN = 'https://superagent-55bc0d3a.base44.app/functions/stewPayment';
+const FREE_KEY = 'stew_free_playground_2026';
+
+let _selectedPlan = 'free';
+let _upgradePlan = '';
+let _myKey = localStorage.getItem('stew_api_key') || FREE_KEY;
+let _chatBusy = false;
+
+// ══════════════════════════════════════
+// 3D PARTICLE ANIMATION — WebGL canvas
+// ══════════════════════════════════════
+(function initCanvas(){
+  const canvas = document.getElementById('bg-canvas');
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if(!gl){ canvas.style.display='none'; return; }
+
+  let W, H, pts=[], mouse={x:.5,y:.5};
+  const N = 180;
+
+  function resize(){
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    gl.viewport(0,0,W,H);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', e=>{ mouse.x=e.clientX/W; mouse.y=e.clientY/H; });
+  resize();
+
+  // init particles
+  for(let i=0;i<N;i++){
+    pts.push({
+      x: Math.random()*2-1, y: Math.random()*2-1, z: Math.random(),
+      vx:(Math.random()-.5)*0.003, vy:(Math.random()-.5)*0.003,
+      r: Math.random()*.6+.2
+    });
+  }
+
+  const vsrc = `
+    attribute vec4 pos;
+    attribute float alpha;
+    varying float vA;
+    void main(){
+      gl_Position = vec4(pos.xy,0.,1.);
+      gl_PointSize = pos.z * 4.0 + 1.5;
+      vA = alpha;
+    }
+  `;
+  const fsrc = `
+    precision mediump float;
+    varying float vA;
+    void main(){
+      vec2 c = gl_PointCoord - .5;
+      float d = 1.0 - length(c)*2.0;
+      gl_FragColor = vec4(.6,.4,1., d*d*vA*.7);
+    }
+  `;
+
+  function mkShader(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s,src); gl.compileShader(s); return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, mkShader(gl.VERTEX_SHADER, vsrc));
+  gl.attachShader(prog, mkShader(gl.FRAGMENT_SHADER, fsrc));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+  const posLoc = gl.getAttribLocation(prog,'pos');
+  const aLoc   = gl.getAttribLocation(prog,'alpha');
+  const posBuf = gl.createBuffer();
+  const aBuf   = gl.createBuffer();
+
+  // lines prog
+  const lvsrc=`attribute vec2 lpos;void main(){gl_Position=vec4(lpos,0.,1.);}`;
+  const lfsrc=`precision mediump float;void main(){gl_FragColor=vec4(.4,.2,.9,.15);}`;
+  const lprog = gl.createProgram();
+  gl.attachShader(lprog, mkShader(gl.VERTEX_SHADER, lvsrc));
+  gl.attachShader(lprog, mkShader(gl.FRAGMENT_SHADER, lfsrc));
+  gl.linkProgram(lprog);
+  const lpLoc = gl.getAttribLocation(lprog,'lpos');
+  const lBuf = gl.createBuffer();
+
+  let t=0;
+  function frame(){
+    requestAnimationFrame(frame);
+    t+=.005;
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // update
+    const mx = mouse.x*2-1, my = -(mouse.y*2-1);
+    for(let p of pts){
+      p.x += p.vx + (mx-p.x)*0.0002;
+      p.y += p.vy + (my-p.y)*0.0002;
+      if(p.x>1.1) p.x=-1.1; if(p.x<-1.1) p.x=1.1;
+      if(p.y>1.1) p.y=-1.1; if(p.y<-1.1) p.y=1.1;
+      p.z = .3+.5*(0.5+0.5*Math.sin(t+p.x*3));
+    }
+
+    // draw lines
+    const lineData = [];
+    for(let i=0;i<N;i++){
+      for(let j=i+1;j<N;j++){
+        const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y;
+        if(dx*dx+dy*dy<.08){
+          lineData.push(pts[i].x,pts[i].y,pts[j].x,pts[j].y);
+        }
+      }
+    }
+    if(lineData.length>0){
+      gl.useProgram(lprog);
+      gl.bindBuffer(gl.ARRAY_BUFFER,lBuf);
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(lineData),gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(lpLoc);
+      gl.vertexAttribPointer(lpLoc,2,gl.FLOAT,false,0,0);
+      gl.drawArrays(gl.LINES,0,lineData.length/2);
+    }
+
+    // draw points
+    const pData=[], aData=[];
+    for(let p of pts){ pData.push(p.x,p.y,p.z); aData.push(p.z); }
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER,posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pData),gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,aBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(aData),gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(aLoc);
+    gl.vertexAttribPointer(aLoc,1,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.POINTS,0,N);
+  }
+  frame();
+})();
+
+// ══════════════════════════════════════
+// NAV SCROLL EFFECT
+// ══════════════════════════════════════
+window.addEventListener('scroll',()=>{
+  const nav = document.getElementById('main-nav');
+  if(window.scrollY>80) nav.classList.add('scrolled');
+  else nav.classList.remove('scrolled');
+});
+
+function scrollTo(id){
+  const el = document.getElementById(id);
+  if(el) el.scrollIntoView({behavior:'smooth'});
+  document.querySelector('.nav-links').classList.remove('open');
+}
+
+// ══════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════
+let _toastT;
+function showToast(msg, type='ok'){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(_toastT);
+  _toastT = setTimeout(()=>t.className='toast',3200);
+}
+
+// ══════════════════════════════════════
+// LIVE STATS
+// ══════════════════════════════════════
+async function fetchStats(){
+  try{
+    const [hb, st] = await Promise.all([
+      fetch(STEW_URL+'/heartbeat',{signal:AbortSignal.timeout(8000)}).then(r=>r.json()).catch(()=>null),
+      fetch(STEW_URL+'/auth/stats',{signal:AbortSignal.timeout(8000)}).then(r=>r.json()).catch(()=>null)
+    ]);
+    if(hb?.beat){ 
+      document.getElementById('hero-beat').textContent = hb.beat; 
+      document.getElementById('m-beat').textContent = hb.beat;
+    }
+    if(st?.registered_developers !== undefined){
+      document.getElementById('stat-devs').textContent = st.registered_developers;
+      document.getElementById('m-devs').textContent = st.registered_developers;
+    }
+  } catch(e){}
+}
+fetchStats(); setInterval(fetchStats, 30000);
+
+// ══════════════════════════════════════
+// CHAT DEMO
+// ══════════════════════════════════════
+function addMsg(type, html){
+  const msgs = document.getElementById('chat-msgs');
+  const div = document.createElement('div');
+  div.className = 'msg msg-'+type;
+  const avatar = type==='stew' ? 'S' : '👤';
+  const now = new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'});
+  div.innerHTML = `<div class="msg-avatar">${avatar}</div><div><div class="msg-bubble">${html}</div><div class="msg-time">${now}</div></div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function showTyping(){
+  const msgs = document.getElementById('chat-msgs');
+  const row = document.createElement('div');
+  row.className = 'typing-row'; row.id = 'typing-row';
+  const avDiv = document.createElement('div'); avDiv.className='msg-avatar msg-stew'.split(' ')[0]+' msg-stew'; avDiv.style='background:linear-gradient(135deg,#7c3aed,#06b6d4);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;'; avDiv.textContent='S';
+  const bub = document.createElement('div');
+  bub.className='typing-bubble on'; bub.innerHTML='<div class="td"></div><div class="td"></div><div class="td"></div>';
+  row.appendChild(avDiv); row.appendChild(bub);
+  msgs.appendChild(row); msgs.scrollTop=msgs.scrollHeight;
+}
+function hideTyping(){ const r=document.getElementById('typing-row'); if(r) r.remove(); }
+
+async function sendChat(){
+  if(_chatBusy) return;
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if(!msg) return;
+  input.value = '';
+  addMsg('user', escHtml(msg));
+  _chatBusy = true;
+  document.getElementById('chat-send').disabled = true;
+  showTyping();
+  showStewWorking('Researching your question...', msg);
+  try{
+    const resp = await fetch(STEW_URL+'/chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: msg, api_key: FREE_KEY}),
+      signal: AbortSignal.timeout(45000)
+    });
+    const data = await resp.json();
+    hideTyping();
+    hideStewOverlay();
+    const reply = data.response || data.result || data.answer || 'STEW processed your request.';
+    addMsg('stew', reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>'));
+  } catch(e){
+    hideTyping(); hideStewOverlay();
+    if(e.name==='TimeoutError')
+      addMsg('stew','⏳ STEW is warming up on Render (free tier). Try again in 15 seconds!');
+    else
+      addMsg('stew','⚠️ Connection error: '+escHtml(e.message)+'. STEW may be waking up.');
+  }
+  _chatBusy = false;
+  document.getElementById('chat-send').disabled = false;
+}
+
+function sendDemo(msg){ document.getElementById('chat-input').value=msg; sendChat(); }
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ══════════════════════════════════════
+// STEW WORKING OVERLAY
+// ══════════════════════════════════════
+let _stewProg = 0, _stewT;
+function showStewWorking(status, task){
+  const ov = document.getElementById('stew-overlay');
+  ov.classList.add('show');
+  document.getElementById('stew-status').textContent = 'S.T.E.W is working...';
+  document.getElementById('stew-step').textContent = status;
+  document.getElementById('stew-log').textContent = `[${new Date().toISOString()}] Task: ${task}\n[init] Routing to best model...\n[search] Querying real-time sources...\n[process] Synthesizing results...`;
+  _stewProg = 0;
+  const bar = document.getElementById('stew-bar');
+  bar.style.width='0%';
+  clearInterval(_stewT);
+  _stewT = setInterval(()=>{
+    _stewProg = Math.min(_stewProg+2, 92);
+    bar.style.width = _stewProg+'%';
+    const steps = ['Routing to best AI model...','Searching real-time web...','Processing results...','Synthesizing answer...','Delivering response...'];
+    if(_stewProg<20) document.getElementById('stew-step').textContent=steps[0];
+    else if(_stewProg<45) document.getElementById('stew-step').textContent=steps[1];
+    else if(_stewProg<65) document.getElementById('stew-step').textContent=steps[2];
+    else if(_stewProg<82) document.getElementById('stew-step').textContent=steps[3];
+    else document.getElementById('stew-step').textContent=steps[4];
+  }, 200);
+}
+function hideStewOverlay(){
+  clearInterval(_stewT);
+  document.getElementById('stew-bar').style.width='100%';
+  setTimeout(()=>{
+    document.getElementById('stew-overlay').classList.remove('show');
+    document.getElementById('stew-bar').style.width='0%';
+  }, 400);
+}
+
+// ══════════════════════════════════════
+// AUTH MODAL
+// ══════════════════════════════════════
+function openAuth(tab='register'){
+  const ov = document.getElementById('auth-overlay');
+  ov.classList.add('show');
+  switchAuthTab(tab);
+  // pre-fill saved key
+  const saved = localStorage.getItem('stew_api_key');
+  if(saved && saved !== FREE_KEY){
+    if(document.getElementById('dash-key')) document.getElementById('dash-key').value = saved;
+    if(document.getElementById('up-key')) document.getElementById('up-key').value = saved;
+  }
+}
+function closeAuth(){
+  document.getElementById('auth-overlay').classList.remove('show');
+}
+function switchAuthTab(tab){
+  ['register','dashboard','upgrade'].forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+    document.getElementById('panel-'+t).classList.toggle('active',t===tab);
+  });
+}
+function selectPlan(plan, el){
+  _selectedPlan = plan;
+  document.querySelectorAll('#panel-register .plan-option').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+  const btn = document.getElementById('reg-btn');
+  btn.textContent = plan==='free'?'🚀 Create Free Account':'💳 Create Account';
+}
+function selectUpgradePlan(plan, el){
+  _upgradePlan = plan;
+  document.querySelectorAll('#panel-upgrade .plan-option').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function showAuthResult(id,type,html){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.className='auth-result '+type;
+  el.innerHTML=html;
+  el.style.display='block';
+}
+
+// ══════════════════════════════════════
+// REGISTER — FIXED & WORKING
+// ══════════════════════════════════════
+async function doRegister(){
+  const name  = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const company = document.getElementById('reg-company').value.trim();
+  if(!name){ showAuthResult('reg-result','error','⚠️ Please enter your name.'); return; }
+  if(!email||!email.includes('@')){ showAuthResult('reg-result','error','⚠️ Please enter a valid email.'); return; }
+  const btn = document.getElementById('reg-btn');
+  btn.disabled=true; btn.textContent='⏳ Creating account...';
+  showAuthResult('reg-result','info','🔄 Connecting to STEW server...');
+  try{
+    const resp = await fetch(STEW_URL+'/auth/register',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, email, company:company||'', plan:_selectedPlan}),
+      signal: AbortSignal.timeout(30000)
+    });
+    if(!resp.ok){ const err=await resp.json().catch(()=>({})); throw new Error(err.detail||'Server error '+resp.status); }
+    const data = await resp.json();
+    if(data.api_key){
+      _myKey = data.api_key;
+      localStorage.setItem('stew_api_key', _myKey);
+      showAuthResult('reg-result','success',`
+        <div style="font-weight:800;margin-bottom:.5rem;font-size:1rem;">✅ Account Created!</div>
+        <div style="font-size:.82rem;color:#94a3b8;margin-bottom:.3rem;">Your API Key (save this!):</div>
+        <div class="api-key-display">${_myKey}</div>
+        <button class="copy-key-btn" onclick="navigator.clipboard.writeText('${_myKey}').then(()=>showToast('API Key copied! 🎉','ok'))">📋 Copy Key</button>
+        ${_selectedPlan!=='free'?`<button class="copy-key-btn" onclick="switchAuthTab('upgrade')">⚡ Upgrade Now</button>`:''}
+        <div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>${data.plan||_selectedPlan}</b> · ${data.calls_limit||1000} calls/month</div>
+      `);
+      if(_selectedPlan!=='free') setTimeout(()=>{ switchAuthTab('upgrade'); document.getElementById('up-key').value=_myKey; },2000);
+    } else {
+      showAuthResult('reg-result','error','❌ '+(data.error||data.detail||'Registration failed.'));
+    }
+  } catch(e){
+    if(e.name==='TimeoutError')
+      showAuthResult('reg-result','error','⏳ STEW is waking up (Render free tier). Try again in 20 seconds!');
+    else
+      showAuthResult('reg-result','error','❌ '+e.message);
+  }
+  btn.disabled=false; btn.textContent=_selectedPlan==='free'?'🚀 Create Free Account':'💳 Create Account';
+}
+
+// ══════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════
+async function loadDashboard(){
+  const key = document.getElementById('dash-key').value.trim()||localStorage.getItem('stew_api_key')||'';
+  if(!key){ showAuthResult('dash-result','error','⚠️ Enter your API key first.'); return; }
+  if(document.getElementById('dash-key').value==='') document.getElementById('dash-key').value=key;
+  _myKey=key;
+  showAuthResult('dash-result','info','🔄 Validating key...');
+  try{
+    const resp = await fetch(STEW_URL+'/auth/validate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({api_key:key}),
+      signal:AbortSignal.timeout(20000)
+    });
+    const data = await resp.json();
+    if(data.valid){
+      const pct=Math.min(Math.round(((data.calls_used||0)/(data.calls_limit||1))*100),100);
+      document.getElementById('d-name').textContent=data.name||'—';
+      document.getElementById('d-email').textContent=data.email||key.slice(0,20)+'...';
+      document.getElementById('d-plan').textContent=(data.plan||'free').toUpperCase();
+      document.getElementById('d-usage').textContent=`${data.calls_used||0} / ${data.calls_limit||1000} (${pct}%)`;
+      document.getElementById('d-bar').style.width=pct+'%';
+      document.getElementById('d-status').textContent=data.active===false?'🔴 Inactive':'🟢 Active';
+      document.getElementById('d-expires').textContent=data.plan==='free'?'Never (Free)':'30 days';
+      document.getElementById('d-key-display').textContent=key;
+      document.getElementById('dash-data').style.display='block';
+      document.getElementById('dash-result').style.display='none';
+    } else {
+      document.getElementById('dash-data').style.display='none';
+      showAuthResult('dash-result','error','❌ Invalid API key. <a onclick="switchAuthTab(\'register\')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Register here</a>.');
+    }
+  } catch(e){
+    showAuthResult('dash-result','error','⏳ STEW is waking up. Try again in 20s.');
+  }
+}
+function copyDashKey(){
+  const k=document.getElementById('d-key-display').textContent;
+  if(k&&k!=='—') navigator.clipboard.writeText(k).then(()=>showToast('API Key copied! 🎉','ok'));
+}
+
+// ══════════════════════════════════════
+// BILLING — PAYSTACK — FIXED & WORKING
+// ══════════════════════════════════════
+const PLAN_PRICES = {
+  pro:       {amount:990000,  name:'S.T.E.W Pro Plan',      desc:'50,000 API calls/month'},
+  business:  {amount:2900000, name:'S.T.E.W Business Plan',  desc:'200,000 API calls/month'},
+  enterprise:{amount:4900000, name:'S.T.E.W Enterprise Plan',desc:'Unlimited API calls'}
+};
+
+function openPaystack(plan){
+  openAuth('upgrade');
+  document.getElementById('plan-opt-'+plan)?.click();
+}
+
+async function doUpgrade(){
+  const key = document.getElementById('up-key').value.trim()||localStorage.getItem('stew_api_key')||'';
+  if(!key){ showAuthResult('up-result','error','⚠️ Enter your API key first.'); return; }
+  if(!_upgradePlan){ showAuthResult('up-result','error','⚠️ Select a plan first.'); return; }
+  const btn=document.getElementById('up-btn');
+  btn.disabled=true; btn.textContent='⏳ Initialising...';
+  showAuthResult('up-result','info','🔄 Connecting to Paystack...');
+  try{
+    // get email from key validation
+    let email='developer@stew.api', fullName='';
+    try{
+      const vr = await fetch(STEW_URL+'/auth/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key}),signal:AbortSignal.timeout(15000)});
+      const vd = await vr.json();
+      if(vd.email) email=vd.email;
+      if(vd.name) fullName=vd.name;
+    } catch(e){}
+
+    const payResp = await fetch(PAY_FN,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'initialize', email, plan:_upgradePlan, full_name:fullName}),
+      signal:AbortSignal.timeout(25000)
+    });
+    const payData = await payResp.json();
+
+    if(payData.authorization_url && !payData.mock){
+      showAuthResult('up-result','success',
+        `✅ Paystack ready! <a href="${payData.authorization_url}" target="_blank" style="color:#34d399;text-decoration:underline;">Click here to complete payment →</a>`
+      );
+      setTimeout(()=>window.open(payData.authorization_url,'_blank'),600);
+    } else if(payData.mock || payData.test_mode){
+      showAuthResult('up-result','info',
+        `ℹ️ Paystack is in test mode. Plan: <b>${_upgradePlan}</b> · Amount: ₦${(PLAN_PRICES[_upgradePlan]?.amount/100).toLocaleString()}<br><small style="color:var(--m)">Add PAYSTACK_SECRET_KEY on Render to enable live payments.</small>`
+      );
+    } else {
+      showAuthResult('up-result','error','❌ '+(payData.error||payData.detail||'Payment init failed.'));
+    }
+  } catch(e){
+    showAuthResult('up-result','error','❌ '+e.message);
+  }
+  btn.disabled=false; btn.textContent='💳 Pay with Paystack';
+}
+
+// ══════════════════════════════════════
+// CODE COPY
+// ══════════════════════════════════════
+function copyCode(btn){
+  const pre=btn.parentElement.querySelector('pre');
+  if(!pre) return;
+  navigator.clipboard.writeText(pre.innerText).then(()=>{ btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent='Copy',2000); });
+}
+
+// ══════════════════════════════════════
+// KEYBOARD SHORTCUT
+// ══════════════════════════════════════
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeAuth(); });
+
+// ══════════════════════════════════════
+// AUTO-LOAD SAVED KEY
+// ══════════════════════════════════════
+window.addEventListener('DOMContentLoaded',()=>{
+  const saved = localStorage.getItem('stew_api_key');
+  if(saved && saved!==FREE_KEY){
+    if(document.getElementById('dash-key')) document.getElementById('dash-key').value=saved;
+    if(document.getElementById('up-key')) document.getElementById('up-key').value=saved;
+  }
+});
+</script>
+
+</body>
+</html>

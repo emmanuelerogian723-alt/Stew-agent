@@ -1,0 +1,2224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>S.T.E.W API — Africa's Most Powerful AI Infrastructure</title>
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<style>
+/* ═══════════════════════════════════════════════
+   STEW API — PREMIUM LANDING PAGE
+   Built by MUTYINT | Emmanuel Ene Rejoice Gideon
+═══════════════════════════════════════════════ */
+:root {
+  --gold: #FFD700;
+  --gold2: #FFA500;
+  --cyan: #00F5FF;
+  --purple: #7B2FBE;
+  --purple2: #9D4EDD;
+  --dark: #050508;
+  --dark2: #0A0A12;
+  --dark3: #0F0F1A;
+  --card: #12121E;
+  --card2: #1A1A2E;
+  --text: #E8E8F0;
+  --muted: #888899;
+  --green: #00FF88;
+  --red: #FF4466;
+  --border: rgba(123,47,190,0.3);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--dark);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, sans-serif;
+  overflow-x: hidden;
+}
+
+/* ── ANIMATED BACKGROUND ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(123,47,190,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 80%, rgba(0,245,255,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 40% 30% at 50% 50%, rgba(255,215,0,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── GRID OVERLAY ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(123,47,190,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(123,47,190,0.06) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+/* ════════════════════════════
+   NAV
+════════════════════════════ */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  padding: 18px 0;
+  background: rgba(5,5,8,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.logo-icon {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--purple), var(--cyan));
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  animation: logoPulse 2s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(123,47,190,0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(123,47,190,0); }
+}
+
+.logo-text span { color: var(--gold); }
+
+.nav-links {
+  display: flex;
+  gap: 32px;
+  list-style: none;
+}
+
+.nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.nav-links a:hover { color: var(--text); }
+
+.nav-cta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.btn-nav-login {
+  padding: 9px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-nav-login:hover { border-color: var(--purple2); color: var(--purple2); }
+
+.btn-nav-signup {
+  padding: 9px 20px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--purple), var(--purple2));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  box-shadow: 0 4px 20px rgba(123,47,190,0.4);
+}
+
+.btn-nav-signup:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(123,47,190,0.6); }
+
+/* ════════════════════════════
+   HERO
+════════════════════════════ */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding: 120px 0 80px;
+  position: relative;
+}
+
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255,215,0,0.1);
+  border: 1px solid rgba(255,215,0,0.3);
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold);
+  margin-bottom: 24px;
+  animation: fadeInUp 0.6s ease;
+}
+
+.hero-title {
+  font-size: clamp(38px, 5vw, 62px);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -2px;
+  margin-bottom: 24px;
+  animation: fadeInUp 0.6s ease 0.1s both;
+}
+
+.hero-title .gradient-text {
+  background: linear-gradient(135deg, var(--gold), var(--gold2), var(--purple2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-title .cyan-text {
+  background: linear-gradient(135deg, var(--cyan), var(--purple2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: 18px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin-bottom: 40px;
+  animation: fadeInUp 0.6s ease 0.2s both;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  animation: fadeInUp 0.6s ease 0.3s both;
+}
+
+.btn-primary {
+  padding: 16px 32px;
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  color: #000;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 8px 32px rgba(255,215,0,0.35);
+}
+
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(255,215,0,0.5); }
+
+.btn-secondary {
+  padding: 16px 32px;
+  background: transparent;
+  border: 2px solid var(--border);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-secondary:hover { border-color: var(--cyan); color: var(--cyan); }
+
+.hero-stats {
+  display: flex;
+  gap: 40px;
+  margin-top: 48px;
+  animation: fadeInUp 0.6s ease 0.4s both;
+}
+
+.hero-stat-num {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.hero-stat-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── HERO VISUAL ── */
+.hero-visual {
+  position: relative;
+  animation: fadeInRight 0.8s ease 0.3s both;
+}
+
+.stew-avatar-container {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 480px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.avatar-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  animation: spin 8s linear infinite;
+}
+
+.avatar-ring-1 {
+  background: linear-gradient(var(--dark), var(--dark)) padding-box,
+              linear-gradient(135deg, var(--purple), transparent, var(--cyan)) border-box;
+  animation-duration: 8s;
+}
+
+.avatar-ring-2 {
+  inset: 20px;
+  background: linear-gradient(var(--dark), var(--dark)) padding-box,
+              linear-gradient(225deg, var(--gold), transparent, var(--purple)) border-box;
+  animation-duration: 12s;
+  animation-direction: reverse;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.avatar-core {
+  position: absolute;
+  inset: 40px;
+  background: radial-gradient(circle at 40% 35%, rgba(123,47,190,0.8), rgba(0,245,255,0.3), var(--dark3));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 90px;
+  box-shadow:
+    0 0 60px rgba(123,47,190,0.5),
+    0 0 120px rgba(0,245,255,0.2),
+    inset 0 0 60px rgba(0,0,0,0.5);
+  animation: avatarBreath 3s ease-in-out infinite;
+}
+
+@keyframes avatarBreath {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.floating-badges {
+  position: absolute;
+  inset: 0;
+}
+
+.float-badge {
+  position: absolute;
+  padding: 8px 14px;
+  background: rgba(10,10,18,0.9);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  animation: float 4s ease-in-out infinite;
+}
+
+.float-badge:nth-child(1) { top: 10%; left: -5%; color: var(--cyan); border-color: rgba(0,245,255,0.3); animation-delay: 0s; }
+.float-badge:nth-child(2) { top: 25%; right: -10%; color: var(--gold); border-color: rgba(255,215,0,0.3); animation-delay: 0.5s; }
+.float-badge:nth-child(3) { bottom: 30%; left: -8%; color: var(--green); border-color: rgba(0,255,136,0.3); animation-delay: 1s; }
+.float-badge:nth-child(4) { bottom: 15%; right: -5%; color: var(--purple2); border-color: rgba(157,78,221,0.3); animation-delay: 1.5s; }
+
+@keyframes float {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* ── CODE SNIPPET IN HERO ── */
+.hero-code {
+  margin-top: 32px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  font-family: 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  animation: fadeInUp 0.6s ease 0.5s both;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-dot { width: 12px; height: 12px; border-radius: 50%; }
+.code-dot-r { background: #FF5F57; }
+.code-dot-y { background: #FFBD2E; }
+.code-dot-g { background: #28CA41; }
+.code-title { color: var(--muted); font-size: 12px; margin-left: 8px; }
+
+.code-body { padding: 20px; overflow-x: auto; }
+.code-key { color: var(--cyan); }
+.code-str { color: var(--gold); }
+.code-num { color: var(--purple2); }
+.code-comment { color: var(--muted); }
+
+/* ════════════════════════════
+   TICKER STRIP
+════════════════════════════ */
+.ticker {
+  background: linear-gradient(135deg, var(--purple), var(--purple2));
+  padding: 14px 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+}
+
+.ticker-inner {
+  display: flex;
+  gap: 60px;
+  animation: ticker 20s linear infinite;
+  white-space: nowrap;
+}
+
+.ticker-inner span {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ════════════════════════════
+   FEATURES
+════════════════════════════ */
+.section { padding: 100px 0; position: relative; z-index: 1; }
+
+.section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--purple2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1.15;
+  margin-bottom: 16px;
+}
+
+.section-sub {
+  font-size: 18px;
+  color: var(--muted);
+  max-width: 560px;
+  line-height: 1.7;
+}
+
+.text-center { text-align: center; }
+.text-center .section-sub { margin: 0 auto; }
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 64px;
+}
+
+.feature-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 32px;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--purple2), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.feature-card:hover {
+  border-color: rgba(123,47,190,0.6);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 60px rgba(123,47,190,0.2);
+}
+
+.feature-card:hover::before { opacity: 1; }
+
+.feature-icon {
+  width: 56px; height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  margin-bottom: 20px;
+}
+
+.feature-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.feature-desc {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+/* ════════════════════════════
+   HOW IT WORKS
+════════════════════════════ */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  margin-top: 64px;
+  position: relative;
+}
+
+.steps::before {
+  content: '';
+  position: absolute;
+  top: 32px;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--purple), var(--cyan), var(--purple), transparent);
+}
+
+.step {
+  text-align: center;
+  position: relative;
+}
+
+.step-num {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--purple), var(--purple2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 auto 20px;
+  box-shadow: 0 8px 32px rgba(123,47,190,0.4);
+  position: relative;
+  z-index: 1;
+}
+
+.step-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.step-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+/* ════════════════════════════
+   ENDPOINTS / API DOCS
+════════════════════════════ */
+.endpoints-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 48px;
+}
+
+.endpoint-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  transition: all 0.2s;
+}
+
+.endpoint-card:hover {
+  border-color: rgba(0,245,255,0.3);
+  background: var(--card2);
+}
+
+.endpoint-method {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: rgba(123,47,190,0.2);
+  color: var(--purple2);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.endpoint-path {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--cyan);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.endpoint-desc {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ════════════════════════════
+   PRICING
+════════════════════════════ */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 64px;
+  align-items: start;
+}
+
+.pricing-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 32px;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.pricing-card.popular {
+  background: linear-gradient(180deg, rgba(123,47,190,0.2), var(--card));
+  border-color: var(--purple2);
+  transform: scale(1.05);
+  box-shadow: 0 20px 60px rgba(123,47,190,0.3);
+}
+
+.pricing-card.enterprise-card {
+  background: linear-gradient(180deg, rgba(255,215,0,0.08), var(--card));
+  border-color: rgba(255,215,0,0.4);
+}
+
+.plan-badge {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 18px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badge-popular { background: linear-gradient(135deg, var(--purple), var(--purple2)); color: #fff; }
+.badge-value { background: linear-gradient(135deg, var(--cyan), #0099cc); color: #000; }
+.badge-power { background: linear-gradient(135deg, var(--gold), var(--gold2)); color: #000; }
+
+.plan-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.plan-price {
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: -2px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.plan-price span { font-size: 18px; font-weight: 600; color: var(--muted); }
+.plan-currency { font-size: 22px; color: var(--gold); font-weight: 800; }
+
+.plan-period { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+
+.plan-calls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.plan-calls .calls-count { color: var(--gold); font-size: 18px; }
+
+.plan-features { list-style: none; margin-bottom: 28px; }
+.plan-features li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.plan-features li:last-child { border-bottom: none; }
+.plan-features li .check { color: var(--green); font-size: 16px; flex-shrink: 0; }
+
+.btn-plan {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.btn-plan-free {
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-plan-free:hover { background: rgba(255,255,255,0.12); }
+
+.btn-plan-paid {
+  background: linear-gradient(135deg, var(--purple), var(--purple2));
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(123,47,190,0.4);
+}
+
+.btn-plan-paid:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(123,47,190,0.6); }
+
+.btn-plan-gold {
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  color: #000;
+  box-shadow: 0 8px 24px rgba(255,215,0,0.3);
+}
+
+.btn-plan-gold:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(255,215,0,0.5); }
+
+/* ════════════════════════════
+   TESTIMONIALS / TRUST
+════════════════════════════ */
+.trust-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 64px;
+}
+
+.trust-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+}
+
+.trust-stars { color: var(--gold); font-size: 18px; margin-bottom: 16px; }
+.trust-text { font-size: 15px; line-height: 1.7; color: var(--text); margin-bottom: 20px; font-style: italic; }
+
+.trust-author { display: flex; align-items: center; gap: 12px; }
+.trust-avatar {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: linear-gradient(135deg, var(--purple), var(--cyan));
+}
+
+.trust-name { font-size: 14px; font-weight: 700; }
+.trust-role { font-size: 12px; color: var(--muted); }
+
+/* ════════════════════════════
+   STATS BAR
+════════════════════════════ */
+.stats-bar {
+  background: linear-gradient(135deg, var(--card), var(--card2));
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 48px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  text-align: center;
+  margin: 60px 0;
+}
+
+.stat-val {
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: -2px;
+  background: linear-gradient(135deg, var(--gold), var(--purple2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-lbl { font-size: 14px; color: var(--muted); margin-top: 6px; }
+
+/* ════════════════════════════
+   MODALS — AUTH + DASHBOARD
+════════════════════════════ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.overlay.show { display: flex; }
+
+.modal {
+  background: var(--dark3);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 40px;
+  width: 100%;
+  max-width: 460px;
+  position: relative;
+  animation: modalIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.9) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px; right: 20px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+  transition: color 0.2s;
+  line-height: 1;
+}
+
+.modal-close:hover { color: var(--text); }
+
+.modal-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.modal-logo-icon {
+  width: 56px; height: 56px;
+  background: linear-gradient(135deg, var(--purple), var(--cyan));
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  margin: 0 auto 12px;
+}
+
+.modal-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+.modal-sub { font-size: 14px; color: var(--muted); }
+
+.form-group { margin-bottom: 18px; }
+
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-input:focus { border-color: var(--purple2); }
+.form-input::placeholder { color: rgba(136,136,153,0.6); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.btn-form {
+  width: 100%;
+  padding: 15px;
+  background: linear-gradient(135deg, var(--purple), var(--purple2));
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+  box-shadow: 0 8px 24px rgba(123,47,190,0.4);
+}
+
+.btn-form:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(123,47,190,0.6); }
+.btn-form:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.form-switch {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.form-switch a { color: var(--purple2); cursor: pointer; text-decoration: none; font-weight: 600; }
+.form-switch a:hover { color: var(--gold); }
+
+.form-error {
+  padding: 12px 16px;
+  background: rgba(255,68,102,0.1);
+  border: 1px solid rgba(255,68,102,0.3);
+  border-radius: 10px;
+  color: var(--red);
+  font-size: 14px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.form-success {
+  padding: 12px 16px;
+  background: rgba(0,255,136,0.1);
+  border: 1px solid rgba(0,255,136,0.3);
+  border-radius: 10px;
+  color: var(--green);
+  font-size: 14px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+/* ════════════════════════════
+   DASHBOARD MODAL
+════════════════════════════ */
+.dash-modal {
+  max-width: 700px;
+  padding: 32px;
+}
+
+.dash-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-avatar {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--purple), var(--cyan));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.dash-name { font-size: 20px; font-weight: 800; }
+.dash-email { font-size: 13px; color: var(--muted); }
+
+.plan-pill {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.plan-pill.free { background: rgba(136,136,153,0.2); color: var(--muted); }
+.plan-pill.starter { background: rgba(0,245,255,0.15); color: var(--cyan); }
+.plan-pill.pro { background: rgba(123,47,190,0.25); color: var(--purple2); }
+.plan-pill.enterprise { background: rgba(255,215,0,0.15); color: var(--gold); }
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.dash-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.dash-card-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.dash-card-val {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -1px;
+}
+
+.usage-bar-wrap {
+  background: rgba(255,255,255,0.06);
+  border-radius: 100px;
+  height: 8px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.usage-bar {
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, var(--purple), var(--cyan));
+  transition: width 1s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.usage-bar.danger { background: linear-gradient(90deg, var(--gold2), var(--red)); }
+
+.api-key-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.api-key-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.key-status { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse-dot 2s ease infinite; }
+
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.api-key-display {
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--cyan);
+  background: rgba(0,245,255,0.05);
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,245,255,0.15);
+  word-break: break-all;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.api-key-display:hover { background: rgba(0,245,255,0.1); }
+
+.key-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.btn-key-action {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+}
+
+.btn-key-action:hover { background: rgba(255,255,255,0.1); border-color: var(--purple2); }
+
+.btn-upgrade-dash {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--gold), var(--gold2));
+  color: #000;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 8px 24px rgba(255,215,0,0.3);
+}
+
+.btn-upgrade-dash:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(255,215,0,0.5); }
+
+.btn-logout {
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid rgba(255,68,102,0.3);
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: all 0.2s;
+}
+
+.btn-logout:hover { background: rgba(255,68,102,0.1); }
+
+/* ── UPGRADE PLAN PICKER ── */
+.plan-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.plan-pick-card {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.plan-pick-card:hover { border-color: var(--purple2); }
+.plan-pick-card.selected { border-color: var(--gold); background: rgba(255,215,0,0.05); }
+
+.plan-pick-name { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.plan-pick-price { font-size: 20px; font-weight: 900; color: var(--gold); }
+.plan-pick-calls { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ════════════════════════════
+   CTA SECTION
+════════════════════════════ */
+.cta-section {
+  background: linear-gradient(135deg, rgba(123,47,190,0.2), rgba(0,245,255,0.08));
+  border: 1px solid var(--border);
+  border-radius: 32px;
+  padding: 80px;
+  text-align: center;
+  margin: 40px 0 100px;
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-section::before {
+  content: '⚡';
+  position: absolute;
+  font-size: 300px;
+  opacity: 0.03;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.cta-title { font-size: clamp(32px, 5vw, 52px); font-weight: 900; letter-spacing: -2px; margin-bottom: 20px; }
+.cta-sub { font-size: 18px; color: var(--muted); margin-bottom: 40px; }
+
+/* ════════════════════════════
+   FOOTER
+════════════════════════════ */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 48px 0 32px;
+  position: relative;
+  z-index: 1;
+}
+
+.footer-inner {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+  margin-bottom: 48px;
+}
+
+.footer-brand p { font-size: 14px; color: var(--muted); line-height: 1.7; margin-top: 16px; }
+
+.footer-col-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 20px; }
+
+.footer-links { list-style: none; }
+.footer-links li { margin-bottom: 10px; }
+.footer-links a { color: var(--muted); text-decoration: none; font-size: 14px; transition: color 0.2s; }
+.footer-links a:hover { color: var(--text); }
+
+.footer-bottom {
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ════════════════════════════
+   ANIMATIONS
+════════════════════════════ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ════════════════════════════
+   TOAST
+════════════════════════════ */
+.toast {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  padding: 14px 24px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 9999;
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  max-width: 300px;
+}
+
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: rgba(0,255,136,0.4); color: var(--green); }
+.toast.error { border-color: rgba(255,68,102,0.4); color: var(--red); }
+.toast.info { border-color: rgba(0,245,255,0.4); color: var(--cyan); }
+
+/* ════════════════════════════
+   RESPONSIVE
+════════════════════════════ */
+@media (max-width: 1024px) {
+  .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+  .features-grid { grid-template-columns: repeat(2, 1fr); }
+  .footer-inner { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 768px) {
+  .hero-inner { grid-template-columns: 1fr; gap: 48px; }
+  .hero-visual { order: -1; }
+  .stew-avatar-container { max-width: 280px; }
+  .pricing-grid { grid-template-columns: 1fr; }
+  .pricing-card.popular { transform: none; }
+  .steps { grid-template-columns: repeat(2, 1fr); }
+  .steps::before { display: none; }
+  .trust-grid { grid-template-columns: 1fr; }
+  .features-grid { grid-template-columns: 1fr; }
+  .stats-bar { grid-template-columns: repeat(2, 1fr); padding: 32px; }
+  .nav-links { display: none; }
+  .cta-section { padding: 48px 24px; }
+  .endpoints-grid { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .footer-inner { grid-template-columns: 1fr; gap: 32px; }
+  .form-row { grid-template-columns: 1fr; }
+  .modal { padding: 28px 20px; }
+}
+
+/* ════════════════════════════
+   LOADING SPINNER
+════════════════════════════ */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+/* ════════════════════════════
+   PARTICLES
+════════════════════════════ */
+#particles-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<canvas id="particles-canvas"></canvas>
+
+<!-- ══════════════════════════ NAV ══════════════════════════ -->
+<nav>
+  <div class="container">
+    <div class="nav-inner">
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div class="logo-text">S.T.E.W <span>API</span></div>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#endpoints">Endpoints</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#docs">Docs</a></li>
+      </ul>
+      <div class="nav-cta">
+        <button class="btn-nav-login" onclick="showLogin()">Login</button>
+        <button class="btn-nav-signup" onclick="showRegister()">Get API Key →</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ══════════════════════════ HERO ══════════════════════════ -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-left">
+        <div class="hero-badge">🌍 Built in Africa. Built for the World.</div>
+        <h1 class="hero-title">
+          The AI Infrastructure<br>
+          <span class="gradient-text">Africa Has Been</span><br>
+          <span class="cyan-text">Waiting For</span>
+        </h1>
+        <p class="hero-sub">
+          S.T.E.W API gives your app the power of 100 AI agents — research, code, browse, generate documents, analyze images and more. One API. Infinite possibilities.
+        </p>
+        <div class="hero-actions">
+          <button class="btn-primary" onclick="showRegister()">🚀 Start Free — Get API Key</button>
+          <button class="btn-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">
+            💎 View Pricing
+          </button>
+        </div>
+        <div class="hero-stats">
+          <div>
+            <div class="hero-stat-num">60+</div>
+            <div class="hero-stat-label">AI Skills</div>
+          </div>
+          <div>
+            <div class="hero-stat-num">11</div>
+            <div class="hero-stat-label">API Endpoints</div>
+          </div>
+          <div>
+            <div class="hero-stat-num">99.9%</div>
+            <div class="hero-stat-label">Uptime</div>
+          </div>
+        </div>
+        <div class="hero-code">
+          <div class="code-header">
+            <div class="code-dot code-dot-r"></div>
+            <div class="code-dot code-dot-y"></div>
+            <div class="code-dot code-dot-g"></div>
+            <span class="code-title">quick_start.py</span>
+          </div>
+          <div class="code-body">
+            <div><span class="code-comment"># 3 lines to unlock Africa's most powerful AI</span></div>
+            <div><span class="code-key">import</span> requests</div>
+            <div>&nbsp;</div>
+            <div>response = requests.<span class="code-key">post</span>(<span class="code-str">"https://superagent-55bc0d3a.base44.app/functions/stewAPIGateway"</span>,</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;json={<span class="code-str">"api_key"</span>: <span class="code-str">"stew_live_your_key"</span>,</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"action"</span>: <span class="code-str">"research"</span>,</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-str">"task"</span>: <span class="code-str">"Latest AI trends in Nigeria 2026"</span>})</div>
+            <div>&nbsp;</div>
+            <div><span class="code-key">print</span>(response.json()[<span class="code-str">"synthesis"</span>]) <span class="code-comment"># Deep research done.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="stew-avatar-container">
+          <div class="avatar-ring avatar-ring-1"></div>
+          <div class="avatar-ring avatar-ring-2"></div>
+          <div class="avatar-core">🤖</div>
+          <div class="floating-badges">
+            <div class="float-badge">🔍 Web Research</div>
+            <div class="float-badge">💻 Code Generation</div>
+            <div class="float-badge">📄 PDF & Documents</div>
+            <div class="float-badge">👁️ Vision & OCR</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ TICKER ══════════════════════════ -->
+<div class="ticker">
+  <div class="ticker-inner" id="tickerInner">
+    <span>⚡ Web Research</span>
+    <span>🧠 Deep Reasoning</span>
+    <span>💻 Code Generation</span>
+    <span>📄 PDF Creation</span>
+    <span>👁️ Image Analysis</span>
+    <span>🌐 Web Browsing</span>
+    <span>📊 Excel & Sheets</span>
+    <span>🎯 Sentiment Analysis</span>
+    <span>🌍 100+ Languages</span>
+    <span>📈 Finance & Stocks</span>
+    <span>⚡ Web Research</span>
+    <span>🧠 Deep Reasoning</span>
+    <span>💻 Code Generation</span>
+    <span>📄 PDF Creation</span>
+    <span>👁️ Image Analysis</span>
+    <span>🌐 Web Browsing</span>
+    <span>📊 Excel & Sheets</span>
+    <span>🎯 Sentiment Analysis</span>
+    <span>🌍 100+ Languages</span>
+    <span>📈 Finance & Stocks</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════ FEATURES ══════════════════════════ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="text-center">
+      <div class="section-label">⚡ What STEW Can Do</div>
+      <h2 class="section-title">One API.<br>100 AI Agents.</h2>
+      <p class="section-sub">Every capability you need to build the next generation of African AI products.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(0,245,255,0.1)">🔍</div>
+        <div class="feature-title">Deep Web Research</div>
+        <div class="feature-desc">Multi-source research that searches, scrapes, and synthesizes information from across the web into structured reports.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(123,47,190,0.15)">💻</div>
+        <div class="feature-title">Code Generation</div>
+        <div class="feature-desc">Generate production-ready code in Python, JavaScript, TypeScript, Rust and more using our Qwen-2.5 Coder model.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(255,215,0,0.1)">👁️</div>
+        <div class="feature-title">Vision & OCR</div>
+        <div class="feature-desc">Analyze images, extract text from photos, understand charts, and describe visual content with AI-powered vision.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(0,255,136,0.1)">📄</div>
+        <div class="feature-title">Document Generation</div>
+        <div class="feature-desc">Create professional PDFs, Word documents, Excel spreadsheets, and PowerPoint presentations programmatically.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(255,165,0,0.1)">🌐</div>
+        <div class="feature-title">Browser Automation</div>
+        <div class="feature-desc">Control a real Chromium browser to navigate websites, fill forms, take screenshots, and extract data automatically.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(255,68,102,0.1)">🌍</div>
+        <div class="feature-title">Multilingual AI</div>
+        <div class="feature-desc">Translate, understand, and generate content in Yoruba, Igbo, Hausa, Pidgin, French, Arabic and 100+ more languages.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ HOW IT WORKS ══════════════════════════ -->
+<section class="section" style="background:rgba(255,255,255,0.01);border-top:1px solid var(--border);border-bottom:1px solid var(--border);">
+  <div class="container">
+    <div class="text-center">
+      <div class="section-label">🛠️ Simple Integration</div>
+      <h2 class="section-title">Up and running<br>in 60 seconds</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">Create Account</div>
+        <div class="step-desc">Sign up free in seconds. No credit card required to start.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">Get API Key</div>
+        <div class="step-desc">Your unique stew_live_ key is generated instantly on registration.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">Make First Call</div>
+        <div class="step-desc">POST to our gateway with your key and task. Get results in seconds.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-title">Scale Up</div>
+        <div class="step-desc">Upgrade your plan when you need more calls. Zero downtime.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ ENDPOINTS ══════════════════════════ -->
+<section class="section" id="endpoints">
+  <div class="container">
+    <div class="text-center">
+      <div class="section-label">📡 API Reference</div>
+      <h2 class="section-title">11 Powerful<br>Endpoints</h2>
+      <p class="section-sub">All endpoints accept POST with your API key. One unified gateway, infinite power.</p>
+    </div>
+    <div id="docs" style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin:24px 0;font-family:monospace;font-size:13px;">
+      <div style="color:var(--muted);margin-bottom:8px;">Base URL</div>
+      <div style="color:var(--cyan)">https://superagent-55bc0d3a.base44.app/functions/stewAPIGateway</div>
+    </div>
+    <div class="endpoints-grid">
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "chat"</div><div class="endpoint-desc">Chat with S.T.E.W — general intelligence, Q&A, reasoning</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "research"</div><div class="endpoint-desc">Deep multi-source research with structured synthesis report</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "search"</div><div class="endpoint-desc">Real-time web search with source URLs and snippets</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "code"</div><div class="endpoint-desc">Generate code in any language with explanations</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "browse"</div><div class="endpoint-desc">Navigate any URL and extract structured information</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "translate"</div><div class="endpoint-desc">Translate text between 100+ languages including African</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "summarize"</div><div class="endpoint-desc">Summarize long documents, articles, or any text</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "sentiment"</div><div class="endpoint-desc">Analyze sentiment, emotions, and tone of any text</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "weather"</div><div class="endpoint-desc">Real-time weather data for any city worldwide</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "scrape"</div><div class="endpoint-desc">Extract clean structured content from any website</div></div></div>
+      <div class="endpoint-card"><div><div class="endpoint-method">POST</div></div><div><div class="endpoint-path">action: "pdf"</div><div class="endpoint-desc">Generate a professional PDF document from content</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ STATS ══════════════════════════ -->
+<div class="container">
+  <div class="stats-bar">
+    <div><div class="stat-val" id="counter-skills">60+</div><div class="stat-lbl">AI Skills Built-in</div></div>
+    <div><div class="stat-val" id="counter-models">6</div><div class="stat-lbl">AI Models Routing</div></div>
+    <div><div class="stat-val" id="counter-speed">&lt;2s</div><div class="stat-lbl">Avg Response Time</div></div>
+    <div><div class="stat-val" id="counter-africa">54</div><div class="stat-lbl">African Countries Served</div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ PRICING ══════════════════════════ -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="text-center">
+      <div class="section-label">💎 Simple Pricing</div>
+      <h2 class="section-title">Start Free.<br>Scale When Ready.</h2>
+      <p class="section-sub">No hidden fees. No surprises. Pay only for what you use. All prices in Nigerian Naira.</p>
+    </div>
+    <div class="pricing-grid">
+      <!-- FREE -->
+      <div class="pricing-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price"><span class="plan-currency">₦</span>0<span>/mo</span></div>
+        <div class="plan-period">Forever free — no card needed</div>
+        <div class="plan-calls"><div>📡</div><div><span class="calls-count">100</span> API calls/month</div></div>
+        <ul class="plan-features">
+          <li><span class="check">✓</span> All 11 endpoints</li>
+          <li><span class="check">✓</span> Unique API key</li>
+          <li><span class="check">✓</span> Basic chat & search</li>
+          <li><span class="check">✓</span> Developer dashboard</li>
+          <li style="color:rgba(136,136,153,0.5)"><span style="color:rgba(136,136,153,0.4)">✗</span> Priority processing</li>
+        </ul>
+        <button class="btn-plan btn-plan-free" onclick="showRegister()">Get Started Free</button>
+      </div>
+
+      <!-- STARTER -->
+      <div class="pricing-card popular">
+        <div class="plan-badge badge-popular">⭐ Most Popular</div>
+        <div class="plan-name">Starter</div>
+        <div class="plan-price"><span class="plan-currency">₦</span>5,000<span>/mo</span></div>
+        <div class="plan-period">Perfect for indie developers</div>
+        <div class="plan-calls"><div>📡</div><div><span class="calls-count">5,000</span> API calls/month</div></div>
+        <ul class="plan-features">
+          <li><span class="check">✓</span> All 11 endpoints</li>
+          <li><span class="check">✓</span> Priority processing</li>
+          <li><span class="check">✓</span> Research & browsing</li>
+          <li><span class="check">✓</span> Document generation</li>
+          <li><span class="check">✓</span> Email support</li>
+        </ul>
+        <button class="btn-plan btn-plan-paid" onclick="quickUpgrade('starter')">Pay ₦5,000 → Unlock</button>
+      </div>
+
+      <!-- PRO -->
+      <div class="pricing-card">
+        <div class="plan-badge badge-value">🔥 Best Value</div>
+        <div class="plan-name">Pro</div>
+        <div class="plan-price"><span class="plan-currency">₦</span>15,000<span>/mo</span></div>
+        <div class="plan-period">For startups & small teams</div>
+        <div class="plan-calls"><div>📡</div><div><span class="calls-count">50,000</span> API calls/month</div></div>
+        <ul class="plan-features">
+          <li><span class="check">✓</span> All 11 endpoints</li>
+          <li><span class="check">✓</span> Fastest processing</li>
+          <li><span class="check">✓</span> 100-Agent deployment</li>
+          <li><span class="check">✓</span> Vision & OCR access</li>
+          <li><span class="check">✓</span> Priority support</li>
+        </ul>
+        <button class="btn-plan btn-plan-paid" onclick="quickUpgrade('pro')">Pay ₦15,000 → Unlock</button>
+      </div>
+
+      <!-- ENTERPRISE -->
+      <div class="pricing-card enterprise-card">
+        <div class="plan-badge badge-power">👑 Unlimited Power</div>
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-price"><span class="plan-currency">₦</span>45,000<span>/mo</span></div>
+        <div class="plan-period">For companies & enterprises</div>
+        <div class="plan-calls"><div>📡</div><div><span class="calls-count">1,000,000</span> API calls/month</div></div>
+        <ul class="plan-features">
+          <li><span class="check">✓</span> Everything in Pro</li>
+          <li><span class="check">✓</span> Dedicated processing</li>
+          <li><span class="check">✓</span> Custom model fine-tuning</li>
+          <li><span class="check">✓</span> SLA guarantee</li>
+          <li><span class="check">✓</span> WhatsApp support</li>
+        </ul>
+        <button class="btn-plan btn-plan-gold" onclick="quickUpgrade('enterprise')">Pay ₦45,000 → Unlock</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ TRUST ══════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="text-center">
+      <div class="section-label">❤️ Developer Love</div>
+      <h2 class="section-title">Built for African<br>Developers</h2>
+    </div>
+    <div class="trust-grid">
+      <div class="trust-card">
+        <div class="trust-stars">★★★★★</div>
+        <div class="trust-text">"Finally an AI API that understands our context. STEW gave me research on the Nigerian fintech market that no other API could match."</div>
+        <div class="trust-author"><div class="trust-avatar">🧑🏿</div><div><div class="trust-name">Emeka O.</div><div class="trust-role">Fintech Developer, Lagos</div></div></div>
+      </div>
+      <div class="trust-card">
+        <div class="trust-stars">★★★★★</div>
+        <div class="trust-text">"The code generation is insane. I built a full Paystack integration in 10 minutes using the STEW API. This is the future."</div>
+        <div class="trust-author"><div class="trust-avatar">👩🏾</div><div><div class="trust-name">Amina K.</div><div class="trust-role">Backend Engineer, Abuja</div></div></div>
+      </div>
+      <div class="trust-card">
+        <div class="trust-stars">★★★★★</div>
+        <div class="trust-text">"STEW translated my app to Yoruba and Igbo in one API call. No other service even supports African languages properly."</div>
+        <div class="trust-author"><div class="trust-avatar">🧑🏾</div><div><div class="trust-name">Taiwo A.</div><div class="trust-role">Mobile Developer, Ibadan</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ CTA ══════════════════════════ -->
+<div class="container">
+  <div class="cta-section">
+    <div class="section-label" style="justify-content:center">🚀 Get Started Today</div>
+    <h2 class="cta-title">Your Billion Dollar App<br>Starts With One API Call</h2>
+    <p class="cta-sub">Join developers across Africa building the future with S.T.E.W</p>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn-primary" style="font-size:18px;padding:20px 40px;" onclick="showRegister()">🚀 Get Free API Key Now</button>
+      <button class="btn-secondary" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">💎 View All Plans</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ FOOTER ══════════════════════════ -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="logo"><div class="logo-icon">⚡</div><div class="logo-text">S.T.E.W <span>API</span></div></div>
+        <p>Africa's most powerful AI agent infrastructure. Built by MUTYINT — Emmanuel Ene Rejoice Gideon.</p>
+      </div>
+      <div>
+        <div class="footer-col-title">Product</div>
+        <ul class="footer-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#endpoints">API Docs</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#" onclick="showRegister()">Get API Key</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Company</div>
+        <ul class="footer-links">
+          <li><a href="#">About MUTYINT</a></li>
+          <li><a href="#">OminiAssist AI</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Legal</div>
+        <ul class="footer-links">
+          <li><a href="#">Terms of Service</a></li>
+          <li><a href="#">Privacy Policy</a></li>
+          <li><a href="#">API Usage Policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div>© 2026 MUTYINT — S.T.E.W API. All rights reserved.</div>
+      <div>Made with ❤️ in Nigeria 🇳🇬</div>
+    </div>
+  </div>
+</footer>
+
+<!-- ════════════════════════════════════════════════════════
+     MODALS
+════════════════════════════════════════════════════════ -->
+
+<!-- REGISTER -->
+<div class="overlay" id="registerOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('registerOverlay')">✕</button>
+    <div class="modal-logo">
+      <div class="modal-logo-icon">⚡</div>
+      <div class="modal-title">Create Developer Account</div>
+      <div class="modal-sub">Get your free API key in seconds</div>
+    </div>
+    <div class="form-error" id="regError"></div>
+    <div class="form-success" id="regSuccess"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" id="regName" placeholder="Emmanuel Gideon" type="text"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Company (optional)</label>
+        <input class="form-input" id="regCompany" placeholder="MUTYINT" type="text"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input class="form-input" id="regEmail" placeholder="dev@yourcompany.com" type="email"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="regPassword" placeholder="Min 8 characters" type="password"/>
+    </div>
+    <button class="btn-form" id="regBtn" onclick="doRegister()">🚀 Create Account & Get API Key</button>
+    <div class="form-switch">Already have an account? <a onclick="switchModal('registerOverlay','loginOverlay')">Sign In</a></div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div class="overlay" id="loginOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('loginOverlay')">✕</button>
+    <div class="modal-logo">
+      <div class="modal-logo-icon">⚡</div>
+      <div class="modal-title">Welcome Back</div>
+      <div class="modal-sub">Sign in to your developer account</div>
+    </div>
+    <div class="form-error" id="loginError"></div>
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input class="form-input" id="loginEmail" placeholder="dev@yourcompany.com" type="email"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="loginPassword" placeholder="Your password" type="password" onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <button class="btn-form" id="loginBtn" onclick="doLogin()">🔓 Sign In</button>
+    <div class="form-switch">New developer? <a onclick="switchModal('loginOverlay','registerOverlay')">Create free account</a></div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="overlay" id="dashOverlay">
+  <div class="modal dash-modal">
+    <button class="modal-close" onclick="closeModal('dashOverlay')">✕</button>
+    <div class="dash-header">
+      <div class="dash-avatar">👨‍💻</div>
+      <div>
+        <div class="dash-name" id="dashName">Developer</div>
+        <div class="dash-email" id="dashEmail">—</div>
+      </div>
+      <div class="plan-pill" id="dashPlanPill">FREE</div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dash-card">
+        <div class="dash-card-label">API Calls Used</div>
+        <div class="dash-card-val" id="dashUsed">0</div>
+        <div class="usage-bar-wrap"><div class="usage-bar" id="dashUsageBar" style="width:0%"></div></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px"><span id="dashRemaining">100</span> calls remaining</div>
+      </div>
+      <div class="dash-card">
+        <div class="dash-card-label">Plan Limit</div>
+        <div class="dash-card-val" id="dashLimit">100</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">
+          Expires: <span id="dashExpires">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="api-key-box">
+      <div class="api-key-label"><div class="key-status"></div> Your API Key — Click to copy</div>
+      <div class="api-key-display" id="dashApiKey" onclick="copyKey()" title="Click to copy">stew_live_••••••••••••</div>
+      <div class="key-actions">
+        <button class="btn-key-action" onclick="copyKey()">📋 Copy Key</button>
+        <button class="btn-key-action" onclick="rotateKey()">🔄 Rotate Key</button>
+        <button class="btn-key-action" onclick="showUpgradePanel()">⬆️ Upgrade</button>
+      </div>
+    </div>
+
+    <!-- Upgrade panel -->
+    <div id="upgradePanel" style="display:none;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Select Plan to Upgrade</div>
+      <div class="plan-picker">
+        <div class="plan-pick-card" onclick="selectPlan('starter',this)">
+          <div class="plan-pick-name">Starter</div>
+          <div class="plan-pick-price">₦5,000</div>
+          <div class="plan-pick-calls">5,000 calls</div>
+        </div>
+        <div class="plan-pick-card" onclick="selectPlan('pro',this)">
+          <div class="plan-pick-name">Pro</div>
+          <div class="plan-pick-price">₦15,000</div>
+          <div class="plan-pick-calls">50,000 calls</div>
+        </div>
+        <div class="plan-pick-card" onclick="selectPlan('enterprise',this)">
+          <div class="plan-pick-name">Enterprise</div>
+          <div class="plan-pick-price">₦45,000</div>
+          <div class="plan-pick-calls">1M calls</div>
+        </div>
+      </div>
+      <button class="btn-upgrade-dash" id="payBtn" onclick="initiatePayment()" disabled>Select a plan above</button>
+    </div>
+
+    <button class="btn-logout" onclick="doLogout()">← Sign Out</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ════════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════ -->
+<script>
+// ─── CONFIG ───
+const AUTH_URL     = 'https://superagent-55bc0d3a.base44.app/functions/stewAuth';
+const PAYMENT_URL  = 'https://superagent-55bc0d3a.base44.app/functions/stewPayment';
+const PAYSTACK_PK  = 'pk_live_b73d27d70e64ebb36f0c2f2b79cb39f4ba5da3bf';
+
+// ─── STATE ───
+let currentDev = null;
+let selectedPlanKey = null;
+
+// ─── SESSION ───
+function saveDev(d) { currentDev = d; try { localStorage.setItem('stew_dev', JSON.stringify(d)); } catch(e){} }
+function loadDev() {
+  try { const d = JSON.parse(localStorage.getItem('stew_dev')); if(d && d.api_key) { currentDev = d; return d; } } catch(e){}
+  return null;
+}
+function clearDev() { currentDev = null; try { localStorage.removeItem('stew_dev'); } catch(e){} }
+
+// ─── TOAST ───
+function toast(msg, type='info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type} show`;
+  setTimeout(() => el.className = 'toast', 3200);
+}
+
+// ─── MODALS ───
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function switchModal(from, to) { closeModal(from); showModal(to); }
+
+function showLogin() {
+  const d = loadDev();
+  if (d) { openDash(d); return; }
+  showModal('loginOverlay');
+}
+
+function showRegister() { showModal('registerOverlay'); }
+
+function setLoading(btnId, loading, label='') {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.innerHTML = loading ? `<span class="spinner"></span> Processing...` : label;
+}
+
+// ─── REGISTER ───
+async function doRegister() {
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const company = document.getElementById('regCompany').value.trim();
+  const errEl = document.getElementById('regError');
+  const sucEl = document.getElementById('regSuccess');
+
+  errEl.style.display = 'none';
+  sucEl.style.display = 'none';
+
+  if (!name || !email || !password) { errEl.textContent = 'Please fill all required fields.'; errEl.style.display = 'block'; return; }
+  if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.style.display = 'block'; return; }
+
+  setLoading('regBtn', true);
+  try {
+    const res = await fetch(AUTH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'register', full_name: name, email, password, company })
+    });
+    const data = await res.json();
+    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; setLoading('regBtn', false, '🚀 Create Account & Get API Key'); return; }
+
+    saveDev(data.developer);
+    sucEl.textContent = '🎉 Account created! Loading your dashboard...';
+    sucEl.style.display = 'block';
+    setTimeout(() => { closeModal('registerOverlay'); openDash(data.developer); }, 1200);
+  } catch(e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.style.display = 'block';
+    setLoading('regBtn', false, '🚀 Create Account & Get API Key');
+  }
+}
+
+// ─── LOGIN ───
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+
+  if (!email || !password) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+
+  setLoading('loginBtn', true);
+  try {
+    const res = await fetch(AUTH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', email, password })
+    });
+    const data = await res.json();
+    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; setLoading('loginBtn', false, '🔓 Sign In'); return; }
+
+    saveDev(data.developer);
+    closeModal('loginOverlay');
+    openDash(data.developer);
+  } catch(e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.style.display = 'block';
+    setLoading('loginBtn', false, '🔓 Sign In');
+  }
+}
+
+// ─── DASHBOARD ───
+function openDash(dev) {
+  currentDev = dev;
+  document.getElementById('dashName').textContent = dev.full_name;
+  document.getElementById('dashEmail').textContent = dev.email;
+  document.getElementById('dashApiKey').textContent = dev.api_key;
+
+  const used = dev.api_calls_used || 0;
+  const limit = dev.api_calls_limit || 100;
+  const pct = Math.min(Math.round((used/limit)*100), 100);
+
+  document.getElementById('dashUsed').textContent = used.toLocaleString();
+  document.getElementById('dashLimit').textContent = limit.toLocaleString();
+  document.getElementById('dashRemaining').textContent = Math.max(0, limit - used).toLocaleString();
+
+  const bar = document.getElementById('dashUsageBar');
+  bar.style.width = '0%';
+  setTimeout(() => { bar.style.width = pct + '%'; }, 100);
+  if (pct > 75) bar.classList.add('danger');
+  else bar.classList.remove('danger');
+
+  const pill = document.getElementById('dashPlanPill');
+  pill.textContent = (dev.plan || 'free').toUpperCase();
+  pill.className = `plan-pill ${dev.plan || 'free'}`;
+
+  if (dev.plan_expires) {
+    const exp = new Date(dev.plan_expires);
+    document.getElementById('dashExpires').textContent = exp.toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' });
+  } else {
+    document.getElementById('dashExpires').textContent = 'Never';
+  }
+
+  document.getElementById('upgradePanel').style.display = 'none';
+  selectedPlanKey = null;
+  showModal('dashOverlay');
+
+  // Update nav
+  document.querySelector('.btn-nav-login').textContent = '👨‍💻 Dashboard';
+  document.querySelector('.btn-nav-login').onclick = () => openDash(currentDev);
+  document.querySelector('.btn-nav-signup').textContent = '⬆️ Upgrade Plan';
+  document.querySelector('.btn-nav-signup').onclick = () => { openDash(currentDev); setTimeout(showUpgradePanel, 300); };
+}
+
+function doLogout() { clearDev(); closeModal('dashOverlay'); toast('Signed out successfully.', 'info'); location.reload(); }
+
+// ─── API KEY ACTIONS ───
+function copyKey() {
+  const key = currentDev?.api_key || document.getElementById('dashApiKey').textContent;
+  navigator.clipboard.writeText(key).then(() => toast('✅ API key copied to clipboard!', 'success'));
+}
+
+async function rotateKey() {
+  if (!confirm('Rotate your API key? Your old key will stop working immediately.')) return;
+  try {
+    const res = await fetch(AUTH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rotate_key', api_key: currentDev.api_key })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentDev.api_key = data.new_api_key;
+      saveDev(currentDev);
+      document.getElementById('dashApiKey').textContent = data.new_api_key;
+      toast('🔄 API key rotated! Copy your new key.', 'success');
+    } else { toast('Failed: ' + data.error, 'error'); }
+  } catch(e) { toast('Network error', 'error'); }
+}
+
+// ─── UPGRADE ───
+function showUpgradePanel() { document.getElementById('upgradePanel').style.display = 'block'; }
+
+function selectPlan(plan, el) {
+  document.querySelectorAll('.plan-pick-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedPlanKey = plan;
+  const payBtn = document.getElementById('payBtn');
+  const prices = { starter: '₦5,000', pro: '₦15,000', enterprise: '₦45,000' };
+  payBtn.disabled = false;
+  payBtn.textContent = `💳 Pay ${prices[plan]} with Paystack`;
+}
+
+function quickUpgrade(plan) {
+  const dev = loadDev();
+  if (!dev) { showLogin(); return; }
+  openDash(dev);
+  setTimeout(() => {
+    showUpgradePanel();
+    const card = document.querySelector(`.plan-pick-card:nth-child(${plan==='starter'?1:plan==='pro'?2:3})`);
+    if (card) selectPlan(plan, card);
+  }, 400);
+}
+
+async function initiatePayment() {
+  if (!selectedPlanKey || !currentDev) { toast('Please select a plan first.', 'error'); return; }
+
+  const payBtn = document.getElementById('payBtn');
+  payBtn.disabled = true;
+  payBtn.innerHTML = '<span class="spinner"></span> Initializing...';
+
+  try {
+    const res = await fetch(PAYMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'initialize', email: currentDev.email, plan: selectedPlanKey, developer_id: currentDev.id })
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      toast('Payment error: ' + data.error, 'error');
+      payBtn.disabled = false;
+      payBtn.textContent = 'Try Again';
+      return;
+    }
+
+    // Open Paystack inline
+    const handler = PaystackPop.setup({
+      key: PAYSTACK_PK,
+      email: currentDev.email,
+      amount: data.plan.price_ngn * 100,
+      currency: 'NGN',
+      ref: data.reference,
+      metadata: { developer_id: currentDev.id, plan: selectedPlanKey },
+      callback: async function(response) {
+        toast('✅ Payment successful! Upgrading your account...', 'success');
+        await verifyPayment(response.reference);
+      },
+      onClose: function() {
+        toast('Payment cancelled.', 'info');
+        payBtn.disabled = false;
+        const prices = { starter: '₦5,000', pro: '₦15,000', enterprise: '₦45,000' };
+        payBtn.textContent = `💳 Pay ${prices[selectedPlanKey]} with Paystack`;
+      }
+    });
+    handler.openIframe();
+
+  } catch(e) {
+    toast('Network error. Please try again.', 'error');
+    payBtn.disabled = false;
+  }
+}
+
+async function verifyPayment(reference) {
+  try {
+    const res = await fetch(PAYMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'verify', reference, developer_id: currentDev.id })
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentDev.plan = selectedPlanKey;
+      currentDev.api_calls_limit = data.calls_limit;
+      currentDev.api_calls_used = 0;
+      currentDev.payment_status = 'active';
+      currentDev.plan_expires = data.expires;
+      saveDev(currentDev);
+      openDash(currentDev);
+      toast(`🎉 Welcome to ${selectedPlanKey.charAt(0).toUpperCase() + selectedPlanKey.slice(1)}! Your API is now supercharged.`, 'success');
+    } else {
+      toast('Verification failed. Contact support with ref: ' + reference, 'error');
+    }
+  } catch(e) {
+    toast('Verification error. Save this ref: ' + reference, 'error');
+  }
+}
+
+// ─── AUTO LOGIN CHECK ───
+window.addEventListener('DOMContentLoaded', () => {
+  const dev = loadDev();
+  if (dev) {
+    document.querySelector('.btn-nav-login').textContent = '👨‍💻 Dashboard';
+    document.querySelector('.btn-nav-login').onclick = () => openDash(dev);
+    document.querySelector('.btn-nav-signup').textContent = '⬆️ Upgrade Plan';
+    document.querySelector('.btn-nav-signup').onclick = () => openDash(dev);
+  }
+
+  // Close overlays on backdrop click
+  document.querySelectorAll('.overlay').forEach(ol => {
+    ol.addEventListener('click', e => { if (e.target === ol) ol.classList.remove('show'); });
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.overlay.show').forEach(o => o.classList.remove('show')); });
+
+  // Particle system
+  initParticles();
+});
+
+// ─── PARTICLES ───
+function initParticles() {
+  const canvas = document.getElementById('particles-canvas');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width = window.innerWidth;
+  let H = canvas.height = window.innerHeight;
+  window.addEventListener('resize', () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; });
+
+  const particles = Array.from({length: 60}, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.4,
+    vy: (Math.random() - 0.5) * 0.4,
+    r: Math.random() * 1.5 + 0.5,
+    alpha: Math.random() * 0.5 + 0.1,
+    color: ['rgba(123,47,190,', 'rgba(0,245,255,', 'rgba(255,215,0,'][Math.floor(Math.random() * 3)]
+  }));
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.color + p.alpha + ')';
+      ctx.fill();
+    });
+
+    // Draw connections
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(123,47,190,${0.08 * (1 - dist/120)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+</script>
+</body>
+</html>

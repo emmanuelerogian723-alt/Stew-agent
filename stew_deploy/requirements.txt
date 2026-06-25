@@ -1,0 +1,47 @@
+# S.T.E.W — Secret Task Execution Worker
+# Render Docker — SAFE packages only (no Rust, no C compilation)
+# Last verified: 2026-06-25
+
+# ── Web Server ──
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# ── HTTP & Scraping ──
+requests==2.32.2
+httpx==0.27.0
+aiohttp==3.9.5
+beautifulsoup4==4.12.3
+lxml==5.2.2
+
+# ── AI Providers ──
+openai==1.30.1
+groq==0.8.0
+
+# ── Vision ──
+Pillow==10.3.0
+pytesseract==0.3.10
+
+# ── Document Generation ──
+python-docx==1.1.2
+PyPDF2==3.0.1
+openpyxl==3.1.4
+
+# ── Search ──
+wikipedia==1.4.0
+
+# ── Utilities ──
+python-dotenv==1.0.1
+pydantic==2.7.1
+loguru==0.7.2
+
+# ── Language & NLP ──
+deep-translator==1.11.4
+langdetect==1.0.9
+
+# ── Scheduling ──
+schedule==1.2.2
+
+# ── Security & Rate Limiting ──
+slowapi==0.1.9
+limits==3.13.0

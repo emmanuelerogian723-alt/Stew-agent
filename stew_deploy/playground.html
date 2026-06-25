@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S.T.E.W Playground — Test Before You Build</title>
+<style>
+:root {
+  --bg:#0a0a0f;--surface:#111118;--card:#16161f;--border:#2a2a3a;
+  --accent:#7c3aed;--accent2:#06b6d4;--accent3:#f59e0b;
+  --green:#10b981;--red:#ef4444;--text:#e2e8f0;--muted:#64748b;
+  --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono','Fira Code',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden;}
+.bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(124,58,237,.04)1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04)1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
+.bg-glow{position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:400px;background:radial-gradient(ellipse,rgba(124,58,237,.15)0%,transparent 70%);pointer-events:none;z-index:0;}
+header{position:relative;z-index:10;border-bottom:1px solid var(--border);background:rgba(10,10,15,.95);backdrop-filter:blur(20px);padding:0 2rem;}
+.header-inner{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px;}
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none;}
+.logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff;}
+.logo-text{font-weight:700;font-size:1rem;}
+.logo-text span{color:var(--accent);}
+.hbadge{display:flex;align-items:center;gap:8px;}
+.badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.5px;}
+.badge-p{background:rgba(124,58,237,.2);color:#a78bfa;border:1px solid rgba(124,58,237,.3);}
+.badge-g{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);}
+.sdot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.hero{position:relative;z-index:5;text-align:center;padding:3rem 2rem 2rem;}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:20px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);font-size:12px;color:#a78bfa;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:1.5rem;}
+.hero h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:900;line-height:1.1;margin-bottom:1rem;background:linear-gradient(135deg,#fff 0%,#a78bfa 50%,#06b6d4 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.hero p{color:var(--muted);font-size:1.05rem;max-width:580px;margin:0 auto 2rem;line-height:1.6;}
+.hero-stats{display:flex;justify-content:center;gap:3rem;flex-wrap:wrap;margin-bottom:.5rem;}
+.stat{text-align:center;}
+.stat-num{font-size:2rem;font-weight:900;color:var(--accent);font-family:var(--mono);}
+.stat-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+.main{position:relative;z-index:5;max-width:1400px;margin:0 auto;padding:0 1.5rem 3rem;display:grid;grid-template-columns:270px 1fr;gap:1.5rem;}
+.sidebar{display:flex;flex-direction:column;gap:1rem;}
+.sb-card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.sb-title{padding:12px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);}
+.ep-list{padding:8px;}
+.ep-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:all .15s;margin-bottom:2px;border:1px solid transparent;}
+.ep-item:hover{background:rgba(124,58,237,.08);}
+.ep-item.active{background:rgba(124,58,237,.18);border-color:rgba(124,58,237,.4);}
+.ep-method{font-size:9px;font-weight:800;font-family:var(--mono);padding:2px 5px;border-radius:4px;min-width:32px;text-align:center;}
+.ep-post{background:rgba(124,58,237,.3);color:#a78bfa;}
+.ep-get{background:rgba(16,185,129,.2);color:#34d399;}
+.ep-name{font-size:11px;color:var(--text);font-family:var(--mono);flex:1;}
+.ep-desc{font-size:9px;color:var(--muted);}
+.ep-tag{font-size:9px;padding:1px 5px;border-radius:10px;font-weight:600;}
+.tag-fast{background:rgba(16,185,129,.15);color:#34d399;}
+.tag-power{background:rgba(245,158,11,.15);color:#fbbf24;}
+.tag-vision{background:rgba(6,182,212,.15);color:#22d3ee;}
+.q-list{padding:8px;}
+.q-btn{display:block;width:100%;padding:8px 12px;margin-bottom:4px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;cursor:pointer;text-align:left;color:var(--text);font-size:11px;transition:all .15s;font-family:var(--font);}
+.q-btn:hover{background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.4);color:#a78bfa;}
+.panel{display:flex;flex-direction:column;gap:1.5rem;}
+.metrics-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;}
+.met-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;}
+.met-num{font-size:1.5rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.met-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:4px;}
+.pcard{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
+.pcard-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);}
+.pcard-title{display:flex;align-items:center;gap:10px;font-weight:700;font-size:.9rem;}
+.pcard-icon{width:26px;height:26px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;}
+.url-bar{display:flex;align-items:center;margin:14px 20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.url-meth{padding:10px 14px;background:rgba(124,58,237,.2);color:#a78bfa;font-weight:800;font-size:12px;font-family:var(--mono);border-right:1px solid var(--border);white-space:nowrap;}
+.url-path{flex:1;padding:10px 14px;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--mono);font-size:12px;}
+.body-sec{padding:0 20px 14px;}
+.sec-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.req-editor{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.ed-tabs{display:flex;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);}
+.ed-tab{padding:8px 14px;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.ed-tab.active{color:var(--accent);border-color:var(--accent);}
+textarea.code-in{width:100%;min-height:110px;background:transparent;border:none;outline:none;color:#a5f3fc;font-family:var(--mono);font-size:12px;padding:14px;resize:vertical;line-height:1.6;}
+.run-sec{padding:0 20px 18px;display:flex;align-items:center;gap:10px;}
+.btn-run{display:flex;align-items:center;gap:8px;padding:11px 26px;background:linear-gradient(135deg,var(--accent),#6d28d9);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;transition:all .2s;font-family:var(--font);box-shadow:0 4px 20px rgba(124,58,237,.4);}
+.btn-run:hover{transform:translateY(-1px);box-shadow:0 6px 30px rgba(124,58,237,.6);}
+.btn-run.loading{opacity:.7;pointer-events:none;}
+.btn-clr{padding:11px 18px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:10px;color:var(--muted);cursor:pointer;font-family:var(--font);transition:all .15s;font-size:.82rem;}
+.btn-clr:hover{background:rgba(255,255,255,.08);color:var(--text);}
+.rtime{font-size:12px;color:var(--muted);font-family:var(--mono);margin-left:auto;}
+.rtime.fast{color:var(--green);}
+.rtime.med{color:var(--accent3);}
+.res-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
+.res-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);}
+.sc{padding:3px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;}
+.sc-ok{background:rgba(16,185,129,.2);color:#34d399;}
+.sc-err{background:rgba(239,68,68,.2);color:#f87171;}
+.sc-pend{background:rgba(100,116,139,.2);color:var(--muted);}
+.ldots{display:none;align-items:center;gap:6px;padding:18px 20px;}
+.ldots.on{display:flex;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:bounce 1.4s infinite ease-in-out;}
+.dot:nth-child(1){animation-delay:0s;}
+.dot:nth-child(2){animation-delay:.2s;}
+.dot:nth-child(3){animation-delay:.4s;}
+@keyframes bounce{0%,80%,100%{transform:scale(.8);opacity:.5}40%{transform:scale(1.2);opacity:1}}
+.ltext{font-size:12px;color:var(--muted);font-family:var(--mono);}
+.res-body{padding:18px 20px;font-family:var(--mono);font-size:12px;line-height:1.7;color:#a5f3fc;min-height:140px;max-height:380px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}
+.res-body.empty{color:var(--muted);font-style:italic;font-family:var(--font);}
+.json-key{color:#c084fc;}
+.json-str{color:#86efac;}
+.json-num{color:#fbbf24;}
+.json-bool{color:#f87171;}
+.snip-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
+.snip-tabs{display:flex;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);overflow-x:auto;}
+.snip-tab{padding:10px 16px;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
+.snip-tab.active{color:var(--accent2);border-color:var(--accent2);}
+.snip-body{padding:18px 20px;font-family:var(--mono);font-size:12px;line-height:1.7;color:#a5f3fc;overflow-x:auto;}
+.snip-body pre{margin:0;white-space:pre;}
+.kw{color:#c084fc;}.str{color:#86efac;}.fn{color:#67e8f9;}.cm{color:#475569;font-style:italic;}.num{color:#fbbf24;}
+.btn-copy{padding:5px 12px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:11px;font-family:var(--font);transition:all .15s;}
+.btn-copy:hover{background:rgba(255,255,255,.1);color:var(--text);}
+.btn-copy.copied{color:var(--green);border-color:var(--green);}
+.footer{position:relative;z-index:5;text-align:center;padding:1.5rem;border-top:1px solid var(--border);color:var(--muted);font-size:12px;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:var(--surface);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:1000;padding:11px 18px;border-radius:10px;background:var(--card);border:1px solid var(--border);font-size:12px;font-weight:600;transform:translateY(80px);opacity:0;transition:all .3s cubic-bezier(.34,1.56,.64,1);}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.success{border-color:var(--green);color:#34d399;}
+.toast.error{border-color:var(--red);color:#f87171;}
+@media(max-width:900px){.main{grid-template-columns:1fr;}.sidebar{display:none;}.metrics-row{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">ST</div>
+      <div class="logo-text"><span>S.T.E.W</span> Playground</div>
+    </div>
+    <div class="hbadge">
+      <div class="sdot"></div>
+      <span class="badge badge-g">API LIVE</span>
+      <span class="badge badge-p">v4.0 ULTRA</span>
+    </div>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-eyebrow">⚡ Secret Task Execution Worker — by MUTYINT Nigeria</div>
+  <h1>Test S.T.E.W Before You Build</h1>
+  <p>Africa's most powerful autonomous AI API. 60+ skills, real browser automation, vision, deep research, and code generation. No signup required — test every endpoint live right now.</p>
+  <div class="hero-stats">
+    <div class="stat"><div class="stat-num" id="reqCount">0</div><div class="stat-label">Requests Made</div></div>
+    <div class="stat"><div class="stat-num" id="avgTime">—</div><div class="stat-label">Avg Speed</div></div>
+    <div class="stat"><div class="stat-num">60+</div><div class="stat-label">Skills</div></div>
+    <div class="stat"><div class="stat-num">100</div><div class="stat-label">AI Agents</div></div>
+  </div>
+</div>
+
+<div class="main">
+  <aside class="sidebar">
+    <div class="sb-card">
+      <div class="sb-title">📡 Endpoints</div>
+      <div class="ep-list" id="epList"></div>
+    </div>
+    <div class="sb-card">
+      <div class="sb-title">⚡ Quick Tests</div>
+      <div class="q-list">
+        <button class="q-btn" onclick="quickTest('chat','What is the GDP of Nigeria in 2024?')">🇳🇬 Ask about Nigeria</button>
+        <button class="q-btn" onclick="quickTest('code','Write a Python function to validate Nigerian phone numbers')">🐍 Generate Python code</button>
+        <button class="q-btn" onclick="quickTest('search','Latest AI news Africa 2026')">🔍 Search AI news</button>
+        <button class="q-btn" onclick="quickTest('translate','Hello, how are you today?')">🌍 Translate to Yoruba</button>
+        <button class="q-btn" onclick="quickTest('weather','Lagos Nigeria')">⛅ Lagos weather</button>
+        <button class="q-btn" onclick="quickTest('summarize','Artificial intelligence is transforming industries across Africa. From fintech to agriculture, AI tools are enabling businesses to automate processes, gain insights, and reach millions of underserved customers. Nigeria, Kenya, South Africa, and Egypt are leading the charge with hundreds of AI startups emerging every year.')">📄 Summarize text</button>
+        <button class="q-btn" onclick="quickTest('currency','Convert 100 USD to NGN')">💱 USD to Naira</button>
+        <button class="q-btn" onclick="quickTest('chat','Write a short inspiring poem about building tech in Africa')">✍️ Creative writing</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="panel">
+    <div class="metrics-row">
+      <div class="met-card"><div class="met-num" id="m-req">0</div><div class="met-label">Total Calls</div></div>
+      <div class="met-card"><div class="met-num" id="m-ok">0</div><div class="met-label">Successful</div></div>
+      <div class="met-card"><div class="met-num" id="m-fast">—</div><div class="met-label">Fastest</div></div>
+      <div class="met-card"><div class="met-num" id="m-avg">—</div><div class="met-label">Avg Speed</div></div>
+    </div>
+
+    <div class="pcard">
+      <div class="pcard-hd">
+        <div class="pcard-title"><div class="pcard-icon">🧪</div>Request Builder</div>
+        <span id="selEp" style="font-size:11px;color:var(--muted);font-family:var(--mono)">POST /chat</span>
+      </div>
+      <div class="url-bar">
+        <div class="url-meth" id="urlMeth">POST</div>
+        <input class="url-path" id="urlPath" value="https://stew-agent.onrender.com/chat" readonly>
+      </div>
+      <div class="body-sec">
+        <div class="sec-label">📦 Request Body — JSON</div>
+        <div class="req-editor">
+          <div class="ed-tabs"><div class="ed-tab active">Body</div><div class="ed-tab" style="color:var(--muted)">Headers <span style="font-size:9px;background:rgba(124,58,237,.2);padding:1px 4px;border-radius:3px;color:#a78bfa">auto</span></div></div>
+          <textarea class="code-in" id="reqBody" spellcheck="false">{
+  "message": "What is the capital of Nigeria and why was it moved there?"
+}</textarea>
+        </div>
+      </div>
+      <div class="run-sec">
+        <button class="btn-run" id="runBtn" onclick="runReq()">
+          <span id="runIcon">▶</span>
+          <span id="runTxt">Run Request</span>
+        </button>
+        <button class="btn-clr" onclick="clearAll()">Clear</button>
+        <div class="rtime" id="rtime"></div>
+      </div>
+    </div>
+
+    <div class="res-card">
+      <div class="res-hd">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:13px;font-weight:600;">Response</span>
+          <span class="sc sc-pend" id="sc">READY</span>
+        </div>
+        <button class="btn-copy" id="cpyBtn" onclick="copyRes()">Copy</button>
+      </div>
+      <div class="ldots" id="ldots">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="ltext" id="ltxt">S.T.E.W is thinking...</div>
+      </div>
+      <div class="res-body empty" id="resBody">// Response will appear here after you run a request
+// Try the quick tests on the left, or build your own above ↑</div>
+    </div>
+
+    <div class="snip-card">
+      <div class="pcard-hd">
+        <div class="pcard-title"><div class="pcard-icon">{}</div>Integration Examples</div>
+        <button class="btn-copy" id="snipCpy" onclick="copySnip()">Copy Code</button>
+      </div>
+      <div class="snip-tabs" id="snipTabs">
+        <div class="snip-tab active" onclick="showSnip('js')">JavaScript</div>
+        <div class="snip-tab" onclick="showSnip('python')">Python</div>
+        <div class="snip-tab" onclick="showSnip('curl')">cURL</div>
+        <div class="snip-tab" onclick="showSnip('node')">Node.js</div>
+        <div class="snip-tab" onclick="showSnip('php')">PHP</div>
+      </div>
+      <div class="snip-body" id="snipBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Built with ⚡ by <strong>MUTYINT</strong> — Building the Backbone of AI in Africa 🇳🇬 &nbsp;|&nbsp;
+  API Docs: https://stew-agent.onrender.com/docs &nbsp;|&nbsp;
+  Status: https://stew-agent.onrender.com/heartbeat
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = 'https://stew-agent.onrender.com';
+const EPS = [
+  {method:'POST',path:'/chat',name:'/chat',desc:'AI conversation',tag:'fast',body:'{\n  "message": "What is the capital of Nigeria?"\n}',msg:'STEW is thinking...'},
+  {method:'POST',path:'/task',name:'/task',desc:'Execute any task',tag:'power',body:'{\n  "task": "Analyze the Nigerian tech ecosystem in 2026"\n}',msg:'Deploying 100 agents...'},
+  {method:'POST',path:'/search',name:'/search',desc:'Web search',tag:'fast',body:'{\n  "query": "MUTYINT Nigeria AI 2026"\n}',msg:'Searching the web...'},
+  {method:'POST',path:'/research',name:'/research',desc:'Deep research',tag:'power',body:'{\n  "topic": "Future of AI in Africa"\n}',msg:'Doing deep research...'},
+  {method:'POST',path:'/summarize',name:'/summarize',desc:'Summarize text',tag:'fast',body:'{\n  "text": "Paste your long text here to summarize quickly."\n}',msg:'Summarizing...'},
+  {method:'POST',path:'/code',name:'/code',desc:'Generate code',tag:'fast',body:'{\n  "prompt": "Build a FastAPI endpoint that validates Nigerian phone numbers"\n}',msg:'Writing code...'},
+  {method:'POST',path:'/translate',name:'/translate',desc:'Translate text',tag:'fast',body:'{\n  "text": "Hello, how are you today?",\n  "target_language": "Yoruba"\n}',msg:'Translating...'},
+  {method:'POST',path:'/weather',name:'/weather',desc:'Weather data',tag:'fast',body:'{\n  "city": "Lagos Nigeria"\n}',msg:'Fetching weather...'},
+  {method:'POST',path:'/currency',name:'/currency',desc:'Currency convert',tag:'fast',body:'{\n  "query": "Convert 500 USD to NGN"\n}',msg:'Converting currency...'},
+  {method:'GET',path:'/heartbeat',name:'/heartbeat',desc:'API health check',tag:'fast',body:null,msg:'Checking status...'},
+  {method:'GET',path:'/security/health',name:'/security/health',desc:'Security status',tag:'fast',body:null,msg:'Checking shield...'},
+];
+
+let selIdx=0, totalReq=0, okCount=0, times=[], curLang='js';
+
+function buildEpList(){
+  document.getElementById('epList').innerHTML = EPS.map((e,i)=>`
+    <div class="ep-item ${i===0?'active':''}" onclick="selEp(${i})" id="ep${i}">
+      <span class="ep-method ep-${e.method.toLowerCase()}">${e.method}</span>
+      <div style="flex:1;min-width:0">
+        <div class="ep-name">${e.name}</div>
+        <div class="ep-desc">${e.desc}</div>
+      </div>
+      <span class="ep-tag tag-${e.tag}">${e.tag}</span>
+    </div>`).join('');
+}
+
+function selEp(i){
+  selIdx=i;
+  const e=EPS[i];
+  document.querySelectorAll('.ep-item').forEach((el,j)=>el.classList.toggle('active',j===i));
+  document.getElementById('urlMeth').textContent=e.method;
+  document.getElementById('urlPath').value=BASE+e.path;
+  document.getElementById('selEp').textContent=e.method+' '+e.path;
+  document.getElementById('reqBody').value=e.body||'// No body needed for GET';
+  updSnips();
+}
+
+function quickTest(type,val){
+  const m={chat:0,task:1,search:2,research:3,summarize:4,code:5,translate:6,weather:7,currency:8};
+  selEp(m[type]??0);
+  const bodies={
+    chat:`{\n  "message": "${val.replace(/"/g,"'")}"\n}`,
+    task:`{\n  "task": "${val.replace(/"/g,"'")}"\n}`,
+    search:`{\n  "query": "${val.replace(/"/g,"'")}"\n}`,
+    research:`{\n  "topic": "${val.replace(/"/g,"'")}"\n}`,
+    summarize:`{\n  "text": "${val.replace(/"/g,"'")}"\n}`,
+    code:`{\n  "prompt": "${val.replace(/"/g,"'")}"\n}`,
+    translate:`{\n  "text": "${val.replace(/"/g,"'")}",\n  "target_language": "Yoruba"\n}`,
+    weather:`{\n  "city": "${val.replace(/"/g,"'")}"\n}`,
+    currency:`{\n  "query": "${val.replace(/"/g,"'")}"\n}`,
+  };
+  document.getElementById('reqBody').value=bodies[type]||'{}';
+  setTimeout(runReq,100);
+}
+
+async function runReq(){
+  const btn=document.getElementById('runBtn');
+  const ld=document.getElementById('ldots');
+  const rb=document.getElementById('resBody');
+  const sc=document.getElementById('sc');
+  const rt=document.getElementById('rtime');
+  const ep=EPS[selIdx];
+
+  btn.classList.add('loading');
+  document.getElementById('runIcon').textContent='⏳';
+  document.getElementById('runTxt').textContent='Running...';
+  ld.classList.add('on');
+  document.getElementById('ltxt').textContent=ep.msg||'STEW is thinking...';
+  rb.style.display='none';
+  sc.textContent='RUNNING'; sc.className='sc sc-pend';
+  rt.textContent='';
+
+  const t0=Date.now();
+  try{
+    const opts={method:ep.method,headers:{'Content-Type':'application/json'}};
+    const body=document.getElementById('reqBody').value.trim();
+    if(ep.method!=='GET'&&body&&!body.startsWith('//')){opts.body=body;}
+    const res=await fetch(BASE+ep.path,opts);
+    const ms=Date.now()-t0;
+    let data;
+    try{data=await res.json();}catch{data=await res.text();}
+    totalReq++; times.push(ms);
+    if(res.ok) okCount++;
+    updMetrics();
+    ld.classList.remove('on');
+    rb.style.display='block';
+    rb.innerHTML=typeof data==='object'?highlight(JSON.stringify(data,null,2)):String(data);
+    rb.classList.remove('empty');
+    sc.textContent=res.status;
+    sc.className='sc '+(res.ok?'sc-ok':'sc-err');
+    const ts=ms<1000?ms+'ms':(ms/1000).toFixed(1)+'s';
+    rt.textContent='⚡ '+ts;
+    rt.className='rtime '+(ms<2000?'fast':ms<5000?'med':'');
+    toast(res.ok?'✅ Response in '+ts:'⚠️ Error response',res.ok?'success':'error');
+  }catch(err){
+    const ms=Date.now()-t0;
+    ld.classList.remove('on');
+    rb.style.display='block'; rb.classList.remove('empty');
+    rb.innerHTML=highlight(JSON.stringify({error:'Request failed',message:err.message,tip:'STEW may be waking up. Try again in 30 seconds.',elapsed_ms:ms},null,2));
+    sc.textContent='ERROR'; sc.className='sc sc-err';
+    toast('❌ '+err.message,'error');
+  }
+  btn.classList.remove('loading');
+  document.getElementById('runIcon').textContent='▶';
+  document.getElementById('runTxt').textContent='Run Request';
+  updSnips();
+}
+
+function highlight(j){
+  return j.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,m=>{
+    let c='json-num';
+    if(/^"/.test(m)){c=/:$/.test(m)?'json-key':'json-str';}
+    else if(/true|false/.test(m)){c='json-bool';}
+    return`<span class="${c}">${m}</span>`;
+  });
+}
+
+function updMetrics(){
+  document.getElementById('m-req').textContent=totalReq;
+  document.getElementById('reqCount').textContent=totalReq;
+  document.getElementById('m-ok').textContent=okCount;
+  if(times.length){
+    const f=Math.min(...times),a=Math.round(times.reduce((x,y)=>x+y,0)/times.length);
+    const fs=f<1000?f+'ms':(f/1000).toFixed(1)+'s';
+    const as=a<1000?a+'ms':(a/1000).toFixed(1)+'s';
+    document.getElementById('m-fast').textContent=fs;
+    document.getElementById('m-avg').textContent=as;
+    document.getElementById('avgTime').textContent=as;
+  }
+}
+
+function clearAll(){
+  document.getElementById('resBody').innerHTML='// Response will appear here';
+  document.getElementById('resBody').classList.add('empty');
+  document.getElementById('sc').textContent='READY';
+  document.getElementById('sc').className='sc sc-pend';
+  document.getElementById('rtime').textContent='';
+  document.getElementById('ldots').classList.remove('on');
+}
+
+function copyRes(){
+  navigator.clipboard.writeText(document.getElementById('resBody').innerText).then(()=>{
+    const b=document.getElementById('cpyBtn');
+    b.textContent='Copied!'; b.classList.add('copied');
+    setTimeout(()=>{b.textContent='Copy';b.classList.remove('copied');},2000);
+  });
+}
+function copySnip(){
+  navigator.clipboard.writeText(document.getElementById('snipBody').innerText).then(()=>{
+    const b=document.getElementById('snipCpy');
+    b.textContent='Copied!'; b.classList.add('copied');
+    setTimeout(()=>{b.textContent='Copy Code';b.classList.remove('copied');},2000);
+  });
+}
+
+const SNIPS={
+  js:e=>`<pre><span class="cm">// JavaScript — Fetch API</span>
+<span class="cm">// S.T.E.W API by MUTYINT Nigeria</span>
+
+<span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'${BASE}${e.path}'</span>, {
+  method: <span class="str">'${e.method}'</span>,
+  headers: { <span class="str">'Content-Type'</span>: <span class="str">'application/json'</span> },${e.body&&e.method!=='GET'?`
+  body: JSON.stringify(${e.body}),`:''}
+});
+<span class="kw">const</span> data = <span class="kw">await</span> response.<span class="fn">json</span>();
+console.<span class="fn">log</span>(data);</pre>`,
+  python:e=>`<pre><span class="cm"># Python — requests</span>
+<span class="cm"># pip install requests</span>
+<span class="cm"># S.T.E.W API by MUTYINT Nigeria</span>
+
+<span class="kw">import</span> requests
+
+url = <span class="str">"${BASE}${e.path}"</span>
+${e.body&&e.method!=='GET'?`payload = ${e.body}
+response = requests.<span class="fn">${e.method.toLowerCase()}</span>(url, json=payload)`:`response = requests.<span class="fn">${e.method.toLowerCase()}</span>(url)`}
+data = response.<span class="fn">json</span>()
+<span class="fn">print</span>(data)</pre>`,
+  curl:e=>`<pre><span class="cm"># cURL — terminal</span>
+<span class="cm"># S.T.E.W API by MUTYINT Nigeria</span>
+
+curl -X ${e.method} \\
+  <span class="str">"${BASE}${e.path}"</span> \\
+  -H <span class="str">"Content-Type: application/json"</span>${e.body&&e.method!=='GET'?` \\
+  -d <span class="str">'${e.body.replace(/\n/g,' ')}'</span>`:`</pre>`}${e.body&&e.method!=='GET'?`</pre>`:''}`,
+  node:e=>`<pre><span class="cm">// Node.js — axios</span>
+<span class="cm">// npm install axios</span>
+<span class="cm">// S.T.E.W API by MUTYINT Nigeria</span>
+
+<span class="kw">const</span> axios = <span class="fn">require</span>(<span class="str">'axios'</span>);
+<span class="kw">const</span> { data } = <span class="kw">await</span> axios.<span class="fn">${e.method.toLowerCase()}</span>(
+  <span class="str">'${BASE}${e.path}'</span>${e.body&&e.method!=='GET'?`,\n  ${e.body}`:''}
+);
+console.<span class="fn">log</span>(data);</pre>`,
+  php:e=>`<pre><span class="cm">// PHP — cURL</span>
+<span class="cm">// S.T.E.W API by MUTYINT Nigeria</span>
+
+<span class="kw">$ch</span> = curl_init();
+curl_setopt_array(<span class="kw">$ch</span>, [
+  CURLOPT_URL =&gt; <span class="str">"${BASE}${e.path}"</span>,
+  CURLOPT_RETURNTRANSFER =&gt; true,
+  CURLOPT_CUSTOMREQUEST =&gt; <span class="str">"${e.method}"</span>,${e.body&&e.method!=='GET'?`
+  CURLOPT_POSTFIELDS =&gt; '${e.body.replace(/\n/g,' ')}',`:''}
+  CURLOPT_HTTPHEADER =&gt; [<span class="str">"Content-Type: application/json"</span>],
+]);
+<span class="kw">$data</span> = json_decode(curl_exec(<span class="kw">$ch</span>), true);
+print_r(<span class="kw">$data</span>);</pre>`,
+};
+
+function showSnip(lang){
+  curLang=lang;
+  document.querySelectorAll('.snip-tab').forEach(t=>{
+    const labels={js:'JavaScript',python:'Python',curl:'cURL',node:'Node.js',php:'PHP'};
+    t.classList.toggle('active',t.textContent===labels[lang]);
+  });
+  document.getElementById('snipBody').innerHTML=SNIPS[lang](EPS[selIdx]);
+}
+function updSnips(){showSnip(curLang);}
+
+let toastT;
+function toast(msg,type='success'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+type;
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>t.className='toast',3000);
+}
+
+buildEpList();
+showSnip('js');
+setTimeout(async()=>{
+  try{
+    const r=await fetch(BASE+'/heartbeat');
+    if(r.ok) toast('✅ STEW API is online and ready!','success');
+  }catch{toast('⚠️ STEW is waking up — first request may take 30s','error');}
+},1200);
+</script>
+</body>
+</html>
