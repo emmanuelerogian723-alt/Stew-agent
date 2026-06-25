@@ -2,8 +2,6 @@ services:
   - type: web
     name: stew-agent
     runtime: docker
-    dockerfilePath: stew_deploy/Dockerfile
-    dockerContext: stew_deploy
     envVars:
       - key: PORT
         value: 8000
@@ -16,6 +14,10 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: SERPER_API_KEY
+        sync: false
+      - key: STEW_ADMIN_SECRET
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
         sync: false
     healthCheckPath: /heartbeat
     autoDeploy: true
