@@ -437,6 +437,30 @@ class StewBrain:
     # ─────────────────────────────────────────
     # THINK — main task handler
     # ─────────────────────────────────────────
+    async def _fetch_web_context(self, query: str) -> str:
+        """Fetch real-time web results to ground LLM responses in current data"""
+        try:
+            import httpx
+            serper_key = os.getenv("SERPER_API_KEY", "")
+            if not serper_key:
+                return ""
+            async with httpx.AsyncClient(timeout=8) as client:
+                r = await client.post(
+                    "https://google.serper.dev/search",
+                    headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
+                    json={"q": query, "num": 5, "gl": "ng", "hl": "en"}
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    snippets = []
+                    for item in data.get("organic", [])[:5]:
+                        snippets.append(f"• {item.get('title','')} — {item.get('snippet','')}")
+                    if snippets:
+                        return "\n\n[REAL-TIME WEB SEARCH RESULTS]:\n" + "\n".join(snippets)
+        except Exception as e:
+            logger.warning(f"Web context fetch failed: {e}")
+        return ""
+
     async def think(self, task: str, context: Dict = None) -> Dict:
         """Master task handler — routes to right agent and model"""
         mode = self._choose_mode(task)
@@ -453,21 +477,31 @@ class StewBrain:
         }
         task_type = mode_to_type.get(mode, "respond")
 
+        # 🌐 AUTO WEB GROUNDING — inject real-time data for research/news queries
+        web_context = ""
+        research_keywords = ["news", "latest", "today", "current", "recent", "2025", "2026", "now", "price", "stock", "weather"]
+        should_search = mode in ("research", "respond") and any(kw in task.lower() for kw in research_keywords)
+        if should_search:
+            web_context = await self._fetch_web_context(task)
+
         system = (
             f"You are S.T.E.W — Secret Task Execution Worker, created by Emmanuel Ene Rejoice Gideon of MUTYINT Nigeria. "
             f"You are operating in [{mode.upper()}] mode. "
-            f"You coordinate 100 specialized AI agents to complete any task with excellence. "
-            f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M')}. "
+            f"You are a REAL-TIME AI agent — ALWAYS use the web search results below as your PRIMARY source of truth. "
+            f"NEVER say your knowledge is limited to a training cutoff. You have live internet access. "
+            f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}. "
             f"Be thorough, structured, actionable, and always deliver high-quality results."
         )
 
-        response = await self.call_llm(task, system=system, task_type=task_type)
+        full_task = task + web_context if web_context else task
+        response = await self.call_llm(full_task, system=system, task_type=task_type)
 
         return {
             "task": task,
             "mode": mode,
             "model_used": self.llm["model"],
             "openrouter_used": self.openrouter_available and task_type in {"code", "research", "creative", "power"},
+            "web_grounded": bool(web_context),
             "output": response,
             "timestamp": datetime.now().isoformat(),
         }
