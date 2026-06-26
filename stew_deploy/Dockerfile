@@ -1,6 +1,6 @@
 FROM python:3.11-slim-bookworm
 
-# Install system dependencies in one layer
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ wget curl ca-certificates \
     tesseract-ocr tesseract-ocr-eng \
@@ -12,28 +12,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatspi2.0-0 libx11-6 libx11-xcb1 libxcb1 \
     libxext6 libxi6 libxtst6 libasound2 \
     fonts-liberation libfreetype6 libxml2 \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python packages first
+# Install Python dependencies first (layer cache)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright with graceful fallback
+# Install Playwright + Chromium for browse endpoint
 RUN pip install --no-cache-dir playwright==1.44.0 && \
-    (playwright install chromium || echo "Chromium install failed - browser in fallback mode")
+    playwright install chromium --with-deps || true
 
-# Copy all application code
-COPY . .
+# Copy application code
+COPY server/ ./server/
+COPY migrations/ ./migrations/
+COPY alembic.ini .
 
 # Create runtime directories
 RUN mkdir -p memory/data output logs workspace screenshots
-RUN touch __init__.py server/__init__.py core/__init__.py \
-    agents/__init__.py skills/__init__.py \
-    memory/__init__.py soul/__init__.py
 
 EXPOSE 8000
 
-CMD ["python", "server/main.py"]
+# Run DB migrations then start server
+CMD alembic upgrade head && \
+    uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 2
