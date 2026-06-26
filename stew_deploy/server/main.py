@@ -908,6 +908,37 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     return {"ok": True}
 
 
+
+@app.get("/telegram/status")
+async def telegram_status():
+    """Check if Telegram bot is configured and get bot info."""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        return {
+            "configured": False,
+            "error": "TELEGRAM_BOT_TOKEN not set",
+            "instructions": "Add TELEGRAM_BOT_TOKEN to your environment variables",
+            "how_to_get_token": "Message @BotFather on Telegram, type /newbot, follow steps",
+            "success": False
+        }
+    try:
+        from server.telegram_bot import TelegramBot
+        bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+        info = await bot.get_me()
+        if info.get("ok"):
+            b = info["result"]
+            return {
+                "configured": True,
+                "bot_name": b.get("first_name"),
+                "bot_username": f"@{b.get('username')}",
+                "bot_id": b.get("id"),
+                "direct_link": f"https://t.me/{b.get('username')}",
+                "success": True
+            }
+        return {"configured": False, "error": info.get("description"), "success": False}
+    except Exception as e:
+        return {"configured": False, "error": str(e), "success": False}
+
+
 @app.post("/telegram/setup")
 async def setup_telegram(request: Request):
     """Register your deployment URL as the Telegram webhook."""
