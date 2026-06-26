@@ -764,6 +764,7 @@ question: <span class="str">"What text is in this image?"</span>
     </div>
     <div class="auth-tabs">
       <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">🚀 Register</button>
+      <button class="auth-tab" id="tab-login" onclick="switchAuthTab('login')">🔐 Login</button>
       <button class="auth-tab" id="tab-dashboard" onclick="switchAuthTab('dashboard')">📊 Dashboard</button>
       <button class="auth-tab" id="tab-upgrade" onclick="switchAuthTab('upgrade')">⚡ Upgrade</button>
     </div>
@@ -789,9 +790,47 @@ question: <span class="str">"What text is in this image?"</span>
         <div class="auth-field"><label>Full Name *</label><input type="text" id="reg-name" placeholder="Your full name"></div>
         <div class="auth-field"><label>Email Address *</label><input type="email" id="reg-email" placeholder="you@example.com"></div>
         <div class="auth-field"><label>Company (optional)</label><input type="text" id="reg-company" placeholder="Your company or project"></div>
+        <div class="auth-field"><label>Password (optional)</label><input type="password" id="reg-password" placeholder="Min 8 chars (leave blank for auto-generated)"></div>
         <button class="auth-btn" id="reg-btn" onclick="doRegister()">🚀 Create Free Account</button>
         <div class="auth-result" id="reg-result"></div>
         <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">By registering you agree to our fair use policy. Your API key is created instantly.</p>
+      </div>
+
+      <!-- LOGIN PANEL -->
+      <div class="auth-panel" id="panel-login">
+        <div class="auth-field"><label>Email Address</label><input type="email" id="login-email" placeholder="you@example.com"></div>
+        <div class="auth-field">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="Your password">
+        </div>
+        <button class="auth-btn" id="login-btn" onclick="doLogin()">🔐 Log In</button>
+        <div class="auth-result" id="login-result"></div>
+        <p style="text-align:center;margin-top:.75rem;font-size:.8rem;color:var(--m);">
+          Forgot your password? <a onclick="switchAuthTab('forgot')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Reset it here →</a>
+        </p>
+        <p style="text-align:center;margin-top:.5rem;font-size:.8rem;color:var(--m);">
+          No account? <a onclick="switchAuthTab('register')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Register free</a>
+        </p>
+      </div>
+
+      <!-- FORGOT PASSWORD PANEL -->
+      <div class="auth-panel" id="panel-forgot">
+        <p style="color:var(--m);font-size:.85rem;margin-bottom:1rem;">Enter your email address and we'll send you a link to reset your password.</p>
+        <div class="auth-field"><label>Email Address</label><input type="email" id="forgot-email" placeholder="you@example.com"></div>
+        <button class="auth-btn" id="forgot-btn" onclick="doForgotPassword()">📧 Send Reset Link</button>
+        <div class="auth-result" id="forgot-result"></div>
+        <p style="text-align:center;margin-top:.75rem;font-size:.8rem;color:var(--m);">
+          Remembered it? <a onclick="switchAuthTab('login')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Back to Login</a>
+        </p>
+      </div>
+
+      <!-- RESET PASSWORD PANEL (shown when reset token in URL) -->
+      <div class="auth-panel" id="panel-reset">
+        <p style="color:#3fb950;font-size:.85rem;margin-bottom:1rem;">✅ Enter your new password below.</p>
+        <div class="auth-field"><label>New Password</label><input type="password" id="reset-password" placeholder="Min 8 characters"></div>
+        <div class="auth-field"><label>Confirm Password</label><input type="password" id="reset-confirm" placeholder="Repeat password"></div>
+        <button class="auth-btn" id="reset-btn" onclick="doResetPassword()">🔐 Set New Password</button>
+        <div class="auth-result" id="reset-result"></div>
       </div>
 
       <!-- DASHBOARD PANEL -->
@@ -1170,9 +1209,12 @@ function closeAuth(){
   document.getElementById('auth-overlay').classList.remove('show');
 }
 function switchAuthTab(tab){
-  ['register','dashboard','upgrade'].forEach(t=>{
-    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
-    document.getElementById('panel-'+t).classList.toggle('active',t===tab);
+  const allTabs = ['register','login','forgot','reset','dashboard','upgrade'];
+  allTabs.forEach(t=>{
+    const tabEl = document.getElementById('tab-'+t);
+    const panelEl = document.getElementById('panel-'+t);
+    if(tabEl) tabEl.classList.toggle('active',t===tab);
+    if(panelEl) panelEl.classList.toggle('active',t===tab);
   });
 }
 function selectPlan(plan, el){
@@ -1211,7 +1253,7 @@ async function doRegister(){
     const resp = await fetch(STEW_URL+'/auth/register',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, email, company:company||'', plan:_selectedPlan}),
+      body: JSON.stringify({name, email, company:company||'', plan:_selectedPlan, password: document.getElementById('reg-password')?.value?.trim()||undefined}),
       signal: AbortSignal.timeout(30000)
     });
     if(!resp.ok){ const err=await resp.json().catch(()=>({})); throw new Error(err.detail||'Server error '+resp.status); }
@@ -1239,6 +1281,108 @@ async function doRegister(){
   }
   btn.disabled=false; btn.textContent=_selectedPlan==='free'?'🚀 Create Free Account':'💳 Create Account';
 }
+
+// ══════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-password').value;
+  if(!email){ showAuthResult('login-result','error','⚠️ Enter your email.'); return; }
+  if(!pass){ showAuthResult('login-result','error','⚠️ Enter your password.'); return; }
+  const btn = document.getElementById('login-btn');
+  btn.disabled=true; btn.textContent='⏳ Logging in...';
+  showAuthResult('login-result','info','🔄 Connecting...');
+  try{
+    const resp = await fetch(STEW_URL+'/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password:pass}),
+      signal: AbortSignal.timeout(20000)
+    });
+    const data = await resp.json();
+    if(resp.ok && data.access_token){
+      localStorage.setItem('stew_jwt', data.access_token);
+      if(data.api_key) localStorage.setItem('stew_api_key', data.api_key);
+      showAuthResult('login-result','success',`✅ Welcome back! <a onclick="switchAuthTab('dashboard')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">View Dashboard →</a>`);
+      if(data.api_key){ document.getElementById('dash-key').value=data.api_key; }
+    } else {
+      showAuthResult('login-result','error','❌ '+(data.detail||'Invalid email or password.'));
+    }
+  }catch(e){
+    showAuthResult('login-result','error','⏳ '+(e.name==='TimeoutError'?'Server waking up, try again.':e.message));
+  }
+  btn.disabled=false; btn.textContent='🔐 Log In';
+}
+
+// ══════════════════════════════════════
+// FORGOT PASSWORD
+// ══════════════════════════════════════
+async function doForgotPassword(){
+  const email = document.getElementById('forgot-email').value.trim();
+  if(!email||!email.includes('@')){ showAuthResult('forgot-result','error','⚠️ Enter a valid email.'); return; }
+  const btn = document.getElementById('forgot-btn');
+  btn.disabled=true; btn.textContent='⏳ Sending...';
+  showAuthResult('forgot-result','info','🔄 Sending reset link...');
+  try{
+    await fetch(STEW_URL+'/auth/forgot-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email}),
+      signal: AbortSignal.timeout(20000)
+    });
+    showAuthResult('forgot-result','success',
+      '📧 If that email is registered, a reset link has been sent. Check your inbox (and spam folder).');
+  }catch(e){
+    showAuthResult('forgot-result','error','❌ Could not connect. Try again.');
+  }
+  btn.disabled=false; btn.textContent='📧 Send Reset Link';
+}
+
+// ══════════════════════════════════════
+// RESET PASSWORD (from email link)
+// ══════════════════════════════════════
+async function doResetPassword(){
+  const pass    = document.getElementById('reset-password').value;
+  const confirm = document.getElementById('reset-confirm').value;
+  const token   = new URLSearchParams(window.location.search).get('token');
+  if(!token){ showAuthResult('reset-result','error','❌ Invalid reset link.'); return; }
+  if(pass.length < 8){ showAuthResult('reset-result','error','⚠️ Password must be at least 8 characters.'); return; }
+  if(pass !== confirm){ showAuthResult('reset-result','error','⚠️ Passwords do not match.'); return; }
+  const btn = document.getElementById('reset-btn');
+  btn.disabled=true; btn.textContent='⏳ Saving...';
+  try{
+    const resp = await fetch(STEW_URL+'/auth/reset-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token, new_password:pass}),
+      signal: AbortSignal.timeout(20000)
+    });
+    const data = await resp.json();
+    if(resp.ok && data.success){
+      showAuthResult('reset-result','success','✅ Password changed! <a onclick="switchAuthTab('login')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Log in now →</a>');
+    } else {
+      showAuthResult('reset-result','error','❌ '+(data.detail||'Reset failed. Link may have expired.'));
+    }
+  }catch(e){
+    showAuthResult('reset-result','error','❌ Connection error.');
+  }
+  btn.disabled=false; btn.textContent='🔐 Set New Password';
+}
+
+// Auto-open reset panel if token is in URL
+(function(){
+  const token = new URLSearchParams(window.location.search).get('token');
+  if(token){
+    // Verify token is valid before showing form
+    fetch(STEW_URL+'/auth/verify-reset-token?token='+token)
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.valid){ openAuth('reset'); }
+        else { openAuth('login'); showAuthResult('login-result','error','❌ Reset link has expired. Request a new one.'); }
+      }).catch(()=>{});
+  }
+})();
 
 // ══════════════════════════════════════
 // DASHBOARD
