@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # App URL (used for password reset links, keepalive, webhook setup)
     APP_BASE_URL: str = os.getenv("APP_BASE_URL", "")
 
+    # Hugging Face (4th LLM fallback)
+    HF_TOKEN: str = os.getenv("HF_TOKEN", "")
+
     # Admin
     STEW_ADMIN_SECRET: str = os.getenv("STEW_ADMIN_SECRET", "")
 
