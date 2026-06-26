@@ -48,6 +48,8 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 from server.system_prompt import STEW_MASTER_PROMPT as STEW_SYSTEM_PROMPT
+from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
+from server.auth import create_reset_token, consume_reset_token
 from server.keepalive import start_keepalive, stop_keepalive
 from server.skills_engine import run_skill, list_skills as get_skills_list
 
@@ -236,6 +238,10 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
     await db.refresh(user)
+
+    # Send welcome email in background (non-blocking)
+    import asyncio
+    asyncio.create_task(send_welcome_email(user.email, user.name, user.api_key, user.plan))
 
     return {
         "api_key": user.api_key,
@@ -885,3 +891,115 @@ async def setup_telegram(request: Request):
     info = await bot.get_me()
     result = await bot.set_webhook(webhook_url + "/telegram/webhook")
     return {"bot": info, "webhook_result": result, "success": True}
+
+
+# ── Password Reset ─────────────────────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@app.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Request a password reset link. Always returns 200 to prevent email enumeration.
+    Sends reset email if account exists.
+    """
+    import asyncio
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+    if user and user.is_active:
+        token = create_reset_token(user.id)
+        asyncio.create_task(send_password_reset_email(user.email, user.name, token))
+    # Always return 200 — never reveal if email exists
+    return {
+        "success": True,
+        "message": "If that email is registered, a reset link has been sent.",
+    }
+
+
+@app.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Reset password using a token from the reset email."""
+    import asyncio
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    user_id = consume_reset_token(body.token)
+    if not user_id:
+        raise HTTPException(400, "Reset link is invalid or has expired. Please request a new one.")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.password_hash = hash_password(body.new_password)
+    await db.commit()
+
+    # Send confirmation email
+    asyncio.create_task(send_password_changed_email(user.email, user.name))
+
+    return {"success": True, "message": "Password changed successfully. You can now log in."}
+
+
+@app.get("/auth/verify-reset-token")
+async def verify_reset_token(token: str):
+    """Check if a reset token is still valid (used by frontend before showing reset form)."""
+    from server.auth import validate_reset_token
+    user_id = validate_reset_token(token)
+    if not user_id:
+        raise HTTPException(400, "Token is invalid or expired")
+    return {"valid": True}
+
+
+# ── Integrations / Third-Party API Proxy ──────────────────────────────────────
+
+class IntegrationRequest(BaseModel):
+    api_key: str
+    service: str          # e.g. "openai", "stripe", "custom"
+    endpoint: str         # full URL
+    method: str = "POST"
+    headers: dict = {}
+    payload: dict = {}
+
+
+@app.post("/integrations/call")
+async def integration_call(body: IntegrationRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Proxy any external API call through S.T.E.W.
+    Useful for integrating Stripe, SendGrid, Twilio, etc.
+    """
+    user = await get_user_by_api_key(body.api_key, db)
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            method = body.method.upper()
+            if method == "GET":
+                resp = await client.get(body.endpoint, headers=body.headers, params=body.payload)
+            elif method == "POST":
+                resp = await client.post(body.endpoint, headers=body.headers, json=body.payload)
+            elif method == "PUT":
+                resp = await client.put(body.endpoint, headers=body.headers, json=body.payload)
+            elif method == "DELETE":
+                resp = await client.delete(body.endpoint, headers=body.headers)
+            else:
+                raise HTTPException(400, f"Unsupported method: {method}")
+
+            ct = resp.headers.get("content-type", "")
+            body_data = resp.json() if "json" in ct else resp.text
+            return {
+                "success": resp.status_code < 400,
+                "status": resp.status_code,
+                "service": body.service,
+                "response": body_data,
+            }
+    except httpx.TimeoutException:
+        raise HTTPException(504, f"Timeout calling {body.service}")
+    except Exception as e:
+        raise HTTPException(500, str(e))
