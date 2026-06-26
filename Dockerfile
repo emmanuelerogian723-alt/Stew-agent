@@ -1,8 +1,10 @@
-# S.T.E.W Root Dockerfile — Render Production
+# S.T.E.W 3.0 ULTRA — Bulletproof Render Dockerfile
 FROM python:3.11-slim-bookworm
 
+# System dependencies including libpq for asyncpg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ wget curl ca-certificates \
+    libpq-dev \
     tesseract-ocr tesseract-ocr-eng \
     libglib2.0-0 libnss3 libnspr4 \
     libatk1.0-0 libatk-bridge2.0-0 \
@@ -16,24 +18,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python dependencies (cached layer)
+# Install Python dependencies
 COPY stew_deploy/requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Playwright browser (optional — fallback if fails)
-RUN pip install --no-cache-dir playwright==1.44.0 && \
-    (playwright install chromium --with-deps || echo "Playwright optional")
+# Skip Playwright in production (saves 300MB and avoids hang)
+# Browser skills run in fallback/API mode
 
 # Copy all app code
 COPY stew_deploy/ .
 
-# Copy landing page to root level
+# Copy landing page
 COPY landing.html /app/landing.html
 
 # Runtime directories
 RUN mkdir -p memory/data output logs workspace screenshots
 
+# Copy startup script
+COPY startup.sh /app/startup.sh
+RUN chmod +x /app/startup.sh
+
 EXPOSE 8000
 
-CMD alembic upgrade head && uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info
+CMD ["/app/startup.sh"]
