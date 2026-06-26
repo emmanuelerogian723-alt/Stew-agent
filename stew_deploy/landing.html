@@ -384,23 +384,46 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <div class="msg msg-stew">
         <div class="msg-avatar">S</div>
         <div>
-          <div class="msg-bubble">👋 Hello! I'm <strong>S.T.E.W</strong> — Secret Task Execution Worker.<br><br>I can browse the web in real-time, write &amp; run code, do deep research, translate, generate documents, and connect to any API. What would you like me to do?</div>
+          <div class="msg-bubble">👋 Hello! I'm <strong>S.T.E.W</strong> — Secret Task Execution Worker.<br><br>I search the <strong>live internet</strong>, write &amp; run code, do deep research, generate PDFs/Word docs, translate to African languages, and deploy 100 AI agents simultaneously.<br><br>💡 <em>Click "Test file upload" below to test document &amp; image reading!</em></div>
           <div class="msg-time">S.T.E.W · now</div>
         </div>
       </div>
     </div>
     <div class="chat-footer">
       <div class="chat-pills">
-        <span class="pill" onclick="sendDemo('What is the latest AI news today?')">📰 Latest AI news</span>
+        <span class="pill" onclick="sendDemo('What is the latest AI news today?')">📰 AI news now</span>
         <span class="pill" onclick="sendDemo('What is the current Bitcoin price?')">₿ Bitcoin price</span>
-        <span class="pill" onclick="sendDemo('Write a Python web scraper')">💻 Python scraper</span>
-        <span class="pill" onclick="sendDemo('What is the weather in Lagos?')">🌤️ Lagos weather</span>
-        <span class="pill" onclick="sendDemo('Search for top 5 AI tools in 2025')">🔍 AI tools 2025</span>
+        <span class="pill" onclick="sendDemo('Write a Python FastAPI hello world server')">💻 Python code</span>
+        <span class="pill" onclick="sendDemo('What is the weather in Lagos right now?')">🌤️ Lagos weather</span>
+        <span class="pill" onclick="sendDemo('Convert 10000 NGN to USD today')">💱 NGN → USD</span>
+        <span class="pill" onclick="sendDemo('Who is the current president of Nigeria?')">🇳🇬 Nigeria news</span>
+        <span class="pill" onclick="switchDemoTab('upload')">📄 Test file upload</span>
       </div>
       <div class="chat-input-row">
         <textarea class="chat-input" id="chat-input" placeholder="Ask STEW anything — it searches the real internet..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
         <button class="chat-send" id="chat-send" onclick="sendChat()">➤</button>
       </div>
+    </div>
+
+    <!-- UPLOAD TEST TAB -->
+    <div id="upload-demo-panel" style="display:none;padding:1.25rem;border-top:1px solid var(--b);">
+      <div style="font-size:.85rem;color:var(--m);margin-bottom:1rem;">Test STEW's document & image reading capabilities — drag & drop or click to upload</div>
+      <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <div id="upload-area-doc" onclick="document.getElementById('file-doc').click()" style="flex:1;min-width:180px;border:2px dashed rgba(124,58,237,.4);border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;background:rgba(124,58,237,.04);" onmouseover="this.style.borderColor='rgba(124,58,237,.8)'" onmouseout="this.style.borderColor='rgba(124,58,237,.4)'">
+          <div style="font-size:2rem;margin-bottom:.5rem;">📄</div>
+          <div style="font-size:.85rem;font-weight:700;color:var(--t);">Upload Document</div>
+          <div style="font-size:.75rem;color:var(--m);margin-top:.3rem;">PDF, Word, TXT, CSV, JSON</div>
+          <input type="file" id="file-doc" style="display:none" accept=".pdf,.docx,.doc,.txt,.csv,.json,.md" onchange="uploadDemo('doc')">
+        </div>
+        <div id="upload-area-img" onclick="document.getElementById('file-img').click()" style="flex:1;min-width:180px;border:2px dashed rgba(6,182,212,.4);border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;background:rgba(6,182,212,.04);" onmouseover="this.style.borderColor='rgba(6,182,212,.8)'" onmouseout="this.style.borderColor='rgba(6,182,212,.4)'">
+          <div style="font-size:2rem;margin-bottom:.5rem;">🖼️</div>
+          <div style="font-size:.85rem;font-weight:700;color:var(--t);">Upload Image</div>
+          <div style="font-size:.75rem;color:var(--m);margin-top:.3rem;">JPG, PNG, WebP, GIF</div>
+          <input type="file" id="file-img" style="display:none" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp" onchange="uploadDemo('img')">
+        </div>
+      </div>
+      <textarea id="upload-question" placeholder="Ask a question about the file (optional) — e.g. 'Summarize this' or 'What is the main topic?'" style="width:100%;padding:.75rem;background:var(--s);border:1px solid var(--b);border-radius:10px;color:var(--t);font-size:.85rem;font-family:var(--font);resize:none;outline:none;" rows="2"></textarea>
+      <div id="upload-result" style="margin-top:1rem;"></div>
     </div>
   </div>
 </div>
@@ -642,7 +665,38 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
 }</pre>
       </div>
 
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">4. Connect an API (Universal Connector)</h3>
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">4. Upload & Read a Document or Image</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <pre><span class="cm">// Upload a PDF, Word, TXT, CSV, or JSON file:</span>
+<span class="kw">POST</span> https://stew-agent.onrender.com/upload/document
+Content-Type: multipart/form-data
+
+file: <span class="str">[your file]</span>
+question: <span class="str">"Summarize this document"</span>  <span class="cm">// optional</span>
+
+<span class="cm">// Response:</span>
+{
+  <span class="str">"characters_read"</span>: <span class="num">4820</span>,
+  <span class="str">"preview"</span>: <span class="str">"Introduction: This report covers..."</span>,
+  <span class="str">"answer"</span>: <span class="str">"This document discusses..."</span>  <span class="cm">// AI answer</span>
+}
+
+<span class="cm">// Upload an image (JPG, PNG, WebP):</span>
+<span class="kw">POST</span> https://stew-agent.onrender.com/upload/image
+Content-Type: multipart/form-data
+
+file: <span class="str">[your image]</span>
+question: <span class="str">"What text is in this image?"</span>
+
+<span class="cm">// Response:</span>
+{
+  <span class="str">"analysis"</span>: <span class="str">"The image shows a receipt with..."</span>,
+  <span class="str">"ocr_text"</span>: <span class="str">"TOTAL: ₦12,500"</span>
+}</pre>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">5. Connect Any API</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
         <pre><span class="kw">POST</span> https://stew-agent.onrender.com/api/call
@@ -650,8 +704,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
 {
   <span class="str">"url"</span>: <span class="str">"https://api.openweathermap.org/data/2.5/weather"</span>,
   <span class="str">"method"</span>: <span class="str">"GET"</span>,
-  <span class="str">"params"</span>: { <span class="str">"q"</span>: <span class="str">"Lagos"</span>, <span class="str">"appid"</span>: <span class="str">"YOUR_KEY"</span> },
-  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>
+  <span class="str">"params"</span>: { <span class="str">"q"</span>: <span class="str">"Lagos"</span>, <span class="str">"appid"</span>: <span class="str">"YOUR_KEY"</span> }
 }</pre>
       </div>
 
@@ -1049,7 +1102,8 @@ async function sendChat(){
     hideTyping();
     hideStewOverlay();
     const reply = data.response || data.result || data.answer || 'STEW processed your request.';
-    addMsg('stew', reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>'));
+    const grounded = data.web_grounded ? '<div style="font-size:.72rem;color:#34d399;margin-top:.4rem;">🌐 Web-grounded · real-time data</div>' : '';
+    addMsg('stew', reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>') + grounded);
   } catch(e){
     hideTyping(); hideStewOverlay();
     if(e.name==='TimeoutError')

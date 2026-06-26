@@ -28,7 +28,10 @@ class SkillsEngine:
     """60+ skills for S.T.E.W — Secret Task Execution Worker"""
 
     def __init__(self):
-        self.serper_key = os.getenv("SERPER_API_KEY", "1867df2e3c379ba68185b39b64f2b986fba9e78e")
+        self.serper_key = (
+            os.getenv("SERPER_API_KEY", "").strip()
+            or "1867df2e3c379ba68185b39b64f2b986fba9e78e"
+        )
         self.output_dir = Path("output")
         self.workspace_dir = Path("workspace")
         self.screenshots_dir = Path("screenshots")

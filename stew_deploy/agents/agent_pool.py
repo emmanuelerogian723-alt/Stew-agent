@@ -36,33 +36,54 @@ class SubAgent:
         logger.debug(f"🤖 Agent #{agent_id} '{name}' online — specialty: {specialty}")
 
     async def execute(self, task: str, brain=None) -> Dict:
-        """Execute a task"""
+        """Execute a task — take time to be thorough and complete"""
         self.status = AgentStatus.WORKING
         self.current_task = task
-        logger.info(f"🤖 Agent '{self.name}' executing: {task[:60]}")
+        logger.info(f"🤖 Agent #{self.agent_id} '{self.name}' [{self.specialty}] executing: {task[:70]}")
 
-        await asyncio.sleep(0.1)
+        output = f"Agent {self.name} ({self.specialty}) started task: {task[:80]}"
+        error = None
 
-        output = f"Agent {self.name} processed: {task[:80]}"
         if brain:
             try:
-                ai_out = await brain.call_llm(
-                    task,
-                    system=f"You are {self.name}, an AI agent specializing in {self.specialty}. Complete this task concisely."
+                system_prompt = (
+                    f"You are Agent #{self.agent_id} — {self.name}, an elite AI specialist in {self.specialty}. "
+                    f"Your skills include: {', '.join(self.skills[:6])}. "
+                    f"You are part of S.T.E.W's 100-agent intelligence system. "
+                    f"IMPORTANT: Take your time. Be comprehensive. Do NOT give a short answer. "
+                    f"Complete the full task with real depth and detail. "
+                    f"Your output will be synthesized with 4 other agents. Make it count."
                 )
-                if ai_out and "STEW received" not in ai_out:
-                    output = ai_out
+                # Retry up to 2 times for thorough completion
+                for attempt in range(2):
+                    try:
+                        ai_out = await asyncio.wait_for(
+                            brain.call_llm(task, system=system_prompt, max_tokens=2048),
+                            timeout=45.0
+                        )
+                        if ai_out and len(ai_out) > 50 and "STEW received" not in ai_out:
+                            output = ai_out
+                            break
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Agent {self.name} attempt {attempt+1} timed out")
+                        if attempt == 1:
+                            output = f"Agent {self.name} completed partial analysis of: {task[:100]}"
             except Exception as e:
-                logger.warning(f"Agent {self.name} brain call failed: {e}")
+                error = str(e)
+                logger.warning(f"Agent {self.name} execution error: {e}")
+                output = f"Agent {self.name} encountered an error but attempted: {task[:80]}"
 
         result = {
             "agent": self.name,
             "agent_id": self.agent_id,
             "specialty": self.specialty,
+            "skills": self.skills[:5],
             "task": task,
-            "status": "completed",
+            "status": "completed" if not error else "partial",
             "output": output,
+            "output_length": len(output),
             "timestamp": datetime.now().isoformat(),
+            "error": error,
         }
 
         self.tasks_completed += 1
@@ -245,20 +266,67 @@ class AgentPool:
         return [r for r in results if isinstance(r, dict)]
 
     async def run_all_100(self, master_task: str, brain=None) -> List[Dict]:
-        """Deploy ALL 100 agents on a single massive task"""
+        """Deploy ALL 100 agents on a single massive task with real AI decomposition"""
         logger.info(f"🚀 Deploying ALL 100 agents on: {master_task[:60]}")
-        sub_tasks = self._decompose_task(master_task)
-        results = await self.run_parallel(sub_tasks, brain=brain)
+        sub_tasks = await self._decompose_task(master_task, brain=brain)
+        # Assign to best-fit agents
+        results = await self._run_with_best_agents(sub_tasks, brain=brain)
         return results
 
-    def _decompose_task(self, task: str) -> List[str]:
-        return [
-            f"Research aspect of: {task}",
-            f"Find data for: {task}",
-            f"Analyze requirements for: {task}",
-            f"Build solution for: {task}",
-            f"Verify and test: {task}",
+    async def _decompose_task(self, task: str, brain=None) -> list:
+        """Use AI to break task into specialist sub-tasks"""
+        default_tasks = [
+            f"[RESEARCH] Search the web and find ALL relevant data, facts, and context for: {task}",
+            f"[ANALYSIS] Deeply analyze the requirements, constraints, and best approach for: {task}",
+            f"[PLANNING] Create a detailed step-by-step execution plan for: {task}",
+            f"[EXECUTION] Build, write, or produce the core deliverable for: {task}",
+            f"[QUALITY] Review, verify accuracy, and improve the output for: {task}",
         ]
+        if not brain:
+            return default_tasks
+        try:
+            decomp = await brain.call_llm(
+                f"""Break this task into exactly 5 specialized sub-tasks for 5 different AI agents.
+Each sub-task should be specific, detailed, and actionable.
+Task: {task}
+
+Return ONLY 5 lines, each starting with TASK_N: (where N is 1-5)""",
+                system="You are a master task decomposer. Return exactly 5 TASK_N: lines, nothing else."
+            )
+            tasks = []
+            for line in decomp.split("\n"):
+                line = line.strip()
+                if line and (line.startswith("TASK_") or line[0].isdigit()):
+                    content = line.split(":", 1)[-1].strip() if ":" in line else line
+                    if content and len(content) > 10:
+                        tasks.append(content)
+            return tasks[:5] if len(tasks) >= 3 else default_tasks
+        except Exception as e:
+            logger.warning(f"Task decomposition failed: {e}")
+            return default_tasks
+
+    async def _run_with_best_agents(self, sub_tasks: list, brain=None) -> list:
+        """Match sub-tasks to the most suitable agents and run them"""
+        specialty_map = {
+            "research": [1, 2, 3, 9, 10],
+            "analysis": [61, 25, 10, 8, 98],
+            "planning": [91, 92, 32, 40, 62],
+            "execution": [11, 12, 13, 33, 41],
+            "quality": [17, 91, 100, 86, 85],
+        }
+        coroutines = []
+        for i, task in enumerate(sub_tasks):
+            task_lower = task.lower()
+            agent_ids = specialty_map.get("execution")  # default
+            for keyword, ids in specialty_map.items():
+                if keyword in task_lower:
+                    agent_ids = ids
+                    break
+            agent_id = agent_ids[i % len(agent_ids)]
+            agent = self.agents.get(agent_id, list(self.agents.values())[i % len(self.agents)])
+            coroutines.append(agent.execute(task, brain=brain))
+        results = await asyncio.gather(*coroutines, return_exceptions=True)
+        return [r for r in results if isinstance(r, dict)]
 
     def get_pool_status(self) -> Dict:
         idle = sum(1 for a in self.agents.values() if a.status == AgentStatus.IDLE)

@@ -438,25 +438,41 @@ class StewBrain:
     # THINK — main task handler
     # ─────────────────────────────────────────
     async def _fetch_web_context(self, query: str) -> str:
-        """Fetch real-time web results to ground LLM responses in current data"""
+        """Fetch real-time web results — tries env key first, falls back to hardcoded"""
         try:
             import httpx
-            serper_key = os.getenv("SERPER_API_KEY", "")
-            if not serper_key:
-                return ""
-            async with httpx.AsyncClient(timeout=8) as client:
+            from datetime import datetime
+            # Try env key first, then hardcoded fallback
+            serper_key = (
+                os.getenv("SERPER_API_KEY", "").strip()
+                or "1867df2e3c379ba68185b39b64f2b986fba9e78e"
+            )
+            async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.post(
                     "https://google.serper.dev/search",
                     headers={"X-API-KEY": serper_key, "Content-Type": "application/json"},
-                    json={"q": query, "num": 5, "gl": "ng", "hl": "en"}
+                    json={"q": query, "num": 6, "gl": "ng", "hl": "en"}
                 )
                 if r.status_code == 200:
                     data = r.json()
                     snippets = []
+                    # Answer box (instant answer)
+                    ab = data.get("answerBox", {})
+                    if ab.get("answer") or ab.get("snippet"):
+                        snippets.append(f"⚡ DIRECT ANSWER: {ab.get('answer') or ab.get('snippet','')}")
+                    # Knowledge graph
+                    kg = data.get("knowledgeGraph", {})
+                    if kg.get("description"):
+                        snippets.append(f"📚 KNOWLEDGE: {kg.get('title','')} — {kg.get('description','')[:200]}")
+                    # Organic results
                     for item in data.get("organic", [])[:5]:
-                        snippets.append(f"• {item.get('title','')} — {item.get('snippet','')}")
+                        date_str = f" [{item.get('date','')}]" if item.get("date") else ""
+                        snippets.append(f"• {item.get('title','')}{date_str} — {item.get('snippet','')}")
                     if snippets:
-                        return "\n\n[REAL-TIME WEB SEARCH RESULTS]:\n" + "\n".join(snippets)
+                        header = f"\n\n[REAL-TIME WEB DATA — Retrieved {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}]:\n"
+                        return header + "\n".join(snippets) + "\n[END REAL-TIME DATA]"
+                elif r.status_code == 403:
+                    logger.warning("Serper key invalid/expired")
         except Exception as e:
             logger.warning(f"Web context fetch failed: {e}")
         return ""

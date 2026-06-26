@@ -56,7 +56,7 @@ def _validate_api_key(key: str) -> Dict:
         return {"plan": "playground", "email": "playground", "calls": 0, "limit": 50}
     if key in _api_keys:
         info = _api_keys[key]
-        if info.get("calls", 0) >= info.get("limit", 1000):
+        if info.get("calls", 0) >= info.get("limit", 500):
             raise HTTPException(status_code=429, detail="API limit reached. Upgrade your plan.")
         _api_keys[key]["calls"] = info.get("calls", 0) + 1
         _api_keys[key]["last_used"] = datetime.now().isoformat()
@@ -783,7 +783,7 @@ async def register_dev(req: RegisterRequest):
             return {"api_key": key, "plan": info["plan"], "calls_limit": info["limit"],
                     "message": "Welcome back! Here is your existing key.", "email": email}
     plan = req.plan if req.plan in ["free", "pro"] else "free"
-    limits = {"free": 1000, "pro": 50000}
+    limits = {"free": 500, "pro": 50000}
     api_key = _generate_key()
     _api_keys[api_key] = {
         "email": email, "name": req.name, "plan": plan,
@@ -793,7 +793,7 @@ async def register_dev(req: RegisterRequest):
     logger.info(f"🔑 New key: {email} ({plan})")
     return {
         "api_key": api_key, "plan": plan,
-        "calls_limit": limits.get(plan, 1000),
+        "calls_limit": limits.get(plan, 500),
         "message": f"✅ Welcome {req.name}! Your STEW API key is ready.",
         "email": email,
         "docs": "https://stew-agent.onrender.com/docs",
@@ -839,7 +839,7 @@ async def auth_stats():
     return {
         "registered_developers": len(_api_keys),
         "free_key": "stew_free_playground_2026",
-        "plans": {"free": "1,000 calls/month", "pro": "50,000 calls/month"}
+        "plans": {"free": "500 calls/month", "pro": "50,000 calls/month"}
     }
 
 
@@ -1041,6 +1041,101 @@ async def status():
 # ═══════════════════════════════════════════
 # FILE DOWNLOAD
 # ═══════════════════════════════════════════
+
+
+from fastapi import UploadFile, File, Form
+import shutil, mimetypes
+
+# ═══════════════════════════════════════════
+# FILE UPLOAD — Read Documents & Images
+# ═══════════════════════════════════════════
+
+@app.post("/upload/document")
+async def upload_document(file: UploadFile = File(...), question: str = Form(default="")):
+    """Upload a PDF, Word doc, or text file — STEW reads and understands it"""
+    try:
+        allowed = {".pdf", ".docx", ".doc", ".txt", ".csv", ".md", ".json"}
+        ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        if ext not in allowed:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(allowed)}")
+        safe_name = file.filename.replace(" ", "_")[:80]
+        save_path = __import__("pathlib").Path("workspace") / safe_name
+        save_path.parent.mkdir(exist_ok=True)
+        with open(save_path, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        # Read content
+        text = ""
+        if ext == ".pdf":
+            result = await skills.read_pdf(str(save_path))
+            text = result.get("content", "") or result.get("text", "") or str(result)
+        elif ext in (".txt", ".md", ".json", ".csv"):
+            with open(save_path, "r", errors="replace") as tf:
+                text = tf.read()[:10000]
+        elif ext in (".docx", ".doc"):
+            try:
+                from docx import Document as DocxDoc
+                doc = DocxDoc(str(save_path))
+                text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])[:10000]
+            except Exception as de:
+                text = f"Could not parse Word doc: {de}"
+        # AI answer if question asked
+        answer = None
+        if question.strip() and brain and text:
+            answer = await brain.call_llm(
+                f"Document content:\n{text[:6000]}\n\nUser question: {question}",
+                system="You are S.T.E.W. Answer the question using ONLY the document content provided. Be clear and specific."
+            )
+        return {
+            "filename": safe_name,
+            "file_type": ext,
+            "size_bytes": save_path.stat().st_size,
+            "characters_read": len(text),
+            "preview": text[:500] + ("..." if len(text) > 500 else ""),
+            "full_text": text[:8000],
+            "question": question or None,
+            "answer": answer,
+            "success": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+@app.post("/upload/image")
+async def upload_image(file: UploadFile = File(...), question: str = Form(default="Describe this image in full detail")):
+    """Upload an image — STEW analyzes it with vision AI"""
+    try:
+        allowed = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+        ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        if ext not in allowed:
+            raise HTTPException(status_code=400, detail=f"Unsupported image type '{ext}'. Allowed: {', '.join(allowed)}")
+        safe_name = file.filename.replace(" ", "_")[:80]
+        save_path = __import__("pathlib").Path("workspace") / safe_name
+        save_path.parent.mkdir(exist_ok=True)
+        raw = await file.read()
+        with open(save_path, "wb") as out:
+            out.write(raw)
+        import base64
+        b64 = base64.b64encode(raw).decode()
+        analysis = "Vision model unavailable"
+        if brain:
+            analysis = await brain.analyze_image(b64, question or "Describe this image in full detail")
+        # Also try OCR
+        ocr_result = await skills.ocr_image_base64(b64)
+        ocr_text = ocr_result.get("text", "") or ""
+        return {
+            "filename": safe_name,
+            "file_type": ext,
+            "size_bytes": len(raw),
+            "question": question,
+            "analysis": analysis,
+            "ocr_text": ocr_text[:2000] if ocr_text else None,
+            "success": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"error": str(e), "success": False}
 
 @app.get("/download/{filename}")
 async def download(filename: str):
