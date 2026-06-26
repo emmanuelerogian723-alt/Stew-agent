@@ -38,3 +38,5 @@ databases:
     plan: free
     databaseName: stew_agent
     user: stew_user
+
+# deploy trigger: 2026-06-26T12:20:25.233623
