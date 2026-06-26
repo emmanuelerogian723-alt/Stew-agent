@@ -1,4 +1,4 @@
-# S.T.E.W Root Dockerfile — used by Render
+# S.T.E.W Root Dockerfile — Render Production
 FROM python:3.11-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -16,15 +16,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Install Python dependencies (cached layer)
 COPY stew_deploy/requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Playwright browser (optional — fallback if fails)
 RUN pip install --no-cache-dir playwright==1.44.0 && \
-    (playwright install chromium --with-deps || echo "Playwright optional - continuing")
+    (playwright install chromium --with-deps || echo "Playwright optional")
 
+# Copy all app code
 COPY stew_deploy/ .
 
+# Copy landing page to root level
+COPY landing.html /app/landing.html
+
+# Runtime directories
 RUN mkdir -p memory/data output logs workspace screenshots
 
 EXPOSE 8000
