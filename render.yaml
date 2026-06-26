@@ -9,6 +9,8 @@ services:
         value: "8000"
       - key: ENVIRONMENT
         value: production
+      - key: DATABASE_URL
+        value: "sqlite:///./stew.db"
       - key: GROQ_API_KEY
         sync: false
       - key: OPENROUTER_API_KEY
@@ -17,17 +19,11 @@ services:
         sync: false
       - key: SERPER_API_KEY
         sync: false
-      - key: DATABASE_URL
-        value: "sqlite:////app/stew.db"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: PAYSTACK_PUBLIC_KEY
-        sync: false
-      - key: STEW_ADMIN_SECRET
-        generateValue: true
-      - key: HF_TOKEN
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -35,3 +31,4 @@ services:
         value: "https://stew-agent.onrender.com"
     healthCheckPath: /heartbeat
     autoDeploy: true
+    # deploy-trigger: 2026-06-26T14:40:00
