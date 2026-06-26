@@ -310,6 +310,11 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
   .sn{font-size:1.8rem;}
   .pricing-grid{grid-template-columns:1fr;}
 }
+
+.plan-badge{display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:800;margin-top:.4rem;margin-left:.3rem;letter-spacing:.5px;text-transform:uppercase;}
+.plan-badge.free{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);}
+.plan-badge.pro{background:rgba(124,58,237,.15);color:#a78bfa;border:1px solid rgba(124,58,237,.3);}
+.plan-badge.biz{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.25);}
 </style>
 </head>
 <body>
@@ -450,18 +455,18 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <p>Every skill is production-ready and runs on demand via API</p>
     </div>
     <div class="skills-grid">
-      <div class="skill-card"><div class="skill-icon">🌐</div><div class="skill-name">Live Web Browse</div><div class="skill-desc">Navigate any website with real Chromium/Playwright — click, fill, scroll, screenshot. Human-like interaction.</div><span class="skill-tag hot">🔥 Popular</span></div>
-      <div class="skill-card"><div class="skill-icon">🔍</div><div class="skill-name">Deep Web Research</div><div class="skill-desc">Multi-source research with cross-validation. Real-time Serper API search. No hallucinations — always current.</div><span class="skill-tag hot">🔥 Hot</span></div>
+      <div class="skill-card"><div class="skill-icon">🌐</div><div class="skill-name">Live Web Browse</div><div class="skill-desc">Navigate any website with real Chromium/Playwright — click, fill, scroll, screenshot. Human-like interaction.</div><span class="skill-tag hot">🔥 Popular</span><span class="plan-badge pro">⭐ Pro</span></div>
+      <div class="skill-card"><div class="skill-icon">🔍</div><div class="skill-name">Deep Web Research</div><div class="skill-desc">Multi-source research with cross-validation. Real-time Serper API search. No hallucinations — always current.</div><span class="skill-tag hot">🔥 Hot</span><span class="plan-badge free">✅ Free</span></div>
       <div class="skill-card"><div class="skill-icon">💻</div><div class="skill-name">Code Generation</div><div class="skill-desc">Write, execute, and debug code in 60+ languages. Python, JS, TypeScript, Go, Rust, Swift, and more.</div><span class="skill-tag">Dev</span></div>
-      <div class="skill-card"><div class="skill-icon">👁️</div><div class="skill-name">Vision & OCR</div><div class="skill-desc">Analyze any image, extract text with OCR, understand charts, read screenshots, and more.</div><span class="skill-tag new">✨ New</span></div>
+      <div class="skill-card"><div class="skill-icon">👁️</div><div class="skill-name">Vision & OCR</div><div class="skill-desc">Analyze any image, extract text with OCR, understand charts, read screenshots, and more.</div><span class="skill-tag new">✨ New</span><span class="plan-badge free">✅ Free</span><span class="plan-badge pro">⭐ Pro</span></div>
       <div class="skill-card"><div class="skill-icon">📄</div><div class="skill-name">Document Builder</div><div class="skill-desc">Generate Word docs, Excel spreadsheets, PDFs, and HTML reports from data or prompts.</div><span class="skill-tag">Build</span></div>
-      <div class="skill-card"><div class="skill-icon">🌍</div><div class="skill-name">African Languages</div><div class="skill-desc">Native translation for Yoruba, Igbo, Hausa, Pidgin, Swahili, Amharic, and 100+ languages.</div><span class="skill-tag new">✨ Africa</span></div>
+      <div class="skill-card"><div class="skill-icon">🌍</div><div class="skill-name">African Languages</div><div class="skill-desc">Native translation for Yoruba, Igbo, Hausa, Pidgin, Swahili, Amharic, and 100+ languages.</div><span class="skill-tag new">✨ Africa</span><span class="plan-badge pro">⭐ Pro</span><span class="plan-badge free">✅ Free</span></div>
       <div class="skill-card"><div class="skill-icon">💱</div><div class="skill-name">Currency & Finance</div><div class="skill-desc">Real-time Naira ↔ USD ↔ 160+ currencies. Stock prices, crypto, and market data.</div><span class="skill-tag">Finance</span></div>
-      <div class="skill-card"><div class="skill-icon">📧</div><div class="skill-name">Email & Messaging</div><div class="skill-desc">Send emails programmatically, integrate with Gmail, Outlook, Slack, and WhatsApp.</div><span class="skill-tag">Comm</span></div>
+      <div class="skill-card"><div class="skill-icon">📧</div><div class="skill-name">Email & Messaging</div><div class="skill-desc">Send emails programmatically, integrate with Gmail, Outlook, Slack, and WhatsApp.</div><span class="skill-tag">Comm</span><span class="plan-badge free">✅ Free</span><span class="plan-badge pro">⭐ Pro</span></div>
       <div class="skill-card"><div class="skill-icon">🤖</div><div class="skill-name">100-Agent Swarm</div><div class="skill-desc">Deploy up to 100 autonomous sub-agents simultaneously for parallel task execution.</div><span class="skill-tag hot">🔥 Powerful</span></div>
-      <div class="skill-card"><div class="skill-icon">🔗</div><div class="skill-name">API Connector</div><div class="skill-desc">Connect to any REST API — OAuth, API keys, webhooks. STEW works across all your apps.</div><span class="skill-tag new">✨ New</span></div>
-      <div class="skill-card"><div class="skill-icon">🗄️</div><div class="skill-name">Data Extraction</div><div class="skill-desc">Bulk web scraping, structured data extraction, CSV/JSON/Excel export from any website.</div><span class="skill-tag">Data</span></div>
-      <div class="skill-card"><div class="skill-icon">🛡️</div><div class="skill-name">Self-Evolving Skills</div><div class="skill-desc">STEW can write and deploy its own new Python skills at runtime via /skills/auto-create.</div><span class="skill-tag hot">🔥 Unique</span></div>
+      <div class="skill-card"><div class="skill-icon">🔗</div><div class="skill-name">API Connector</div><div class="skill-desc">Connect to any REST API — OAuth, API keys, webhooks. STEW works across all your apps.</div><span class="skill-tag new">✨ New</span><span class="plan-badge biz">💎 Business</span><span class="plan-badge free">✅ Free</span></div>
+      <div class="skill-card"><div class="skill-icon">🗄️</div><div class="skill-name">Data Extraction</div><div class="skill-desc">Bulk web scraping, structured data extraction, CSV/JSON/Excel export from any website.</div><span class="skill-tag">Data</span><span class="plan-badge pro">⭐ Pro</span></div>
+      <div class="skill-card"><div class="skill-icon">🛡️</div><div class="skill-name">Self-Evolving Skills</div><div class="skill-desc">STEW can write, execute, and adapt its own Python skills at runtime using the /task endpoint with natural language.</div><span class="skill-tag hot">🔥 Unique</span><span class="plan-badge biz">💎 Business</span></div>
     </div>
   </div>
 </section>
@@ -592,21 +597,36 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
 }</pre>
       </div>
 
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2. Call the STEW Agent</h3>
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2. Ask STEW Anything (Real-Time Chat)</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
         <pre><span class="kw">POST</span> https://stew-agent.onrender.com/chat
 
 {
-  <span class="str">"message"</span>: <span class="str">"What is the latest AI news today?"</span>,
-  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>
+  <span class="str">"message"</span>: <span class="str">"What is the latest AI news today?"</span>
+}
+
+<span class="cm">// Response — web-grounded with Serper search:</span>
+{
+  <span class="str">"response"</span>: <span class="str">"Here are the latest AI developments..."</span>,
+  <span class="str">"web_grounded"</span>: <span class="kw">true</span>,
+  <span class="str">"success"</span>: <span class="kw">true</span>
+}</pre>
+      </div>
+
+      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2b. Execute Any Task (Full Agent Power)</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/task
+
+{
+  <span class="str">"task"</span>: <span class="str">"Research the top 5 AI startups in Africa and write a report"</span>
 }
 
 <span class="cm">// Response:</span>
 {
-  <span class="str">"response"</span>: <span class="str">"Here are the latest AI developments..."</span>,
-  <span class="str">"model_used"</span>: <span class="str">"llama-4-maverick"</span>,
-  <span class="str">"sources"</span>: [...]
+  <span class="str">"output"</span>: <span class="str">"Comprehensive report..."</span>,
+  <span class="str">"success"</span>: <span class="kw">true</span>
 }</pre>
       </div>
 

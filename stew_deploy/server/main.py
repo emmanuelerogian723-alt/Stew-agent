@@ -318,33 +318,89 @@ async def execute_task(request: TaskRequest):
         return {"task": request.task, "agents_deployed": len(results), "output": combined, "response": combined, "success": True}
 
     # Single intelligent execution
-    output = await brain.execute_task(request.task, request.context, skills=skills)
-    memory.add_conversation("assistant", output)
+    result = await brain.think(request.task, request.context)
+    output = result.get('output', str(result)) if isinstance(result, dict) else str(result)
+    memory.add_conversation("assistant", str(output))
     return {"task": request.task, "output": output, "response": output, "success": True}
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """AI conversation endpoint — fast direct LLM call"""
+    """AI conversation endpoint — smart routing with real-time web search"""
     is_safe, result = sanitize_input(request.message, "message")
     if not is_safe:
         raise HTTPException(status_code=400, detail=result)
+    msg = request.message.lower()
+
+    # ── Detect document requests → call document builder endpoints directly ──
+    if any(w in msg for w in ["create pdf", "make pdf", "generate pdf", "write pdf", "pdf report"]):
+        result = await skills.create_pdf("Document", request.message)
+        return {"message": request.message, "response": f"✅ PDF created! Download: {result.get('download_url', result.get('path', 'output/document.pdf'))}", "file": result, "success": True}
+    if any(w in msg for w in ["create word", "make word", "word doc", "word document", "docx"]):
+        result = await skills.create_word_doc("Document", request.message)
+        return {"message": request.message, "response": f"✅ Word document created! Download: {result.get('download_url', result.get('path', 'output/document.docx'))}", "file": result, "success": True}
+    if any(w in msg for w in ["spreadsheet", "excel", "create excel", "make excel", "xlsx"]):
+        result = await skills.create_spreadsheet("Data", [[request.message]])
+        return {"message": request.message, "response": f"✅ Spreadsheet created! Download: {result.get('download_url', result.get('path', 'output/spreadsheet.xlsx'))}", "file": result, "success": True}
+
+    # ── Detect email requests → honest response + attempt real send ──
+    if any(w in msg for w in ["send email", "send an email", "email to "]):
+        smtp_user = os.getenv("SMTP_USER", "")
+        smtp_pass = os.getenv("SMTP_PASS", "")
+        if not smtp_user or not smtp_pass:
+            return {
+                "message": request.message,
+                "response": (
+                    "📧 To send real emails, STEW needs SMTP credentials configured. "
+                    "Set SMTP_USER and SMTP_PASS environment variables (Gmail App Password works). "
+                    "Once configured, use POST /email/send with {to, subject, body}."
+                ),
+                "success": False,
+                "hint": "Configure SMTP_USER and SMTP_PASS environment variables to enable real email sending."
+            }
+        # Credentials exist — pass to task handler
+        pass
+
+    # ── Detect finance questions → call /finance endpoints directly ──
+    if any(w in msg for w in ["currency", "exchange rate", "dollar to naira", "usd to ngn", "ngn to usd", "convert usd", "convert ngn", "naira to", "to naira"]):
+        import re
+        nums = re.findall(r"\d+(?:\.\d+)?", request.message)
+        amount = float(nums[0]) if nums else 1.0
+        from_c = "USD" if "usd" in msg or "dollar" in msg else "NGN"
+        to_c = "NGN" if from_c == "USD" else "USD"
+        if "ngn to usd" in msg or "naira to dollar" in msg or "naira to usd" in msg:
+            from_c, to_c = "NGN", "USD"
+        result = await skills.convert_currency(amount, from_c, to_c)
+        return {"message": request.message, "response": result.get("result", str(result)), "data": result, "success": True}
+
+    if any(w in msg for w in ["stock price", "share price", "stock of", "price of ", "market price", "nasdaq", "nyse"]):
+        import re
+        symbols = re.findall(r"\b[A-Z]{2,5}\b", request.message.upper())
+        symbol = symbols[0] if symbols else "AAPL"
+        result = await skills.stock_price(symbol)
+        return {"message": request.message, "response": result.get("result", str(result)), "data": result, "success": True}
+
+    # ── Default: use brain.think() which has full Serper web grounding ──
     try:
         memory.add_conversation("user", request.message)
-        # Direct async LLM call with 25s timeout
-        response = await asyncio.wait_for(
-            brain.call_llm(request.message),
-            timeout=25.0
+        result = await asyncio.wait_for(
+            brain.think(request.message),
+            timeout=30.0
         )
-        if isinstance(response, dict):
-            response = response.get("output") or response.get("response") or str(response)
-        memory.add_conversation("assistant", str(response))
-        return {"message": request.message, "response": str(response), "success": True}
+        response = result.get("output", str(result)) if isinstance(result, dict) else str(result)
+        web_grounded = result.get("web_grounded", False) if isinstance(result, dict) else False
+        memory.add_conversation("assistant", response)
+        return {
+            "message": request.message,
+            "response": response,
+            "web_grounded": web_grounded,
+            "success": True
+        }
     except asyncio.TimeoutError:
-        logger.error("Chat timeout — LLM took too long")
-        return {"message": request.message, "response": "STEW is thinking hard right now — try again in a moment! ⚡", "success": False}
+        logger.error("Chat timeout")
+        return {"message": request.message, "response": "S.T.E.W is processing hard right now — try again in a moment! ⚡", "success": False}
     except Exception as e:
         logger.error(f"Chat error: {e}")
-        return {"message": request.message, "response": f"STEW encountered an issue: {str(e)[:80]}. Try again!", "success": False}
+        return {"message": request.message, "response": f"S.T.E.W encountered an issue: {str(e)[:100]}. Retry!", "success": False}
 
 # ═══════════════════════════════════════════
 # BROWSER CONTROL — REAL PLAYWRIGHT
@@ -352,12 +408,39 @@ async def chat(request: ChatRequest):
 
 @app.post("/browse/navigate")
 async def browse_navigate(request: BrowseRequest):
-    """Navigate to a URL — returns content + screenshot"""
-    result = await skills.browser_navigate(request.url)
-    if request.question and result.get("success") and result.get("screenshot"):
-        analysis = await brain.analyze_image(result["screenshot"], request.question)
-        result["visual_analysis"] = analysis
-    return result
+    """Navigate to a URL — static fetch first, Playwright for JS-heavy sites"""
+    # Try static fetch first (fast, low-resource)
+    static_result = await skills.scrape_webpage(request.url)
+    if static_result.get("success") and len(static_result.get("content", "")) > 300:
+        response_data = {
+            "url": request.url,
+            "title": static_result.get("title", ""),
+            "content": static_result.get("content", ""),
+            "method": "static",
+            "success": True
+        }
+        if request.question and brain:
+            answer = await brain.call_llm(
+                f"Based on this page content, answer: {request.question}\n\nContent:\n{static_result.get('content','')[:4000]}",
+                system="You are S.T.E.W. Answer the question using the provided web page content."
+            )
+            response_data["visual_analysis"] = answer
+        return response_data
+    # Fall back to full Playwright for JS-heavy sites
+    try:
+        result = await asyncio.wait_for(skills.browser_navigate(request.url), timeout=25.0)
+        if request.question and result.get("success") and result.get("screenshot"):
+            analysis = await brain.analyze_image(result["screenshot"], request.question)
+            result["visual_analysis"] = analysis
+        result["method"] = "playwright"
+        return result
+    except asyncio.TimeoutError:
+        return {
+            "url": request.url,
+            "error": "This site requires heavy JavaScript rendering which timed out on the current tier. For complex sites like BBC/TechCrunch, full browser automation is available on Pro plan.",
+            "tip": "Try /browse/extract for text-only extraction, or upgrade to Pro for full Playwright browsing.",
+            "success": False
+        }
 
 @app.post("/browse/click")
 async def browse_click(request: ClickRequest):
@@ -716,6 +799,29 @@ async def register_dev(req: RegisterRequest):
         "docs": "https://stew-agent.onrender.com/docs",
         "playground": "https://stew-agent.onrender.com/playground"
     }
+
+
+@app.get("/auth/usage")
+async def auth_usage(api_key: str = ""):
+    """Check your API usage — calls used, limit, and remaining"""
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Provide ?api_key=your_key")
+    if api_key == _free_key:
+        return {"plan": "playground", "calls_used": 0, "calls_limit": 50, "calls_remaining": 50, "email": "playground@stew.ai"}
+    if api_key in _api_keys:
+        info = _api_keys[api_key]
+        used = info.get("calls", 0)
+        limit = info.get("limit", 1000)
+        return {
+            "plan": info.get("plan", "free"),
+            "email": info.get("email", ""),
+            "calls_used": used,
+            "calls_limit": limit,
+            "calls_remaining": max(0, limit - used),
+            "created": info.get("created", ""),
+            "last_used": info.get("last_used", "never"),
+        }
+    raise HTTPException(status_code=401, detail="Invalid API key")
 
 @app.post("/auth/validate")
 async def validate_dev_key(req: ValidateRequest):

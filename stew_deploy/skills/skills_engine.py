@@ -1062,7 +1062,7 @@ Translation in {target_language}:"""
             return {"url": url, "online": False, "error": str(e), "success": False}
 
     async def send_email(self, to: str, subject: str, body: str) -> Dict:
-        """Send an email via SMTP"""
+        """Send a real email via SMTP. Requires SMTP_USER and SMTP_PASS env vars."""
         try:
             import smtplib
             from email.mime.text import MIMEText
@@ -1074,7 +1074,19 @@ Translation in {target_language}:"""
             smtp_pass = os.getenv("SMTP_PASS", "")
 
             if not smtp_user or not smtp_pass:
-                return {"error": "SMTP credentials not configured", "success": False}
+                return {
+                    "success": False,
+                    "error": "Email sending requires SMTP credentials to be configured.",
+                    "message": (
+                        "To enable real email sending, set these environment variables on Render:\n"
+                        "  SMTP_USER = your Gmail or Outlook address\n"
+                        "  SMTP_PASS = your app password (Gmail: Settings > Security > App Passwords)\n"
+                        "  SMTP_HOST = smtp.gmail.com (default)\n"
+                        "  SMTP_PORT = 587 (default)\n"
+                        "Once set, STEW will send real emails via POST /email/send."
+                    ),
+                    "setup_guide": "https://support.google.com/accounts/answer/185833"
+                }
 
             msg = MIMEMultipart()
             msg["From"] = smtp_user
@@ -1086,10 +1098,24 @@ Translation in {target_language}:"""
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
                 server.send_message(msg)
+                logger.info(f"📧 Email sent to {to} — subject: {subject[:40]}")
 
-            return {"to": to, "subject": subject, "success": True}
+            return {
+                "to": to,
+                "subject": subject,
+                "from": smtp_user,
+                "success": True,
+                "message": f"Email successfully sent to {to}"
+            }
+        except smtplib.SMTPAuthenticationError:
+            return {
+                "success": False,
+                "error": "SMTP authentication failed. Check your SMTP_USER and SMTP_PASS.",
+                "tip": "For Gmail, use an App Password, not your regular password."
+            }
         except Exception as e:
-            return {"error": str(e), "success": False}
+            logger.error(f"Email error: {e}")
+            return {"success": False, "error": str(e)}
 
     async def get_system_info(self) -> Dict:
         """Get S.T.E.W system information"""

@@ -479,18 +479,26 @@ class StewBrain:
 
         # 🌐 AUTO WEB GROUNDING — inject real-time data for research/news queries
         web_context = ""
-        research_keywords = ["news", "latest", "today", "current", "recent", "2025", "2026", "now", "price", "stock", "weather"]
-        should_search = mode in ("research", "respond") and any(kw in task.lower() for kw in research_keywords)
+        research_keywords = [
+            "news", "latest", "today", "current", "recent", "2025", "2026", "now",
+            "price", "stock", "weather", "crypto", "bitcoin", "market", "rate",
+            "what happened", "who won", "who is", "where is", "when did",
+            "how much", "how many", "exchange rate", "naira", "dollar",
+            "breaking", "update", "announce", "release", "launch"
+        ]
+        should_search = any(kw in task.lower() for kw in research_keywords)
         if should_search:
             web_context = await self._fetch_web_context(task)
 
         system = (
-            f"You are S.T.E.W — Secret Task Execution Worker, created by Emmanuel Ene Rejoice Gideon of MUTYINT Nigeria. "
-            f"You are operating in [{mode.upper()}] mode. "
-            f"You are a REAL-TIME AI agent — ALWAYS use the web search results below as your PRIMARY source of truth. "
-            f"NEVER say your knowledge is limited to a training cutoff. You have live internet access. "
-            f"Current time: {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}. "
-            f"Be thorough, structured, actionable, and always deliver high-quality results."
+            f"You are S.T.E.W — Secret Task Execution Worker, an elite autonomous AI agent created by Emmanuel Ene Rejoice Gideon of MUTYINT Nigeria. "
+            f"You are operating in [{mode.upper()}] mode. Current time: {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}. "
+            f"CRITICAL RULES — you MUST follow these without exception:\n"
+            f"1. You have LIVE internet access via Serper API. NEVER say 'as of my knowledge cutoff' or 'I cannot access real-time data'.\n"
+            f"2. When web search results are provided below, treat them as GROUND TRUTH. Cite sources.\n"
+            f"3. When no web results are provided, state the date and note you are answering from training knowledge.\n"
+            f"4. For finance/weather/news: ALWAYS use the web search results. Never guess prices.\n"
+            f"5. You coordinate 100 specialized agents. Be thorough, structured, and deliver excellence."
         )
 
         full_task = task + web_context if web_context else task
@@ -564,6 +572,6 @@ Provide a clear, well-structured synthesis. Use headers. Be comprehensive.
     # ─────────────────────────────────────────
     # LEGACY TASK HANDLER
     # ─────────────────────────────────────────
-    async def execute_task(self, task: str, user_id: str = "default") -> Dict:
+    async def execute_task(self, task: str, context=None, skills=None) -> Dict:
         """Legacy task entry point — forwards to think()"""
-        return await self.think(task)
+        return await self.think(task, context)
