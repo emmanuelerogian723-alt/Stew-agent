@@ -1,1156 +1,887 @@
 """
-S.T.E.W — Secret Task Execution Worker
-Server v3.0 — 50+ Endpoints
-=====================================
-Real browser. Vision. Deep research. File creation.
-Multi-model AI routing. 100 agent swarm.
-Created by Emmanuel Ene Rejoice Gideon — MUTYINT
+S.T.E.W — Structured Task Execution Workflow
+FastAPI Backend v5.0
 """
-
-import asyncio
-import base64
-import os
-import sys
 import json
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import logging
+import os
+import requests as http_requests
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
-from datetime import datetime
-from loguru import logger
+from datetime import datetime, timezone
+from typing import Any, Optional
 
-from soul.SOUL import StewHeart, StewConsciousness, STEW_SOUL
-from server.security import (
-    security_middleware, sanitize_input, validate_url,
-    get_security_stats, manual_block, manual_unblock,
-    get_client_ip, check_rate_limit
+from fastapi import (
+    Depends, FastAPI, File, Form, HTTPException,
+    Request, UploadFile, BackgroundTasks
 )
-from memory.memory_engine import MemoryEngine
-from agents.agent_pool import AgentPool
-from skills.skills_engine import SkillsEngine
-from core.brain import StewBrain
-import hashlib
-import secrets
-import time
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, EmailStr, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
-# ═══════════════════════════════════════════
-# API KEY AUTHENTICATION SYSTEM
-# ═══════════════════════════════════════════
-# In-memory store (persists while server runs; use DB for production)
-_api_keys: Dict[str, Dict] = {}
-_free_key = "stew_free_playground_2026"
+from server.auth import (
+    create_access_token, generate_api_key, get_current_user_jwt,
+    get_user_by_api_key, hash_password, verify_password,
+)
+from server.config import get_settings
+from server.database import get_db, init_db
+from server.document_generator import (
+    generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx,
+)
+from server.document_processor import extract_text
+from server.llm_client import get_llm_client
+from server.memory import (
+    append_message, build_llm_messages, get_or_create_conversation,
+)
+from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+from server.models import APICall, Conversation, Document, PaymentTransaction, User
+from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
+from server.search import get_searcher
 
-def _generate_key() -> str:
-    return "stew_" + secrets.token_hex(24)
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
-def _validate_api_key(key: str) -> Dict:
-    """Returns key info or raises 401"""
-    if not key:
-        raise HTTPException(status_code=401, detail="API key required. Get yours at /auth/register")
-    if key == _free_key:
-        return {"plan": "playground", "email": "playground", "calls": 0, "limit": 50}
-    if key in _api_keys:
-        info = _api_keys[key]
-        if info.get("calls", 0) >= info.get("limit", 500):
-            raise HTTPException(status_code=429, detail="API limit reached. Upgrade your plan.")
-        _api_keys[key]["calls"] = info.get("calls", 0) + 1
-        _api_keys[key]["last_used"] = datetime.now().isoformat()
-        return info
-    raise HTTPException(status_code=401, detail="Invalid API key. Get yours at /auth/register")
-
-class RegisterRequest(BaseModel):
-    email: str
-    name: str
-    plan: str = "free"  # free | pro
-
-class ValidateRequest(BaseModel):
-    api_key: str
+from server.system_prompt import STEW_MASTER_PROMPT as STEW_SYSTEM_PROMPT
+from server.keepalive import start_keepalive, stop_keepalive
+from server.skills_engine import run_skill, list_skills as get_skills_list
 
 
 
-logger.info("⚡ S.T.E.W — Secret Task Execution Worker — INITIALIZING")
-
-heart = StewHeart()
-consciousness = StewConsciousness()
-memory = MemoryEngine()
-agent_pool = AgentPool()
-skills = SkillsEngine()
-brain = StewBrain(consciousness, heart, memory)
+# ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
-async def lifespan(app_instance):
-    logger.info("🚀 S.T.E.W v3.0 is ALIVE")
-    heart.beat()
-    memory.know("startup", f"S.T.E.W v3.0 started at {datetime.now().isoformat()}")
+async def lifespan(app: FastAPI):
+    logger.info("S.T.E.W API v5.0 starting up…")
+    await init_db()
+    os.makedirs("logs", exist_ok=True)
     os.makedirs("output", exist_ok=True)
-    os.makedirs("workspace", exist_ok=True)
-    os.makedirs("screenshots", exist_ok=True)
-    task = asyncio.create_task(heart.start_heartbeat())
+    start_keepalive()
     yield
-    heart.is_alive = False
-    task.cancel()
+    stop_keepalive()
+    logger.info("S.T.E.W API shutting down.")
+
+
+# ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="S.T.E.W — Secret Task Execution Worker",
-    version="3.0.0",
-    description="Autonomous AI Agent by MUTYINT",
+    title="S.T.E.W Agent API",
+    description="Structured Task Execution Workflow — AI Agent Backend v5.0",
+    version="5.0.0",
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan
 )
-
-# ── Allowed origins (add your domains here)
-ALLOWED_ORIGINS = [
-    "https://slimeai-frontend.vercel.app",
-    "https://slime-ai.vercel.app",
-    "https://mutyint.com",
-    "https://www.mutyint.com",
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:5500",
-    "*",  # Remove this line when you have a real domain
-]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
-# ── Security middleware (rate limiting, IP blocking, input sanitization)
-app.middleware("http")(security_middleware)
 
-# ═══════════════════════════════════════════
-# REQUEST MODELS
-# ═══════════════════════════════════════════
+# ── Background: log API call ──────────────────────────────────────────────────
 
-class TaskRequest(BaseModel):
-    task: str
-    context: Optional[Dict] = None
-    agent_ids: Optional[List[int]] = None
-    use_all_agents: bool = False
+async def _log_call(db: AsyncSession, user_id: Optional[str], endpoint: str,
+                    method: str, tokens: int, status: int):
+    call = APICall(
+        user_id=user_id,
+        endpoint=endpoint,
+        method=method,
+        tokens_used=tokens,
+        status_code=status,
+    )
+    db.add(call)
+    await db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PYDANTIC SCHEMAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: Optional[str] = None
+    plan: str = "free"
+
+    @field_validator("plan")
+    @classmethod
+    def validate_plan(cls, v):
+        if v not in ("free", "pro", "business", "enterprise"):
+            raise ValueError("plan must be free, pro, business, or enterprise")
+        return v
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
 
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    api_key: Optional[str] = None
+    web_search: bool = True
 
-class SearchRequest(BaseModel):
-    query: str
-    num_results: int = 10
 
-class CodeRequest(BaseModel):
-    description: str
-    language: str = "python"
-
-class WebsiteRequest(BaseModel):
-    name: str
-    description: str
-    color: str = "#0a0050"
-
-class DocumentRequest(BaseModel):
-    title: str
-    content: str
-    doc_type: str = "pdf"
-
-class SpreadsheetRequest(BaseModel):
-    name: str
-    data: List[List]
-
-class MemoryRequest(BaseModel):
-    key: str
-    value: str
-
-class AgentRequest(BaseModel):
-    agent_ids: List[int]
+class TaskRequest(BaseModel):
     task: str
+    api_key: str
+    context: Optional[str] = None
+
 
 class BrowseRequest(BaseModel):
     url: str
     question: Optional[str] = None
+    api_key: str
 
-class ClickRequest(BaseModel):
+
+class GeneratePDFRequest(BaseModel):
+    content: str
+    title: str = "Document"
+    api_key: str
+
+
+class GenerateDOCXRequest(BaseModel):
+    content: str
+    title: str = "Document"
+    api_key: str
+
+
+class GenerateXLSXRequest(BaseModel):
+    data: list[dict]
+    sheet_name: str = "Sheet1"
+    title: str = "Spreadsheet"
+    api_key: str
+
+
+class GeneratePPTXRequest(BaseModel):
+    slides: list[dict]
+    title: str = "Presentation"
+    api_key: str
+
+
+class GenerateHTMLRequest(BaseModel):
+    content: str
+    title: str = "Report"
+    api_key: str
+
+
+class APICallRequest(BaseModel):
     url: str
-    selector: str
-
-class FormFillRequest(BaseModel):
-    url: str
-    form_data: Dict[str, str]
-
-class VisionRequest(BaseModel):
-    image_url: Optional[str] = None
-    image_base64: Optional[str] = None
-    question: str = "Describe everything you see in detail"
-
-class ScreenshotAnalyzeRequest(BaseModel):
-    url: str
-    question: str = "What do you see on this website?"
-
-class ApiCallRequest(BaseModel):
     method: str = "GET"
-    url: str
-    headers: Optional[Dict] = None
-    body: Optional[Dict] = None
+    headers: dict = {}
+    body: Optional[dict] = None
+    api_key: str
 
-class BulkScrapeRequest(BaseModel):
-    urls: List[str]
 
-class DownloadRequest(BaseModel):
-    url: str
-    filename: Optional[str] = None
+class InitPaymentRequest(BaseModel):
+    plan: str
+    api_key: str
 
-class EmailRequest(BaseModel):
-    to: str
-    subject: str
-    body: str
 
-class TranslateRequest(BaseModel):
-    text: str
-    target_language: str
+class VerifyPaymentRequest(BaseModel):
+    reference: str
+    api_key: str
 
-class SummarizeRequest(BaseModel):
-    text: str
 
-class SentimentRequest(BaseModel):
-    text: str
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
 
-class WeatherRequest(BaseModel):
-    city: str
-
-class CurrencyRequest(BaseModel):
-    amount: float
-    from_currency: str
-    to_currency: str
-
-class StockRequest(BaseModel):
-    symbol: str
-
-class WebhookRequest(BaseModel):
-    url: str
-    event: str
-    data: Dict
-
-class DeepResearchRequest(BaseModel):
-    topic: str
-
-class WorkspaceRequest(BaseModel):
-    filename: str
-    content: Optional[str] = None
-
-class OCRRequest(BaseModel):
-    image_url: Optional[str] = None
-    image_base64: Optional[str] = None
-
-# ═══════════════════════════════════════════
-# HOME PAGE
-# ═══════════════════════════════════════════
-
-
-# ═══ KEEP-ALIVE SYSTEM ═══════════════════════════════════════
-import asyncio
-from datetime import datetime
-
-_ping_count = 0
-_last_ping = None
-
-async def self_ping_loop():
-    """STEW keeps itself alive by pinging its own heartbeat every 10 minutes"""
-    global _ping_count, _last_ping
-    await asyncio.sleep(30)  # Wait 30s after startup before first ping
-    while True:
-        try:
-            async with __import__("httpx").AsyncClient(timeout=15) as client:
-                r = await client.get("https://stew-agent.onrender.com/heartbeat")
-                if r.status_code == 200:
-                    _ping_count += 1
-                    _last_ping = datetime.utcnow().isoformat() + "Z"
-                    logger.info(f"🫀 Self-ping #{_ping_count} — STEW is alive!")
-        except Exception as e:
-            logger.warning(f"Self-ping failed (retrying in 10m): {e}")
-        await asyncio.sleep(600)  # Ping every 10 minutes
-
-@app.on_event("startup")
-async def startup_keep_alive():
-    """Launch the self-ping background task on server start"""
-    asyncio.create_task(self_ping_loop())
-    logger.info("🫀 STEW Keep-Alive system started — pinging every 10 minutes")
-
-@app.get("/alive")
-async def alive_status():
-    """Keep-alive status dashboard"""
-    return {
-        "status": "immortal",
-        "self_pings": _ping_count,
-        "last_ping": _last_ping,
-        "ping_interval_minutes": 10,
-        "message": "S.T.E.W never sleeps. 🫀",
-        "render_note": "Free tier sleeps after 15min idle — self-ping prevents this",
-        "uptime_strategy": "STEW pings itself every 10 minutes to stay warm",
-    }
-
-@app.get("/", response_class=HTMLResponse)
-async def home():
-    import os
-    landing_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "landing.html")
-    if os.path.exists(landing_path):
-        with open(landing_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>S.T.E.W API</h1><p>Landing page not found.</p>")
-
-@app.post("/task")
-async def execute_task(request: TaskRequest):
-    """Master endpoint — execute any task with full intelligence"""
-    if request.use_all_agents:
-        results = await agent_pool.run_all_100(request.task, brain=brain)
-        combined = "\n\n".join([r.get("output", "") for r in results if r.get("output")])
-        if brain and combined:
-            synthesis = await brain.call_llm(
-                f"Synthesize these multi-agent findings into one comprehensive answer for: {request.task}\n\n{combined[:3000]}",
-                system="You are S.T.E.W. Combine these findings into one clear, well-structured response."
-            )
-            return {"task": request.task, "agents_deployed": len(results), "output": synthesis, "response": synthesis, "success": True}
-        return {"task": request.task, "agents_deployed": len(results), "output": combined, "response": combined, "success": True}
-
-    # Single intelligent execution
-    result = await brain.think(request.task, request.context)
-    output = result.get('output', str(result)) if isinstance(result, dict) else str(result)
-    memory.add_conversation("assistant", str(output))
-    return {"task": request.task, "output": output, "response": output, "success": True}
-
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    """AI conversation endpoint — smart routing with real-time web search"""
-    is_safe, result = sanitize_input(request.message, "message")
-    if not is_safe:
-        raise HTTPException(status_code=400, detail=result)
-    msg = request.message.lower()
-
-    # ── Detect document requests → call document builder endpoints directly ──
-    if any(w in msg for w in ["create pdf", "make pdf", "generate pdf", "write pdf", "pdf report"]):
-        result = await skills.create_pdf("Document", request.message)
-        return {"message": request.message, "response": f"✅ PDF created! Download: {result.get('download_url', result.get('path', 'output/document.pdf'))}", "file": result, "success": True}
-    if any(w in msg for w in ["create word", "make word", "word doc", "word document", "docx"]):
-        result = await skills.create_word_doc("Document", request.message)
-        return {"message": request.message, "response": f"✅ Word document created! Download: {result.get('download_url', result.get('path', 'output/document.docx'))}", "file": result, "success": True}
-    if any(w in msg for w in ["spreadsheet", "excel", "create excel", "make excel", "xlsx"]):
-        result = await skills.create_spreadsheet("Data", [[request.message]])
-        return {"message": request.message, "response": f"✅ Spreadsheet created! Download: {result.get('download_url', result.get('path', 'output/spreadsheet.xlsx'))}", "file": result, "success": True}
-
-    # ── Detect email requests → honest response + attempt real send ──
-    if any(w in msg for w in ["send email", "send an email", "email to "]):
-        smtp_user = os.getenv("SMTP_USER", "")
-        smtp_pass = os.getenv("SMTP_PASS", "")
-        if not smtp_user or not smtp_pass:
-            return {
-                "message": request.message,
-                "response": (
-                    "📧 To send real emails, STEW needs SMTP credentials configured. "
-                    "Set SMTP_USER and SMTP_PASS environment variables (Gmail App Password works). "
-                    "Once configured, use POST /email/send with {to, subject, body}."
-                ),
-                "success": False,
-                "hint": "Configure SMTP_USER and SMTP_PASS environment variables to enable real email sending."
-            }
-        # Credentials exist — pass to task handler
-        pass
-
-    # ── Detect finance questions → call /finance endpoints directly ──
-    if any(w in msg for w in ["currency", "exchange rate", "dollar to naira", "usd to ngn", "ngn to usd", "convert usd", "convert ngn", "naira to", "to naira"]):
-        import re
-        nums = re.findall(r"\d+(?:\.\d+)?", request.message)
-        amount = float(nums[0]) if nums else 1.0
-        from_c = "USD" if "usd" in msg or "dollar" in msg else "NGN"
-        to_c = "NGN" if from_c == "USD" else "USD"
-        if "ngn to usd" in msg or "naira to dollar" in msg or "naira to usd" in msg:
-            from_c, to_c = "NGN", "USD"
-        result = await skills.convert_currency(amount, from_c, to_c)
-        return {"message": request.message, "response": result.get("result", str(result)), "data": result, "success": True}
-
-    if any(w in msg for w in ["stock price", "share price", "stock of", "price of ", "market price", "nasdaq", "nyse"]):
-        import re
-        symbols = re.findall(r"\b[A-Z]{2,5}\b", request.message.upper())
-        symbol = symbols[0] if symbols else "AAPL"
-        result = await skills.stock_price(symbol)
-        return {"message": request.message, "response": result.get("result", str(result)), "data": result, "success": True}
-
-    # ── Default: use brain.think() which has full Serper web grounding ──
-    try:
-        memory.add_conversation("user", request.message)
-        result = await asyncio.wait_for(
-            brain.think(request.message),
-            timeout=30.0
-        )
-        response = result.get("output", str(result)) if isinstance(result, dict) else str(result)
-        web_grounded = result.get("web_grounded", False) if isinstance(result, dict) else False
-        memory.add_conversation("assistant", response)
-        return {
-            "message": request.message,
-            "response": response,
-            "web_grounded": web_grounded,
-            "success": True
-        }
-    except asyncio.TimeoutError:
-        logger.error("Chat timeout")
-        return {"message": request.message, "response": "S.T.E.W is processing hard right now — try again in a moment! ⚡", "success": False}
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
-        return {"message": request.message, "response": f"S.T.E.W encountered an issue: {str(e)[:100]}. Retry!", "success": False}
-
-# ═══════════════════════════════════════════
-# BROWSER CONTROL — REAL PLAYWRIGHT
-# ═══════════════════════════════════════════
-
-@app.post("/browse/navigate")
-async def browse_navigate(request: BrowseRequest):
-    """Navigate to a URL — static fetch first, Playwright for JS-heavy sites"""
-    # Try static fetch first (fast, low-resource)
-    static_result = await skills.scrape_webpage(request.url)
-    if static_result.get("success") and len(static_result.get("content", "")) > 300:
-        response_data = {
-            "url": request.url,
-            "title": static_result.get("title", ""),
-            "content": static_result.get("content", ""),
-            "method": "static",
-            "success": True
-        }
-        if request.question and brain:
-            answer = await brain.call_llm(
-                f"Based on this page content, answer: {request.question}\n\nContent:\n{static_result.get('content','')[:4000]}",
-                system="You are S.T.E.W. Answer the question using the provided web page content."
-            )
-            response_data["visual_analysis"] = answer
-        return response_data
-    # Fall back to full Playwright for JS-heavy sites
-    try:
-        result = await asyncio.wait_for(skills.browser_navigate(request.url), timeout=25.0)
-        if request.question and result.get("success") and result.get("screenshot"):
-            analysis = await brain.analyze_image(result["screenshot"], request.question)
-            result["visual_analysis"] = analysis
-        result["method"] = "playwright"
-        return result
-    except asyncio.TimeoutError:
-        return {
-            "url": request.url,
-            "error": "This site requires heavy JavaScript rendering which timed out on the current tier. For complex sites like BBC/TechCrunch, full browser automation is available on Pro plan.",
-            "tip": "Try /browse/extract for text-only extraction, or upgrade to Pro for full Playwright browsing.",
-            "success": False
-        }
-
-@app.post("/browse/click")
-async def browse_click(request: ClickRequest):
-    """Click an element on a webpage"""
-    return await skills.browser_click(request.url, request.selector)
-
-@app.post("/browse/form")
-async def browse_form(request: FormFillRequest):
-    """Fill out a form on any website"""
-    return await skills.browser_fill_form(request.url, request.form_data, brain)
-
-@app.post("/browse/screenshot")
-async def browse_screenshot(request: BrowseRequest):
-    """Take a full screenshot of any website"""
-    return await skills.browser_screenshot(request.url)
-
-@app.post("/browse/extract")
-async def browse_extract(request: BrowseRequest):
-    """Extract text from a webpage"""
-    return await skills.browser_extract_text(request.url)
-
-@app.post("/browse/links")
-async def browse_links(request: BrowseRequest):
-    """Get all links from a webpage"""
-    return await skills.browser_get_links(request.url)
-
-# ═══════════════════════════════════════════
-# VISION — IMAGE ANALYSIS
-# ═══════════════════════════════════════════
-
-@app.post("/vision/analyze")
-async def vision_analyze(request: VisionRequest):
-    """Analyze an image — describe, read text, answer questions"""
-    image_source = request.image_url or request.image_base64
-    if not image_source:
-        raise HTTPException(status_code=400, detail="Provide image_url or image_base64")
-    if brain:
-        analysis = await brain.analyze_image(image_source, request.question)
-        return {"question": request.question, "analysis": analysis, "success": True}
-    return {"error": "Vision brain not initialized", "success": False}
-
-@app.post("/vision/ocr")
-async def vision_ocr(request: OCRRequest):
-    """Extract text from an image using OCR"""
-    if request.image_url:
-        return await skills.ocr_image_url(request.image_url)
-    elif request.image_base64:
-        return await skills.ocr_image_base64(request.image_base64)
-    raise HTTPException(status_code=400, detail="Provide image_url or image_base64")
-
-@app.post("/vision/screenshot-analyze")
-async def vision_screenshot_analyze(request: ScreenshotAnalyzeRequest):
-    """Screenshot a website and visually analyze it"""
-    return await skills.screenshot_and_analyze(request.url, request.question, brain)
-
-# ═══════════════════════════════════════════
-# SEARCH & RESEARCH
-# ═══════════════════════════════════════════
-
-@app.post("/search")
-async def search(request: SearchRequest):
-    results = await skills.web_search(request.query, request.num_results)
-    memory.know(f"search_{request.query[:30]}", str(results)[:500])
-    return {"query": request.query, "results": results, "count": len(results), "success": True}
-
-@app.post("/search/news")
-async def search_news(request: SearchRequest):
-    results = await skills.news_search(request.query, request.num_results)
-    return {"query": request.query, "news": results, "count": len(results), "success": True}
-
-@app.post("/search/youtube")
-async def search_youtube(request: SearchRequest):
-    results = await skills.youtube_search(request.query)
-    return {"query": request.query, "videos": results, "count": len(results), "success": True}
-
-@app.post("/research/deep")
-async def deep_research(request: DeepResearchRequest):
-    return await skills.deep_research(request.topic, brain)
-
-@app.post("/scrape")
-async def scrape(request: BrowseRequest):
-    return await skills.scrape_webpage(request.url)
-
-@app.post("/scrape/bulk")
-async def scrape_bulk(request: BulkScrapeRequest):
-    results = await skills.bulk_scrape(request.urls)
-    return {"results": results, "count": len(results), "success": True}
-
-# ═══════════════════════════════════════════
-# CODE GENERATION & EXECUTION
-# ═══════════════════════════════════════════
-
-@app.post("/code")
-async def write_code(request: CodeRequest):
-    return await skills.write_code(request.description, request.language, brain)
-
-@app.post("/code/run")
-async def run_code(request: CodeRequest):
-    code_result = await skills.write_code(request.description, request.language, brain)
-    if request.language == "python":
-        run_result = await skills.run_python_code(code_result.get("code", ""))
-        code_result["execution"] = run_result
-    return code_result
-
-@app.post("/code/debug")
-async def debug_code(request: CodeRequest):
-    return await skills.debug_code(request.description, "", brain)
-
-# ═══════════════════════════════════════════
-# DOCUMENT BUILDING
-# ═══════════════════════════════════════════
-
-@app.post("/build/document")
-async def build_document(request: DocumentRequest):
-    if request.doc_type == "pdf":
-        return await skills.create_pdf(request.title, request.content)
-    elif request.doc_type == "word":
-        return await skills.create_word_doc(request.title, request.content)
-    return {"error": "Use doc_type 'pdf' or 'word'", "success": False}
-
-@app.post("/build/pdf")
-async def build_pdf(request: DocumentRequest):
-    return await skills.create_pdf(request.title, request.content)
-
-@app.post("/build/word")
-async def build_word(request: DocumentRequest):
-    return await skills.create_word_doc(request.title, request.content)
-
-@app.post("/build/spreadsheet")
-async def build_spreadsheet(request: SpreadsheetRequest):
-    return await skills.create_spreadsheet(request.name, request.data)
-
-@app.post("/build/website")
-async def build_website(request: WebsiteRequest):
-    return await skills.create_website(request.name, request.description, request.color)
-
-@app.post("/build/report")
-async def build_report(request: DocumentRequest):
-    return await skills.create_html_report(request.title, request.content)
-
-@app.post("/read/pdf")
-async def read_pdf(request: WorkspaceRequest):
-    return await skills.read_pdf(request.filename)
-
-# ═══════════════════════════════════════════
-# REAL-WORLD DATA
-# ═══════════════════════════════════════════
-
-@app.post("/weather")
-async def weather(request: WeatherRequest):
-    return await skills.weather_info(request.city)
-
-@app.post("/finance/currency")
-async def currency(request: CurrencyRequest):
-    return await skills.convert_currency(request.amount, request.from_currency, request.to_currency)
-
-@app.post("/finance/stock")
-async def stock(request: StockRequest):
-    return await skills.stock_price(request.symbol)
-
-@app.post("/translate")
-async def translate(request: TranslateRequest):
-    return await skills.translate_text(request.text, request.target_language, brain=brain)
-
-@app.post("/summarize")
-async def summarize(request: SummarizeRequest):
-    return await skills.summarize_text(request.text, brain)
-
-@app.post("/sentiment")
-async def sentiment(request: SentimentRequest):
-    return await skills.analyze_sentiment(request.text)
-
-# ═══════════════════════════════════════════
-# WORKSPACE & MEMORY
-# ═══════════════════════════════════════════
-
-@app.post("/workspace/save")
-async def workspace_save(request: WorkspaceRequest):
-    return await skills.save_to_workspace(request.filename, request.content or "")
-
-@app.post("/workspace/read")
-async def workspace_read(request: WorkspaceRequest):
-    return await skills.read_from_workspace(request.filename)
-
-@app.get("/workspace/list")
-async def workspace_list():
-    return await skills.list_files("workspace")
-
-@app.get("/files/list")
-async def files_list():
-    return await skills.list_files("output")
-
-@app.post("/memory/set")
-async def memory_set(request: MemoryRequest):
-    memory.know(request.key, request.value)
-    return {"key": request.key, "value": request.value, "success": True}
-
-@app.get("/memory/get/{key}")
-async def memory_get(key: str):
-    value = memory.recall(key)
-    return {"key": key, "value": value, "success": value is not None}
-
-# ═══════════════════════════════════════════
-# API & AUTOMATION
-# ═══════════════════════════════════════════
-
-@app.post("/api/call")
-async def api_call(request: ApiCallRequest):
-    return await skills.api_call(request.method, request.url, request.headers, request.body)
-
-@app.post("/webhook/send")
-async def send_webhook(request: WebhookRequest):
-    return await skills.send_webhook(request.url, request.event, request.data)
-
-@app.post("/monitor")
-async def monitor(request: BrowseRequest):
-    return await skills.monitor_website(request.url)
-
-@app.post("/email/send")
-async def send_email(request: EmailRequest):
-    return await skills.send_email(request.to, request.subject, request.body)
-
-# ═══════════════════════════════════════════
-# AGENT SYSTEM
-# ═══════════════════════════════════════════
-
-@app.post("/agents/run")
-async def run_agents(request: AgentRequest):
-    results = await agent_pool.run_parallel([request.task] * len(request.agent_ids),
-                                            request.agent_ids, brain=brain)
-    combined = "\n\n".join([r.get("output", "") for r in results])
-    return {"task": request.task, "agents": len(results), "output": combined, "results": results, "success": True}
-
-@app.post("/agents/all")
-async def deploy_all_agents(request: TaskRequest):
-    results = await agent_pool.run_all_100(request.task, brain=brain)
-    combined = "\n\n".join([r.get("output", "") for r in results if r.get("output")])
-    synthesis = await brain.call_llm(
-        f"Synthesize into one answer for: {request.task}\n\n{combined[:3000]}",
-        system="Be comprehensive and well-structured."
-    )
-    return {"task": request.task, "agents_deployed": len(results), "synthesis": synthesis, "success": True}
-
-@app.get("/agents/status")
-async def agents_status():
-    return agent_pool.get_pool_status()
-
-# ═══════════════════════════════════════════
-# SYSTEM STATUS
-# ═══════════════════════════════════════════
-
-# ═══════════════════════════════════════════
-# SECURITY ADMIN ENDPOINTS
-# ═══════════════════════════════════════════
-
-ADMIN_SECRET = os.environ.get("STEW_ADMIN_SECRET", "").strip()
-
-@app.get("/security/stats")
-async def security_stats(request: Request):
-    """View security statistics — admin only."""
-    key = request.headers.get("X-Admin-Key", "").strip()
-    if not ADMIN_SECRET or key != ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return get_security_stats()
-
-@app.post("/security/block")
-async def block_ip_endpoint(request: Request):
-    """Manually block an IP — admin only."""
-    key = request.headers.get("X-Admin-Key", "").strip()
-    if not ADMIN_SECRET or key != ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    body = await request.json()
-    ip = body.get("ip")
-    duration = body.get("duration", -1)
-    reason = body.get("reason", "manual admin block")
-    if not ip:
-        raise HTTPException(status_code=400, detail="IP required")
-    manual_block(ip, duration, reason)
-    return {"success": True, "message": f"IP {ip} blocked", "duration": duration}
-
-@app.post("/security/unblock")
-async def unblock_ip_endpoint(request: Request):
-    """Manually unblock an IP — admin only."""
-    key = request.headers.get("X-Admin-Key", "").strip()
-    if not ADMIN_SECRET or key != ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    body = await request.json()
-    ip = body.get("ip")
-    if not ip:
-        raise HTTPException(status_code=400, detail="IP required")
-    manual_unblock(ip)
-    return {"success": True, "message": f"IP {ip} unblocked"}
-
-@app.get("/security/health")
-async def security_health():
-    """Public security health check."""
-    stats = get_security_stats()
-    return {
-        "status": "protected",
-        "shield": "active",
-        "rate_limiting": "enabled",
-        "ip_blocking": "enabled",
-        "input_sanitization": "enabled",
-        "blocked_ips": stats["currently_blocked_ips"],
-        "total_requests_served": stats["total_requests"],
-    }
-
-
-@app.get("/playground", response_class=HTMLResponse)
-async def playground():
-    """S.T.E.W Developer Playground — test all endpoints live"""
-    import pathlib
-    # Try multiple locations
-    base = pathlib.Path(__file__).parent.parent
-    candidates = [
-        base / "playground.html",
-        base / "server" / "playground.html",
-        pathlib.Path("/app/playground.html"),
-        pathlib.Path("playground.html"),
-    ]
-    for f in candidates:
-        if f.exists():
-            return HTMLResponse(content=f.read_text())
-    # If file not found, serve embedded playground
-    return HTMLResponse(content=PLAYGROUND_HTML)
-
-
-# ═══════════════════════════════════════════
-# AUTH ENDPOINTS
-# ═══════════════════════════════════════════
-
-@app.post("/auth/register")
-async def register_dev(req: RegisterRequest):
-    """Register and get a free API key instantly — no credit card needed"""
-    email = req.email.strip().lower()
-    if not email or "@" not in email:
-        raise HTTPException(status_code=400, detail="Valid email required")
-    for key, info in _api_keys.items():
-        if info.get("email") == email:
-            return {"api_key": key, "plan": info["plan"], "calls_limit": info["limit"],
-                    "message": "Welcome back! Here is your existing key.", "email": email}
-    plan = req.plan if req.plan in ["free", "pro"] else "free"
-    limits = {"free": 500, "pro": 50000}
-    api_key = _generate_key()
-    _api_keys[api_key] = {
-        "email": email, "name": req.name, "plan": plan,
-        "calls": 0, "limit": limits.get(plan, 1000),
-        "created": datetime.now().isoformat(), "last_used": None
-    }
-    logger.info(f"🔑 New key: {email} ({plan})")
-    return {
-        "api_key": api_key, "plan": plan,
-        "calls_limit": limits.get(plan, 500),
-        "message": f"✅ Welcome {req.name}! Your STEW API key is ready.",
-        "email": email,
-        "docs": "https://stew-agent.onrender.com/docs",
-        "playground": "https://stew-agent.onrender.com/playground"
-    }
-
-
-@app.get("/auth/usage")
-async def auth_usage(api_key: str = ""):
-    """Check your API usage — calls used, limit, and remaining"""
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Provide ?api_key=your_key")
-    if api_key == _free_key:
-        return {"plan": "playground", "calls_used": 0, "calls_limit": 50, "calls_remaining": 50, "email": "playground@stew.ai"}
-    if api_key in _api_keys:
-        info = _api_keys[api_key]
-        used = info.get("calls", 0)
-        limit = info.get("limit", 1000)
-        return {
-            "plan": info.get("plan", "free"),
-            "email": info.get("email", ""),
-            "calls_used": used,
-            "calls_limit": limit,
-            "calls_remaining": max(0, limit - used),
-            "created": info.get("created", ""),
-            "last_used": info.get("last_used", "never"),
-        }
-    raise HTTPException(status_code=401, detail="Invalid API key")
-
-@app.post("/auth/validate")
-async def validate_dev_key(req: ValidateRequest):
-    """Validate an API key"""
-    try:
-        info = _validate_api_key(req.api_key)
-        return {"valid": True, "plan": info["plan"], "calls_used": info.get("calls", 0),
-                "calls_limit": info.get("limit", 0), "email": info.get("email", "?")}
-    except HTTPException as e:
-        return {"valid": False, "detail": e.detail}
-
-@app.get("/auth/stats")
-async def auth_stats():
-    """Public developer registration stats"""
-    return {
-        "registered_developers": len(_api_keys),
-        "free_key": "stew_free_playground_2026",
-        "plans": {"free": "500 calls/month", "pro": "50,000 calls/month"}
-    }
-
-
-# ── HUMAN BROWSE: full autonomous web session ──
-class HumanBrowseRequest(BaseModel):
-    url: str
-    actions: list = []  # optional list of actions: [{type: "click", selector: "..."}, {type:"fill",selector:"...",value:"..."}]
-    question: str = ""  # optional question to answer from the page
-
-@app.post("/browse/human")
-async def browse_human(request: HumanBrowseRequest, req: Request):
-    """Browse a website like a human — navigate, optionally perform actions, optionally answer a question from the page"""
-    security_middleware(req)
-    url = sanitize_input(request.url)
-    if not validate_url(url):
-        raise HTTPException(status_code=400, detail="Invalid URL")
-    pw, browser = await skills._fresh_browser()
-    if not browser:
-        raise HTTPException(status_code=503, detail="Browser unavailable")
-    try:
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            locale="en-US",
-        )
-        page = await context.new_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=35000)
-        await page.wait_for_timeout(2000)
-        # Scroll down naturally
-        await page.evaluate("window.scrollTo(0, 300)")
-        await page.wait_for_timeout(500)
-        results = []
-        # Perform requested actions
-        for action in (request.actions or []):
-            atype = action.get("type","")
-            sel = action.get("selector","")
-            val = action.get("value","")
-            try:
-                if atype == "click":
-                    await page.click(sel, timeout=6000)
-                    await page.wait_for_timeout(1200)
-                    results.append({"action":"click","selector":sel,"status":"ok"})
-                elif atype == "fill":
-                    await page.fill(sel, val, timeout=6000)
-                    results.append({"action":"fill","selector":sel,"value":val,"status":"ok"})
-                elif atype == "scroll":
-                    await page.evaluate(f"window.scrollBy(0, {val or 500})")
-                    results.append({"action":"scroll","status":"ok"})
-                elif atype == "wait":
-                    await page.wait_for_timeout(int(val or 1000))
-                    results.append({"action":"wait","status":"ok"})
-                elif atype == "type":
-                    await page.keyboard.type(str(val))
-                    results.append({"action":"type","value":val,"status":"ok"})
-                elif atype == "press":
-                    await page.keyboard.press(str(val or "Enter"))
-                    results.append({"action":"press","key":val,"status":"ok"})
-            except Exception as e:
-                results.append({"action":atype,"selector":sel,"status":"error","error":str(e)})
-        # Final state
-        title = await page.title()
-        final_url = page.url
-        text = await page.evaluate("""() => {
-            const els = document.querySelectorAll('script,style,nav,footer');
-            els.forEach(e => e.remove());
-            return document.body ? document.body.innerText.slice(0, 8000) : '';
-        }""")
-        links = await page.evaluate("""() => {
-            return Array.from(document.querySelectorAll('a[href]'))
-                .map(a => ({text: a.innerText.trim().slice(0,80), href: a.href}))
-                .filter(l => l.href.startsWith('http') && l.text.length > 0)
-                .slice(0, 20);
-        }""")
-        screenshot_path = skills.screenshots_dir / f"human_{int(__import__('time').time())}.png"
-        await page.screenshot(path=str(screenshot_path), full_page=False)
-        screenshot_b64 = __import__('base64').b64encode(screenshot_path.read_bytes()).decode()
-        # Answer question if asked
-        ai_answer = None
-        if request.question and text:
-            try:
-                ai_answer = await brain.think(
-                    f"Based on this webpage content, answer: {request.question}\n\nPage title: {title}\nURL: {final_url}\n\nContent:\n{text[:4000]}"
-                )
-            except Exception:
-                ai_answer = "Could not analyze page content."
-        return {
-            "url": url, "final_url": final_url, "title": title,
-            "text": text[:4000], "links": links,
-            "actions_performed": results,
-            "ai_answer": ai_answer,
-            "screenshot": screenshot_b64,
-            "success": True
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        try:
-            await browser.close()
-            await pw.stop()
-        except Exception:
-            pass
-
-
-
-@app.get("/slime", response_class=HTMLResponse)
-async def slime_page():
-    """Slime AI v2.5 Ultra — Full App"""
-    import pathlib
-    base = pathlib.Path(__file__).parent.parent
-    for p in ["slime.html", "server/slime.html", "/app/slime.html"]:
-        fp = base / p if not p.startswith('/') else pathlib.Path(p)
-        if fp.exists():
-            with open(fp, 'r', encoding='utf-8') as f:
-                return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>Slime AI - Loading...</h1>", status_code=200)
-
-@app.get("/plugins", response_class=HTMLResponse)
-async def plugins_page():
-    """STEW Plugins & Connectors dashboard"""
-    import pathlib
-    for p in ["plugins.html", "server/plugins.html", "/app/plugins.html"]:
-        try:
-            with open(p, "r") as f:
-                return HTMLResponse(content=f.read())
-        except FileNotFoundError:
-            continue
-    # Inline fallback
-    return HTMLResponse(content="""<!DOCTYPE html><html><head><meta charset=UTF-8><title>STEW Plugins</title></head><body style='background:#050508;color:#e2e8f0;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;'><div style='text-align:center'><div style='font-size:3rem;margin-bottom:1rem'>🔌</div><h1>Plugins Loading...</h1><p style='color:#64748b;margin-top:.5rem'>Redirecting to homepage...</p><script>setTimeout(()=>location.href='/',2000)</script></div></body></html>""")
-
-
-# ═══ SEO ROUTES ═══════════════════════════════════
-@app.get("/sitemap.xml")
-async def sitemap():
-    from fastapi.responses import Response
-    try:
-        with open("sitemap.xml", "r") as f:
-            return Response(content=f.read(), media_type="application/xml")
-    except:
-        xml = """<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://stew-agent.onrender.com/</loc><priority>1.0</priority></url>
-  <url><loc>https://stew-agent.onrender.com/playground</loc><priority>0.9</priority></url>
-  <url><loc>https://stew-agent.onrender.com/plugins</loc><priority>0.8</priority></url>
-  <url><loc>https://stew-agent.onrender.com/slime</loc><priority>0.9</priority></url>
-</urlset>"""
-        from fastapi.responses import Response
-        return Response(content=xml, media_type="application/xml")
-
-@app.get("/robots.txt")
-async def robots():
-    from fastapi.responses import PlainTextResponse
-    content = """User-agent: *
-Allow: /
-Disallow: /auth/
-Disallow: /security/block
-Sitemap: https://stew-agent.onrender.com/sitemap.xml
-Host: stew-agent.onrender.com"""
-    return PlainTextResponse(content=content)
-
-@app.get("/BBHLR0945oVzFsu-C0G8NRNHkvYdCEDCxf3Mpho30A.html", include_in_schema=False)
-async def google_verify():
-    """Google Search Console HTML file verification"""
-    return HTMLResponse(content="google-site-verification: BBHLR0945oVzFsu-C0G8NRNHkvYdCEDCxf3Mpho30A.html")
-
-@app.get("/google4414167ffddc8a5f.html", include_in_schema=False)
-async def google_verify2():
-    """Google Search Console HTML file verification v2"""
-    return HTMLResponse(content="google-site-verification: google4414167ffddc8a5f", media_type="text/html")
+# ── Health ─────────────────────────────────────────────────────────────────────
 
 @app.get("/heartbeat")
 async def heartbeat():
     return {
-        "agent": "S.T.E.W — Secret Task Execution Worker",
-        "status": "online",
-        "beat": heart.beats,
-        "version": "4.0.1 ULTRA",
-        "timestamp": datetime.now().isoformat()
+        "status": "ok",
+        "version": "5.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "environment": settings.ENVIRONMENT,
+        "providers": {
+            "groq": bool(settings.GROQ_API_KEY),
+            "openrouter": bool(settings.OPENROUTER_API_KEY),
+            "openai": bool(settings.OPENAI_API_KEY),
+            "search": bool(settings.SERPER_API_KEY),
+            "payments": bool(settings.PAYSTACK_SECRET_KEY),
+        },
     }
 
-@app.get("/status")
-async def status():
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+
+@app.post("/auth/register", status_code=201)
+async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == body.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(409, "Email already registered")
+
+    user = User(
+        name=body.name,
+        email=body.email,
+        password_hash=hash_password(body.password) if body.password else None,
+        plan=body.plan,
+        api_key=generate_api_key(),
+    )
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+
     return {
-        "agent": "S.T.E.W",
-        "full_name": "Secret Task Execution Worker",
-        "version": "4.0.1 ULTRA",
-        "creator": "Emmanuel Ene Rejoice Gideon",
-        "company": "MUTYINT",
-        "stew": "online",
-        "brain": brain.get_status(),
-        "heart": {"alive": True, "heartbeats": heart.beats, "mood": "determined"},
-        "skills_count": 60,
-        "agents": 100,
-        "browser": "Playwright Chromium",
-        "vision": "Tesseract OCR + LLM Vision",
-        "files_available": len(list(__import__('pathlib').Path("output").glob("*"))) if __import__('pathlib').Path("output").exists() else 0,
-        "timestamp": datetime.now().isoformat()
+        "api_key": user.api_key,
+        "user_id": user.id,
+        "plan": user.plan,
+        "calls_limit": settings.PLAN_CALL_LIMITS[user.plan],
+        "success": True,
     }
 
-# ═══════════════════════════════════════════
-# FILE DOWNLOAD
-# ═══════════════════════════════════════════
+
+@app.post("/auth/login")
+async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "Invalid email or password")
+
+    token = create_access_token(user.id, user.email)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "plan": user.plan,
+        "api_key": user.api_key,
+        "success": True,
+    }
 
 
-from fastapi import UploadFile, File, Form
-import shutil, mimetypes
+@app.get("/auth/me")
+async def get_me(current_user: User = Depends(get_current_user_jwt)):
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "plan": current_user.plan,
+        "api_key": current_user.api_key,
+        "created_at": current_user.created_at.isoformat(),
+    }
 
-# ═══════════════════════════════════════════
-# FILE UPLOAD — Read Documents & Images
-# ═══════════════════════════════════════════
+
+# ── Chat ───────────────────────────────────────────────────────────────────────
+
+@app.post("/chat")
+async def chat(
+    body: ChatRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    llm = get_llm_client()
+    searcher = get_searcher()
+
+    user = None
+    if body.api_key:
+        try:
+            user = await get_user_by_api_key(body.api_key, db)
+        except HTTPException:
+            pass
+
+    # Web search grounding
+    search_results = None
+    sources = []
+    web_grounded = False
+
+    if body.web_search and searcher._is_available():
+        # Decide if query needs fresh data
+        needs_search_keywords = [
+            "latest", "current", "today", "news", "score", "price",
+            "weather", "stock", "who won", "when is", "what is the",
+        ]
+        if any(kw in body.message.lower() for kw in needs_search_keywords):
+            try:
+                search_results = searcher.search(body.message, num_results=5)
+                if search_results.get("grounded"):
+                    web_grounded = True
+                    sources = [
+                        {"title": r["title"], "url": r["link"], "snippet": r["snippet"]}
+                        for r in search_results.get("organic", [])
+                    ]
+            except Exception as e:
+                logger.warning(f"Search failed, continuing without: {e}")
+
+    # Build messages
+    system = STEW_SYSTEM_PROMPT
+    if search_results and web_grounded:
+        context = searcher.format_results_for_llm(search_results)
+        system += f"\n\nWEB SEARCH CONTEXT (use ONLY this for factual claims):\n{context}"
+
+    if user:
+        conv = await get_or_create_conversation(db, user.id, body.conversation_id)
+        await append_message(db, conv, "user", body.message)
+        messages = build_llm_messages(conv, system)
+    else:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": body.message},
+        ]
+
+    result = llm.chat(messages)
+    response_text = result["content"]
+    tokens = result["tokens"].get("total", 0)
+
+    if user:
+        await append_message(db, conv, "assistant", response_text)
+
+    if user:
+        background_tasks.add_task(_log_call, db, user.id, "/chat", "POST", tokens, 200)
+
+    return {
+        "response": response_text,
+        "web_grounded": web_grounded,
+        "sources": sources,
+        "provider": result.get("provider"),
+        "conversation_id": conv.id if user else None,
+        "success": True,
+    }
+
+
+# ── Task ───────────────────────────────────────────────────────────────────────
+
+@app.post("/task")
+async def task(
+    body: TaskRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    llm = get_llm_client()
+    searcher = get_searcher()
+
+    # Always try to search for task context
+    search_context = ""
+    sources = []
+    web_grounded = False
+
+    if searcher._is_available():
+        try:
+            sr = searcher.search(body.task, num_results=5)
+            if sr.get("grounded"):
+                search_context = searcher.format_results_for_llm(sr)
+                sources = [
+                    {"title": r["title"], "url": r["link"]}
+                    for r in sr.get("organic", [])
+                ]
+                web_grounded = True
+        except Exception as e:
+            logger.warning(f"Task search failed: {e}")
+
+    system = STEW_SYSTEM_PROMPT
+    if search_context:
+        system += f"\n\nWEB CONTEXT:\n{search_context}"
+    if body.context:
+        system += f"\n\nADDITIONAL CONTEXT:\n{body.context}"
+
+    result = llm.chat([
+        {"role": "system", "content": system},
+        {"role": "user", "content": f"Complete this task:\n{body.task}"},
+    ])
+
+    background_tasks.add_task(
+        _log_call, db, user.id, "/task", "POST", result["tokens"].get("total", 0), 200
+    )
+
+    return {
+        "output": result["content"],
+        "web_grounded": web_grounded,
+        "sources": sources,
+        "provider": result.get("provider"),
+        "success": True,
+    }
+
+
+# ── Browse ─────────────────────────────────────────────────────────────────────
+
+@app.post("/browse/navigate")
+async def browse_navigate(
+    body: BrowseRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    llm = get_llm_client()
+
+    try:
+        import httpx
+        from bs4 import BeautifulSoup
+
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; STEWBot/5.0; +https://stew-agent.onrender.com)"
+                )
+            }
+            resp = await client.get(body.url, headers=headers)
+            resp.raise_for_status()
+            html = resp.text
+            title = resp.url
+
+        soup = BeautifulSoup(html, "html.parser")
+        page_title = soup.title.string.strip() if soup.title else str(title)
+
+        # Remove script/style noise
+        for tag in soup(["script", "style", "nav", "footer", "aside"]):
+            tag.decompose()
+        text = soup.get_text(separator=" ", strip=True)[:8000]  # cap context
+
+        visual_analysis = ""
+        if body.question:
+            result = llm.complete(
+                f"Page content:\n{text}\n\nQuestion: {body.question}",
+                system="You are analyzing a webpage. Answer the question based ONLY on the page content provided.",
+            )
+            visual_analysis = result
+
+        background_tasks.add_task(_log_call, db, user.id, "/browse/navigate", "POST", 0, 200)
+
+        return {
+            "url": body.url,
+            "title": page_title,
+            "content": text,
+            "visual_analysis": visual_analysis,
+            "success": True,
+        }
+    except ImportError:
+        raise HTTPException(500, "httpx or beautifulsoup4 not installed")
+    except Exception as e:
+        logger.error(f"Browse error: {e}")
+        raise HTTPException(502, f"Could not fetch URL: {e}")
+
+
+# ── Document Generation ────────────────────────────────────────────────────────
+
+@app.post("/generate/pdf")
+async def gen_pdf(
+    body: GeneratePDFRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    result = generate_pdf(body.content, body.title)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/pdf", "POST", 0, 200)
+    return result
+
+
+@app.post("/generate/docx")
+async def gen_docx(
+    body: GenerateDOCXRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    result = generate_docx(body.content, body.title)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/docx", "POST", 0, 200)
+    return result
+
+
+@app.post("/generate/xlsx")
+async def gen_xlsx(
+    body: GenerateXLSXRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    result = generate_xlsx(body.data, body.sheet_name, body.title)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/xlsx", "POST", 0, 200)
+    return result
+
+
+@app.post("/generate/pptx")
+async def gen_pptx(
+    body: GeneratePPTXRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    result = generate_pptx(body.slides, body.title)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/pptx", "POST", 0, 200)
+    return result
+
+
+@app.post("/generate/html")
+async def gen_html(
+    body: GenerateHTMLRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    result = generate_html(body.content, body.title)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/html", "POST", 0, 200)
+    return result
+
+
+# ── Document Upload ────────────────────────────────────────────────────────────
 
 @app.post("/upload/document")
-async def upload_document(file: UploadFile = File(...), question: str = Form(default="")):
-    """Upload a PDF, Word doc, or text file — STEW reads and understands it"""
+async def upload_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    question: Optional[str] = Form(None),
+    api_key: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(api_key, db)
+    llm = get_llm_client()
+
+    extracted = await extract_text(file)
+    text = extracted["text"]
+
+    answer = ""
+    if question and text:
+        answer = llm.complete(
+            f"Document:\n{text[:8000]}\n\nQuestion: {question}",
+            system="Answer the question based on the document. Be concise and accurate.",
+        )
+
+    # Save document record
+    doc = Document(
+        user_id=user.id,
+        filename=extracted["filename"],
+        file_type=extracted["file_type"],
+        content=text[:50000],  # Store up to 50K chars
+        file_size=len(text),
+    )
+    db.add(doc)
+    await db.flush()
+
+    background_tasks.add_task(_log_call, db, user.id, "/upload/document", "POST", 0, 200)
+
+    return {
+        "filename": extracted["filename"],
+        "file_type": extracted["file_type"],
+        "text": text,
+        "answer": answer,
+        "document_id": doc.id,
+        "success": True,
+    }
+
+
+# ── API Proxy ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/call")
+async def api_proxy_call(
+    body: APICallRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+
+    # Block calls to internal/private IPs
+    blocked_prefixes = ("localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0")
+    if any(body.url.startswith(f"http://{p}") or body.url.startswith(f"https://{p}")
+           or body.url.replace("http://", "").replace("https://", "").startswith(p)
+           for p in blocked_prefixes):
+        raise HTTPException(403, "Calls to internal/private addresses are not allowed")
+
+    method = body.method.upper()
+    if method not in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+        raise HTTPException(400, f"Unsupported HTTP method: {method}")
+
     try:
-        allowed = {".pdf", ".docx", ".doc", ".txt", ".csv", ".md", ".json"}
-        ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
-        if ext not in allowed:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(allowed)}")
-        safe_name = file.filename.replace(" ", "_")[:80]
-        save_path = __import__("pathlib").Path("workspace") / safe_name
-        save_path.parent.mkdir(exist_ok=True)
-        with open(save_path, "wb") as out:
-            shutil.copyfileobj(file.file, out)
-        # Read content
-        text = ""
-        if ext == ".pdf":
-            result = await skills.read_pdf(str(save_path))
-            text = result.get("content", "") or result.get("text", "") or str(result)
-        elif ext in (".txt", ".md", ".json", ".csv"):
-            with open(save_path, "r", errors="replace") as tf:
-                text = tf.read()[:10000]
-        elif ext in (".docx", ".doc"):
-            try:
-                from docx import Document as DocxDoc
-                doc = DocxDoc(str(save_path))
-                text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])[:10000]
-            except Exception as de:
-                text = f"Could not parse Word doc: {de}"
-        # AI answer if question asked
-        answer = None
-        if question.strip() and brain and text:
-            answer = await brain.call_llm(
-                f"Document content:\n{text[:6000]}\n\nUser question: {question}",
-                system="You are S.T.E.W. Answer the question using ONLY the document content provided. Be clear and specific."
+        resp = http_requests.request(
+            method=method,
+            url=body.url,
+            headers=body.headers,
+            json=body.body if body.body else None,
+            timeout=30,
+        )
+        background_tasks.add_task(_log_call, db, user.id, "/api/call", "POST", 0, resp.status_code)
+        return {
+            "status_code": resp.status_code,
+            "body": resp.text,
+            "headers": dict(resp.headers),
+            "success": resp.ok,
+        }
+    except http_requests.Timeout:
+        raise HTTPException(504, "Request timed out")
+    except Exception as e:
+        raise HTTPException(502, f"Request failed: {e}")
+
+
+# ── Payments ───────────────────────────────────────────────────────────────────
+
+@app.post("/payments/initialize")
+async def init_payment(
+    body: InitPaymentRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    if body.plan not in settings.PLAN_PRICES:
+        raise HTTPException(400, "Invalid plan")
+    if body.plan == "free":
+        raise HTTPException(400, "Free plan requires no payment")
+
+    amount_kobo = settings.PLAN_PRICES[body.plan] * 100
+    result = initialize_payment(
+        email=user.email,
+        amount_kobo=amount_kobo,
+        plan=body.plan,
+        metadata={"user_id": user.id, "plan": body.plan},
+    )
+    return {**result, "success": True}
+
+
+@app.post("/payments/verify")
+async def verify_payment_endpoint(
+    body: VerifyPaymentRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_user_by_api_key(body.api_key, db)
+    tx_data = verify_payment(body.reference)
+
+    if tx_data["status"] == "success":
+        plan = tx_data.get("metadata", {}).get("plan", "pro")
+        await upgrade_user_plan(db, user.id, plan)
+
+        # Record transaction
+        t = PaymentTransaction(
+            user_id=user.id,
+            reference=body.reference,
+            plan=plan,
+            amount=tx_data["amount"],
+            status="success",
+        )
+        db.add(t)
+        await db.flush()
+
+        return {"message": f"Plan upgraded to {plan}", "plan": plan, "success": True}
+    else:
+        return {"message": "Payment not yet completed", "status": tx_data["status"], "success": False}
+
+
+@app.post("/payments/webhook")
+async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    body_bytes = await request.body()
+    signature = request.headers.get("x-paystack-signature", "")
+
+    if not validate_webhook_signature(body_bytes, signature):
+        raise HTTPException(400, "Invalid webhook signature")
+
+    event = json.loads(body_bytes)
+    if event.get("event") == "charge.success":
+        data = event["data"]
+        metadata = data.get("metadata", {})
+        user_id = metadata.get("user_id")
+        plan = metadata.get("plan", "pro")
+
+        if user_id:
+            await upgrade_user_plan(db, user_id, plan)
+            t = PaymentTransaction(
+                user_id=user_id,
+                reference=data["reference"],
+                plan=plan,
+                amount=data["amount"],
+                status="success",
             )
-        return {
-            "filename": safe_name,
-            "file_type": ext,
-            "size_bytes": save_path.stat().st_size,
-            "characters_read": len(text),
-            "preview": text[:500] + ("..." if len(text) > 500 else ""),
-            "full_text": text[:8000],
-            "question": question or None,
-            "answer": answer,
-            "success": True
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"error": str(e), "success": False}
+            db.add(t)
+            await db.flush()
+            logger.info(f"Webhook: upgraded user {user_id} to {plan}")
 
-@app.post("/upload/image")
-async def upload_image(file: UploadFile = File(...), question: str = Form(default="Describe this image in full detail")):
-    """Upload an image — STEW analyzes it with vision AI"""
+    return {"status": "ok"}
+
+
+# ── Conversations ──────────────────────────────────────────────────────────────
+
+@app.get("/conversations")
+async def list_conversations(current_user: User = Depends(get_current_user_jwt),
+                              db: AsyncSession = Depends(get_db)):
+    from server.memory import list_conversations as _list
+    convs = await _list(db, current_user.id)
+    return {
+        "conversations": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "message_count": len(c.messages or []),
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat(),
+            }
+            for c in convs
+        ],
+        "success": True,
+    }
+
+
+# ── Error handlers ─────────────────────────────────────────────────────────────
+
+@app.exception_handler(404)
+async def not_found(request: Request, exc):
+    return JSONResponse(
+        status_code=404,
+        content={"detail": f"Endpoint {request.url.path} not found", "success": False},
+    )
+
+
+@app.exception_handler(500)
+async def internal_error(request: Request, exc):
+    logger.error(f"Internal error on {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "success": False},
+    )
+
+
+# ── Skills ─────────────────────────────────────────────────────────────────────
+
+class SkillRequest(BaseModel):
+    skill: str
+    params: dict = {}
+    api_key: str
+
+
+@app.get("/skills")
+async def list_available_skills(category: str = ""):
+    """List all 60+ S.T.E.W skills."""
+    from server.skills_engine import list_skills
+    skills = list_skills(category if category else None)
+    categories = list(set(s["category"] for s in skills))
+    return {"total": len(skills), "categories": sorted(categories), "skills": skills}
+
+
+@app.post("/skills/run")
+async def run_skill_endpoint(body: SkillRequest, db: AsyncSession = Depends(get_db)):
+    """Execute any S.T.E.W skill by name."""
+    user = await get_user_by_api_key(body.api_key, db)
+    from server.skills_engine import run_skill
+    result = await run_skill(body.skill, **body.params)
+    return {"skill": body.skill, "result": result, "success": "error" not in result}
+
+
+# ── Browse ─────────────────────────────────────────────────────────────────────
+
+@app.post("/browse")
+async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
+    """Browse any URL and extract content. Falls back to DuckDuckGo if Serper is down."""
+    user = await get_user_by_api_key(body.api_key, db)
+    from server.browser import StewBrowser
+    browser = StewBrowser()
+    if body.url.startswith("http"):
+        result = await browser.fetch(body.url)
+    else:
+        # Treat as search query
+        result = await browser.search_web_fallback(body.url)
+    return {"success": True, "question": body.question, **result}
+
+
+# ── Telegram Webhook ───────────────────────────────────────────────────────────
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Receive Telegram messages and reply via S.T.E.W."""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(503, "Telegram bot not configured")
+
+    data = await request.json()
+    from server.telegram_bot import TelegramBot
+    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+    msg = bot.parse_update(data)
+
+    if not msg or not msg["text"] or msg["is_bot"]:
+        return {"ok": True}
+
+    chat_id = msg["chat_id"]
+    user_text = msg["text"]
+    username = msg.get("username") or msg.get("first_name", "User")
+
+    # Show typing
+    await bot.send_typing(chat_id)
+
+    # Get or create a stew user for this telegram user
+    tg_email = f"tg_{msg['user_id']}@telegram.stew"
+    result_q = await db.execute(select(User).where(User.email == tg_email))
+    tg_user = result_q.scalar_one_or_none()
+    if not tg_user:
+        from server.auth import generate_api_key
+        tg_user = User(
+            name=username, email=tg_email,
+            plan="free", api_key=generate_api_key()
+        )
+        db.add(tg_user)
+        await db.flush()
+        await db.refresh(tg_user)
+
+    # Handle /start command
+    if user_text.startswith("/start"):
+        welcome = (
+            f"👋 Hello {username}! I'm *S.T.E.W* — Smart Thinking Executive Worker.\n\n"
+            "I can:\n"
+            "🔍 Search the web\n"
+            "📄 Generate PDF, Word, Excel, PowerPoint\n"
+            "💻 Write & review code\n"
+            "🤖 Automate tasks\n"
+            "📊 Analyze data\n\n"
+            f"Your API key: `{tg_user.api_key}`\n\n"
+            "Just send me any message or question to get started!"
+        )
+        await bot.send_message(chat_id, welcome)
+        return {"ok": True}
+
+    # Regular message — run through S.T.E.W
+    llm = get_llm_client()
+    searcher = get_searcher()
+
+    web_grounded = False
+    system = STEW_SYSTEM_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
+
+    needs_search = any(kw in user_text.lower() for kw in [
+        "latest", "current", "today", "news", "score", "price",
+        "weather", "stock", "search", "find", "what is", "who is"
+    ])
+    if needs_search and searcher._is_available():
+        try:
+            search_results = searcher.search(user_text, num_results=4)
+            if search_results.get("grounded"):
+                context = searcher.format_results_for_llm(search_results)
+                system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
+                web_grounded = True
+        except Exception:
+            pass
+
+    conv = await get_or_create_conversation(db, tg_user.id, None)
+    await append_message(db, conv, "user", user_text)
+    messages = build_llm_messages(conv, system)
+
     try:
-        allowed = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-        ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
-        if ext not in allowed:
-            raise HTTPException(status_code=400, detail=f"Unsupported image type '{ext}'. Allowed: {', '.join(allowed)}")
-        safe_name = file.filename.replace(" ", "_")[:80]
-        save_path = __import__("pathlib").Path("workspace") / safe_name
-        save_path.parent.mkdir(exist_ok=True)
-        raw = await file.read()
-        with open(save_path, "wb") as out:
-            out.write(raw)
-        import base64
-        b64 = base64.b64encode(raw).decode()
-        analysis = "Vision model unavailable"
-        if brain:
-            analysis = await brain.analyze_image(b64, question or "Describe this image in full detail")
-        # Also try OCR
-        ocr_result = await skills.ocr_image_base64(b64)
-        ocr_text = ocr_result.get("text", "") or ""
-        return {
-            "filename": safe_name,
-            "file_type": ext,
-            "size_bytes": len(raw),
-            "question": question,
-            "analysis": analysis,
-            "ocr_text": ocr_text[:2000] if ocr_text else None,
-            "success": True
-        }
-    except HTTPException:
-        raise
+        result = llm.chat(messages)
+        reply = result["content"]
+        await append_message(db, conv, "assistant", reply)
+        await bot.send_message(chat_id, reply, parse_mode="Markdown")
     except Exception as e:
-        return {"error": str(e), "success": False}
+        logger.error(f"Telegram LLM error: {e}")
+        await bot.send_message(chat_id, "⚠️ I encountered an error. Please try again in a moment.")
 
-@app.get("/download/{filename}")
-async def download(filename: str):
-    for directory in ["output", "workspace", "screenshots"]:
-        fpath = __import__('pathlib').Path(directory) / filename
-        if fpath.exists():
-            return FileResponse(str(fpath), filename=filename)
-    raise HTTPException(status_code=404, detail=f"File '{filename}' not found")
+    return {"ok": True}
 
-# ═══════════════════════════════════════════
-# STARTUP
-# ═══════════════════════════════════════════
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 8000))
-    logger.info(f"⚡ S.T.E.W launching on port {port}")
-    uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=False)
+@app.post("/telegram/setup")
+async def setup_telegram(request: Request):
+    """Register your deployment URL as the Telegram webhook."""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(503, "Set TELEGRAM_BOT_TOKEN environment variable first")
+    data = await request.json()
+    webhook_url = data.get("webhook_url")
+    if not webhook_url:
+        raise HTTPException(400, "webhook_url required")
+    from server.telegram_bot import TelegramBot
+    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+    info = await bot.get_me()
+    result = await bot.set_webhook(webhook_url + "/telegram/webhook")
+    return {"bot": info, "webhook_result": result, "success": True}
