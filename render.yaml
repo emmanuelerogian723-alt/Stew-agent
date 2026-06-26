@@ -2,22 +2,36 @@ services:
   - type: web
     name: stew-agent
     runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
     envVars:
       - key: PORT
-        value: 8000
+        value: "8000"
       - key: ENVIRONMENT
         value: production
       - key: GROQ_API_KEY
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
       - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
         sync: false
       - key: SERPER_API_KEY
         sync: false
-      - key: STEW_ADMIN_SECRET
-        sync: false
+      - key: DATABASE_URL
+        value: "sqlite:////app/stew.db"
+      - key: JWT_SECRET_KEY
+        generateValue: true
       - key: PAYSTACK_SECRET_KEY
         sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: STEW_ADMIN_SECRET
+        generateValue: true
+      - key: HF_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: APP_BASE_URL
+        value: "https://stew-agent.onrender.com"
     healthCheckPath: /heartbeat
     autoDeploy: true
