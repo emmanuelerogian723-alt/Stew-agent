@@ -15,7 +15,7 @@ from fastapi import (
     Request, UploadFile, BackgroundTasks
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -221,6 +221,37 @@ async def heartbeat():
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def landing_page():
+    """Serve the S.T.E.W landing page."""
+    import os
+    # Look for landing.html in several locations
+    candidates = [
+        "/app/landing.html",
+        "/app/stew_deploy/landing.html",
+        os.path.join(os.path.dirname(__file__), "..", "landing.html"),
+    ]
+    for path in candidates:
+        path = os.path.normpath(path)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    # Fallback inline landing
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html><head><title>S.T.E.W Agent</title>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<style>body{font-family:system-ui;background:#0d0d1a;color:#fff;text-align:center;padding:60px 20px}
+h1{font-size:3em;background:linear-gradient(90deg,#7B2FBE,#00d4ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+p{color:#aaa;font-size:1.2em}.btn{display:inline-block;margin:10px;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:bold}
+.btn-primary{background:#7B2FBE;color:#fff}.btn-secondary{border:2px solid #7B2FBE;color:#7B2FBE}</style></head>
+<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Smart Thinking Executive Worker</p>
+<p>Africa's Most Powerful AI Agent API</p>
+<a class="btn btn-primary" href="/docs">API Docs</a>
+<a class="btn btn-secondary" href="/heartbeat">Status</a>
+</body></html>""")
+
 
 @app.post("/auth/register", status_code=201)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
