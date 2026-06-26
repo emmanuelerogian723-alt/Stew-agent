@@ -1,9 +1,6 @@
-# Root Dockerfile — delegates to stew_deploy/
-# This ensures Render finds it whether configured for root or stew_deploy/
-
+# S.T.E.W Root Dockerfile — used by Render
 FROM python:3.11-slim-bookworm
 
-# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ wget curl ca-certificates \
     tesseract-ocr tesseract-ocr-eng \
@@ -19,20 +16,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy stew_deploy as the main app
 COPY stew_deploy/requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright (graceful fallback if it fails)
 RUN pip install --no-cache-dir playwright==1.44.0 && \
-    (playwright install chromium || echo "Playwright chromium install failed - browser skills in fallback mode")
+    (playwright install chromium --with-deps || echo "Playwright optional - continuing")
 
-# Copy all code
 COPY stew_deploy/ .
 
-# Runtime dirs
 RUN mkdir -p memory/data output logs workspace screenshots
 
 EXPOSE 8000
-CMD ["python", "server/main.py"]
+
+CMD alembic upgrade head && uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info
