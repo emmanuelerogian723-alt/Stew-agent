@@ -1,0 +1,75 @@
+version: "3.9"
+
+# S.T.E.W — Full local stack with PostgreSQL and Redis
+# Run: docker compose up -d
+
+services:
+  stew-api:
+    build:
+      context: ../..
+      dockerfile: stew_deploy/Dockerfile
+    container_name: stew-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://stew:stewpassword@stew-db:5432/stew_agent
+      - REDIS_URL=redis://stew-redis:6379/0
+      - ENVIRONMENT=production
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY}
+      - PAYSTACK_PUBLIC_KEY=${PAYSTACK_PUBLIC_KEY}
+      - STEW_ADMIN_SECRET=${STEW_ADMIN_SECRET}
+    depends_on:
+      stew-db:
+        condition: service_healthy
+      stew-redis:
+        condition: service_healthy
+    volumes:
+      - stew-logs:/app/logs
+      - stew-output:/app/output
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  stew-db:
+    image: postgres:16-alpine
+    container_name: stew-postgres
+    environment:
+      POSTGRES_DB: stew_agent
+      POSTGRES_USER: stew
+      POSTGRES_PASSWORD: stewpassword
+    volumes:
+      - stew-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stew -d stew_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  stew-redis:
+    image: redis:7-alpine
+    container_name: stew-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  stew-pgdata:
+  stew-logs:
+  stew-output:
