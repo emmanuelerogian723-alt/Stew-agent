@@ -604,7 +604,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <h3 style="font-size:1rem;font-weight:700;margin-bottom:.75rem;color:#a78bfa;">1. Register for a Free Key</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/auth/register
+        <pre><span class="kw">POST</span> /auth/register
 
 {
   <span class="str">"name"</span>: <span class="str">"Your Name"</span>,
@@ -623,7 +623,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2. Ask STEW Anything (Real-Time Chat)</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/chat
+        <pre><span class="kw">POST</span> /chat
 
 {
   <span class="str">"message"</span>: <span class="str">"What is the latest AI news today?"</span>
@@ -640,7 +640,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2b. Execute Any Task (Full Agent Power)</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/task
+        <pre><span class="kw">POST</span> /task
 
 {
   <span class="str">"task"</span>: <span class="str">"Research the top 5 AI startups in Africa and write a report"</span>
@@ -656,7 +656,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">3. Browse the Web</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/browse/navigate
+        <pre><span class="kw">POST</span> /browse/navigate
 
 {
   <span class="str">"url"</span>: <span class="str">"https://techcrunch.com"</span>,
@@ -669,7 +669,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
         <pre><span class="cm">// Upload a PDF, Word, TXT, CSV, or JSON file:</span>
-<span class="kw">POST</span> https://stew-agent.onrender.com/upload/document
+<span class="kw">POST</span> /upload/document
 Content-Type: multipart/form-data
 
 file: <span class="str">[your file]</span>
@@ -683,7 +683,7 @@ question: <span class="str">"Summarize this document"</span>  <span class="cm">/
 }
 
 <span class="cm">// Upload an image (JPG, PNG, WebP):</span>
-<span class="kw">POST</span> https://stew-agent.onrender.com/upload/image
+<span class="kw">POST</span> /upload/image
 Content-Type: multipart/form-data
 
 file: <span class="str">[your image]</span>
@@ -699,7 +699,7 @@ question: <span class="str">"What text is in this image?"</span>
       <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">5. Connect Any API</h3>
       <div class="code-block">
         <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> https://stew-agent.onrender.com/api/call
+        <pre><span class="kw">POST</span> /api/call
 
 {
   <span class="str">"url"</span>: <span class="str">"https://api.openweathermap.org/data/2.5/weather"</span>,
@@ -909,7 +909,12 @@ question: <span class="str">"What text is in this image?"</span>
 // ══════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════
-const STEW_URL = 'https://stew-agent.onrender.com';
+const STEW_URL = (function(){
+  // Auto-detect API base URL from where this page is served
+  const origin = window.location.origin;
+  if(origin.includes('localhost') || origin.includes('127.0.0.1')) return 'http://localhost:8000';
+  return origin; // Same server serves the API
+})();
 const PAY_FN = 'https://superagent-55bc0d3a.base44.app/functions/stewPayment';
 const FREE_KEY = 'stew_free_playground_2026';
 
@@ -1267,7 +1272,7 @@ async function doRegister(){
         <div class="api-key-display">${_myKey}</div>
         <button class="copy-key-btn" onclick="navigator.clipboard.writeText('${_myKey}').then(()=>showToast('API Key copied! 🎉','ok'))">📋 Copy Key</button>
         ${_selectedPlan!=='free'?`<button class="copy-key-btn" onclick="switchAuthTab('upgrade')">⚡ Upgrade Now</button>`:''}
-        <div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>${data.plan||_selectedPlan}</b> · ${data.calls_limit||1000} calls/month</div>
+        <div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>${data.plan||_selectedPlan}</b> · ${data.calls_limit||3000} calls/month</div>
       `);
       if(_selectedPlan!=='free') setTimeout(()=>{ switchAuthTab('upgrade'); document.getElementById('up-key').value=_myKey; },2000);
     } else {
