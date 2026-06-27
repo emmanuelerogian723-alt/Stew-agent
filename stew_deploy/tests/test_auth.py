@@ -17,7 +17,7 @@ async def test_register_success(client: AsyncClient):
     assert data["api_key"].startswith("stew_")
     assert len(data["api_key"]) == 64
     assert data["plan"] == "free"
-    assert data["calls_limit"] == 1000
+    assert data["calls_limit"] == 3000
 
 
 @pytest.mark.asyncio
