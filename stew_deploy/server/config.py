@@ -73,7 +73,7 @@ class Settings(BaseSettings):
 
     # Plan API call limits
     PLAN_CALL_LIMITS: dict = {
-        "free": 1000,
+        "free": 3000,
         "pro": 10000,
         "business": 100000,
         "enterprise": 999999,
