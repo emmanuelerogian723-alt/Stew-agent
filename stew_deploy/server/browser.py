@@ -1,11 +1,12 @@
 """
-S.T.E.W Browser Agent — Real web browsing, form filling, automation.
-Uses httpx + BeautifulSoup as primary. Falls back to requests.
-No Playwright/Selenium needed — works on any hosting platform.
+S.T.E.W Browser Agent — Full Playwright automation + httpx fallback.
+Playwright (Chromium) is used when available for true JS rendering.
+Falls back to httpx+BeautifulSoup on platforms without Playwright.
 """
 import asyncio
-import re
 import logging
+import os
+import re
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 
@@ -13,6 +14,15 @@ import httpx
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+# Detect Playwright availability
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+    logger.info("Playwright available — full browser automation enabled")
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logger.info("Playwright not available — using httpx fallback")
 
 HEADERS = {
     "User-Agent": (
@@ -24,12 +34,11 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
 }
 
 
 class StewBrowser:
-    """Autonomous web browser for S.T.E.W."""
+    """Autonomous web browser — Playwright preferred, httpx fallback."""
 
     def __init__(self):
         self.session_cookies: dict = {}
@@ -38,7 +47,49 @@ class StewBrowser:
         self.current_html: Optional[str] = None
 
     async def fetch(self, url: str, timeout: int = 20) -> dict:
-        """Fetch any URL and return structured content."""
+        """Fetch URL — uses Playwright if available, else httpx."""
+        if PLAYWRIGHT_AVAILABLE:
+            try:
+                return await self._playwright_fetch(url, timeout)
+            except Exception as e:
+                logger.warning(f"Playwright fetch failed, falling back to httpx: {e}")
+        return await self._httpx_fetch(url, timeout)
+
+    async def _playwright_fetch(self, url: str, timeout: int = 20) -> dict:
+        """Full browser fetch with JS rendering via Playwright."""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--no-zygote",
+                    "--single-process",
+                    "--disable-extensions",
+                ]
+            )
+            try:
+                page = await browser.new_page(
+                    user_agent=HEADERS["User-Agent"]
+                )
+                await page.goto(url, timeout=timeout * 1000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(1500)  # wait for JS to render
+                html = await page.content()
+                final_url = page.url
+                self.current_url = final_url
+                self.current_html = html
+                self.history.append(final_url)
+                result = self._parse_page(html, final_url, 200)
+                result["rendered"] = True
+                return result
+            finally:
+                await browser.close()
+
+    async def _httpx_fetch(self, url: str, timeout: int = 20) -> dict:
+        """HTTP fetch with BeautifulSoup parsing."""
         try:
             async with httpx.AsyncClient(
                 headers=HEADERS,
@@ -50,48 +101,80 @@ class StewBrowser:
                 self.current_url = str(resp.url)
                 self.current_html = resp.text
                 self.history.append(self.current_url)
-                # Persist cookies
                 self.session_cookies.update(dict(resp.cookies))
-                return self._parse_page(resp.text, str(resp.url), resp.status_code)
+                result = self._parse_page(resp.text, str(resp.url), resp.status_code)
+                result["rendered"] = False
+                return result
         except httpx.TimeoutException:
             return {"error": f"Timeout fetching {url}", "url": url}
         except Exception as e:
             logger.error(f"Browser fetch error: {e}")
             return {"error": str(e), "url": url}
 
+    async def screenshot(self, url: str, save_path: Optional[str] = None) -> dict:
+        """Take a screenshot of a webpage (Playwright only)."""
+        if not PLAYWRIGHT_AVAILABLE:
+            return {"error": "Screenshot requires Playwright — not available on this platform"}
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+                      "--no-first-run", "--no-zygote", "--single-process"]
+            )
+            try:
+                page = await browser.new_page(viewport={"width": 1280, "height": 800})
+                await page.goto(url, timeout=30000, wait_until="networkidle")
+                path = save_path or f"screenshots/stew_{int(asyncio.get_event_loop().time())}.png"
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                await page.screenshot(path=path, full_page=True)
+                return {"success": True, "path": path, "url": url}
+            finally:
+                await browser.close()
+
+    async def fill_and_submit(self, url: str, selectors: dict, submit_selector: str = None) -> dict:
+        """Fill a form using CSS selectors and submit it (Playwright only)."""
+        if not PLAYWRIGHT_AVAILABLE:
+            return await self.submit_form(url, selectors)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+                      "--no-first-run", "--no-zygote", "--single-process"]
+            )
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=30000)
+                for selector, value in selectors.items():
+                    await page.fill(selector, str(value))
+                if submit_selector:
+                    await page.click(submit_selector)
+                    await page.wait_for_load_state("networkidle")
+                html = await page.content()
+                return self._parse_page(html, page.url, 200)
+            finally:
+                await browser.close()
+
     def _parse_page(self, html: str, url: str, status: int) -> dict:
         """Extract structured content from HTML."""
         soup = BeautifulSoup(html, "html.parser")
-
-        # Remove noise
         for tag in soup(["script", "style", "nav", "footer", "aside", "iframe"]):
             tag.decompose()
 
         title = soup.title.string.strip() if soup.title else "No title"
-
-        # Main content
         main = soup.find("main") or soup.find("article") or soup.find("body")
         text = main.get_text(separator="\n", strip=True) if main else soup.get_text(separator="\n", strip=True)
-
-        # Clean up excessive whitespace
         lines = [l.strip() for l in text.splitlines() if l.strip()]
         clean_text = "\n".join(lines)
-        # Truncate to 8000 chars to stay within LLM context
         if len(clean_text) > 8000:
-            clean_text = clean_text[:8000] + "\n\n[...content truncated for brevity...]"
+            clean_text = clean_text[:8000] + "\n\n[...content truncated...]"
 
-        # Extract links
         links = []
         for a in soup.find_all("a", href=True)[:20]:
             href = urljoin(url, a["href"])
-            text_label = a.get_text(strip=True)
-            if href.startswith("http") and text_label:
-                links.append({"text": text_label[:80], "url": href})
+            label = a.get_text(strip=True)
+            if href.startswith("http") and label:
+                links.append({"text": label[:80], "url": href})
 
-        # Extract forms
-        forms = self._extract_forms(soup, url)
-
-        # Extract meta description
         meta_desc = ""
         meta = soup.find("meta", attrs={"name": "description"})
         if meta:
@@ -104,12 +187,11 @@ class StewBrowser:
             "description": meta_desc,
             "content": clean_text,
             "links": links,
-            "forms": forms,
+            "forms": self._extract_forms(soup, url),
             "word_count": len(clean_text.split()),
         }
 
     def _extract_forms(self, soup: BeautifulSoup, base_url: str) -> list[dict]:
-        """Extract all forms and their fields."""
         forms = []
         for form in soup.find_all("form"):
             fields = []
@@ -125,22 +207,14 @@ class StewBrowser:
                 })
             action = urljoin(base_url, form.get("action", base_url))
             method = form.get("method", "GET").upper()
-            forms.append({
-                "action": action,
-                "method": method,
-                "fields": fields,
-            })
+            forms.append({"action": action, "method": method, "fields": fields})
         return forms
 
     async def submit_form(self, url: str, form_data: dict, method: str = "POST") -> dict:
-        """Submit a form with given data."""
+        """Submit a form — httpx based."""
         try:
-            async with httpx.AsyncClient(
-                headers=HEADERS,
-                follow_redirects=True,
-                timeout=20,
-                cookies=self.session_cookies,
-            ) as client:
+            async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True,
+                                          timeout=20, cookies=self.session_cookies) as client:
                 if method.upper() == "POST":
                     resp = await client.post(url, data=form_data)
                 else:
@@ -151,10 +225,7 @@ class StewBrowser:
             return {"error": str(e), "url": url}
 
     async def search_web_fallback(self, query: str) -> dict:
-        """
-        Fallback browser search when Serper API is unavailable.
-        Uses DuckDuckGo HTML search — no API key required.
-        """
+        """DuckDuckGo HTML search — no API key required."""
         ddg_url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
         try:
             async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=15) as client:
@@ -171,18 +242,12 @@ class StewBrowser:
                             "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
                             "url": "https://" + link_el.get_text(strip=True) if link_el else "",
                         })
-                return {
-                    "source": "duckduckgo_fallback",
-                    "query": query,
-                    "results": results,
-                    "count": len(results),
-                }
+                return {"source": "duckduckgo_fallback", "query": query,
+                        "results": results, "count": len(results)}
         except Exception as e:
-            # Ultimate fallback — Bing HTML
             return await self._bing_fallback(query)
 
     async def _bing_fallback(self, query: str) -> dict:
-        """Third-layer fallback using Bing HTML."""
         bing_url = f"https://www.bing.com/search?q={query.replace(' ', '+')}"
         try:
             async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=15) as client:
@@ -199,31 +264,11 @@ class StewBrowser:
                             "snippet": p.get_text(strip=True) if p else "",
                             "url": a.get("href", ""),
                         })
-                return {
-                    "source": "bing_fallback",
-                    "query": query,
-                    "results": results,
-                    "count": len(results),
-                }
+                return {"source": "bing_fallback", "query": query,
+                        "results": results, "count": len(results)}
         except Exception as e:
             return {"source": "none", "query": query, "results": [], "error": str(e)}
 
-    async def navigate_and_answer(self, url: str, question: str) -> str:
-        """Browse a URL and answer a specific question about it."""
-        page = await self.fetch(url)
-        if "error" in page:
-            return f"Could not access {url}: {page['error']}"
-        content = page.get("content", "")
-        title = page.get("title", "")
-        return f"Page: {title}\nURL: {url}\n\nContent:\n{content[:4000]}"
-
-
-# Singleton browser instance per request lifecycle
-_browser_instance = None
-
 
 def get_browser() -> StewBrowser:
-    global _browser_instance
-    if _browser_instance is None:
-        _browser_instance = StewBrowser()
-    return _browser_instance
+    return StewBrowser()
