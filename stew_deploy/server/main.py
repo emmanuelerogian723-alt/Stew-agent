@@ -223,6 +223,14 @@ async def heartbeat():
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 
+
+@app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
+async def reset_password_page(token: str = ""):
+    """Redirect /reset-password?token=xxx to landing page which handles the reset UI."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/?token={token}", status_code=302)
+
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def landing_page():
     """Serve the S.T.E.W landing page."""
@@ -232,6 +240,8 @@ async def landing_page():
         "/app/landing.html",
         "/app/stew_deploy/landing.html",
         os.path.join(os.path.dirname(__file__), "..", "landing.html"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "landing.html"),
+        "landing.html",
     ]
     for path in candidates:
         path = os.path.normpath(path)
