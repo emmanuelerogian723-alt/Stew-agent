@@ -1,0 +1,53 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# S.T.E.W 5.0 ULTRA — Railway Dockerfile
+# Includes: Playwright + Chromium, all document libs, full feature set
+# ══════════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim-bookworm
+
+# System dependencies for Playwright + document generation + OCR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build tools
+    gcc g++ curl ca-certificates wget \
+    # PostgreSQL client (for asyncpg if using Postgres)
+    libpq-dev \
+    # Playwright/Chromium system deps
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
+    libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+    libpango-1.0-0 libcairo2 libatspi2.0-0 \
+    libx11-6 libx11-xcb1 libxcb1 libxext6 \
+    libxi6 libxtst6 fonts-liberation libfreetype6 \
+    libglib2.0-0 libxml2 \
+    # Audio (required by some Chromium builds)
+    libasound2t64 \
+    # OCR
+    tesseract-ocr tesseract-ocr-eng \
+    && apt-get clean
+
+WORKDIR /app
+
+# Copy and install Python requirements first (layer cache)
+COPY requirements.txt .
+RUN pip install --upgrade pip --quiet && \
+    pip install --no-cache-dir -r requirements.txt --quiet
+
+# Install Playwright + Chromium
+RUN pip install playwright==1.44.0 && \
+    playwright install chromium && \
+    playwright install-deps chromium
+
+# Copy all application code
+COPY . .
+
+# Runtime directories
+RUN mkdir -p memory/data output logs workspace screenshots temp
+
+EXPOSE 8000
+
+# Startup: migrations then server
+CMD alembic upgrade head && uvicorn server.main:app \
+    --host 0.0.0.0 \
+    --port ${PORT:-8000} \
+    --workers 1 \
+    --log-level info \
+    --timeout-keep-alive 75
