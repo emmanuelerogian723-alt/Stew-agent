@@ -1,0 +1,49 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# S.T.E.W 5.0 ULTRA — Railway Production Dockerfile
+# Full features: Playwright/Chromium, OCR, all document formats
+# ══════════════════════════════════════════════════════════════════════════════
+FROM python:3.11-slim-bookworm
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ curl ca-certificates wget git \
+    libpq-dev \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
+    libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+    libpango-1.0-0 libcairo2 libatspi2.0-0 \
+    libx11-6 libx11-xcb1 libxcb1 libxext6 \
+    libxi6 libxtst6 fonts-liberation libfreetype6 \
+    libglib2.0-0 libxml2 libasound2t64 \
+    tesseract-ocr tesseract-ocr-eng \
+    && apt-get clean
+
+WORKDIR /app
+
+# Copy requirements first (Docker layer cache)
+COPY stew_deploy/requirements.txt .
+RUN pip install --upgrade pip --quiet && \
+    pip install --no-cache-dir -r requirements.txt --quiet
+
+# Install Playwright + Chromium
+RUN pip install playwright==1.44.0 && \
+    playwright install chromium && \
+    playwright install-deps chromium
+
+# Copy all application code
+COPY stew_deploy/ .
+
+# Copy landing page
+COPY stew_deploy/landing.html /app/landing.html
+
+# Runtime directories
+RUN mkdir -p memory/data output logs workspace screenshots temp
+
+EXPOSE 8000
+
+CMD alembic upgrade head && uvicorn server.main:app \
+    --host 0.0.0.0 \
+    --port ${PORT:-8000} \
+    --workers 1 \
+    --log-level info \
+    --timeout-keep-alive 75
