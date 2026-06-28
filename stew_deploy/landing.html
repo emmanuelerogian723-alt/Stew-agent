@@ -315,6 +315,136 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
 .plan-badge.free{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);}
 .plan-badge.pro{background:rgba(124,58,237,.15);color:#a78bfa;border:1px solid rgba(124,58,237,.3);}
 .plan-badge.biz{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.25);}
+
+/* ══ IMPROVED 3D CARD TILT & GLOW ══ */
+.skill-card,.monitor-card,.pricing-card,.connector-card{
+  transform-style:preserve-3d;
+  transition:transform .3s cubic-bezier(.23,1,.32,1),box-shadow .3s,border-color .3s;
+}
+.skill-card:hover,.monitor-card:hover{
+  transform:translateY(-6px) rotateX(3deg) rotateY(-2deg) scale(1.01);
+  box-shadow:0 24px 60px rgba(124,58,237,.22),0 0 0 1px rgba(124,58,237,.2);
+}
+.pricing-card:hover{
+  transform:translateY(-8px) rotateX(4deg) scale(1.02);
+  box-shadow:0 32px 80px rgba(124,58,237,.3);
+}
+/* Shimmer sweep on card hover */
+.skill-card::after,.pricing-card::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.04) 50%,transparent 60%);
+  background-size:200% 100%;
+  background-position:200% 0;
+  transition:background-position .5s ease;
+  pointer-events:none;
+}
+.skill-card:hover::after,.pricing-card:hover::after{
+  background-position:-200% 0;
+}
+
+/* ══ IMPROVED HERO 3D ORB RING ══ */
+.hero-orb-ring{
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:600px;height:600px;
+  border-radius:50%;
+  background:conic-gradient(from 0deg,rgba(124,58,237,0),rgba(124,58,237,.15),rgba(6,182,212,.1),rgba(16,185,129,.08),rgba(124,58,237,0));
+  animation:orbRing 8s linear infinite;
+  pointer-events:none;
+  filter:blur(1px);
+}
+.hero-orb-ring2{
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:400px;height:400px;
+  border-radius:50%;
+  border:1px solid rgba(124,58,237,.12);
+  animation:orbRing 12s linear infinite reverse;
+  pointer-events:none;
+}
+.hero-orb-ring2::before{
+  content:'';position:absolute;
+  top:-3px;left:50%;transform:translateX(-50%);
+  width:6px;height:6px;border-radius:50%;
+  background:#7c3aed;box-shadow:0 0 16px #7c3aed,0 0 32px #7c3aed;
+}
+@keyframes orbRing{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}
+
+/* ══ STEW LOGO 3D ══ */
+.stew-glow-ring{
+  position:relative;
+  z-index:2;
+}
+.stew-glow-ring::before{
+  content:'';
+  position:absolute;
+  inset:-20px;
+  border-radius:50%;
+  background:conic-gradient(from 0deg,#7c3aed,#06b6d4,#10b981,#7c3aed);
+  animation:glowSpin 3s linear infinite;
+  filter:blur(8px);
+  opacity:0.5;
+  z-index:-1;
+}
+@keyframes glowSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+/* ══ FLOATING BADGE IMPROVED ══ */
+.eyebrow{
+  backdrop-filter:blur(12px);
+  box-shadow:0 0 30px rgba(124,58,237,.15),inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+/* ══ BUTTON 3D PRESS ══ */
+.btn-primary:active{transform:translateY(1px) scale(0.98);}
+.btn-secondary:active{transform:translateY(1px) scale(0.98);}
+
+/* ══ MONITOR CARDS IMPROVED ══ */
+.monitor-num{
+  background:linear-gradient(135deg,#ffffff,#c4b5fd,#22d3ee);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 20px rgba(124,58,237,.4));
+}
+
+/* ══ HERO H1 ANIMATED GRADIENT ══ */
+.hero h1{
+  background-size:200% auto !important;
+  animation:fadeUp .8s .2s ease both,gradShift 4s ease infinite !important;
+}
+@keyframes gradShift{
+  0%,100%{background-position:0% center}
+  50%{background-position:100% center}
+}
+
+/* ══ SECTION DIVIDER GLOW ══ */
+section{position:relative;}
+section::before{
+  content:'';position:absolute;top:0;left:10%;right:10%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(124,58,237,.2),rgba(6,182,212,.15),transparent);
+}
+
+/* ══ SKILL TAG GLOW ══ */
+.skill-tag.hot{
+  animation:tagPulse 2s ease infinite;
+}
+@keyframes tagPulse{
+  0%,100%{box-shadow:0 0 8px rgba(239,68,68,.3)}
+  50%{box-shadow:0 0 16px rgba(239,68,68,.6)}
+}
+
+/* ══ PLAN BADGE IMPROVED ══ */
+.plan-badge{
+  backdrop-filter:blur(8px);
+}
+
+/* ══ CANVAS BG OVERLAY IMPROVED ══ */
+.bg-overlay{
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%,rgba(124,58,237,.12) 0%,transparent 60%),
+    radial-gradient(ellipse 50% 40% at 0% 100%,rgba(6,182,212,.07) 0%,transparent 50%),
+    radial-gradient(ellipse 40% 30% at 100% 50%,rgba(16,185,129,.05) 0%,transparent 50%) !important;
+}
 </style>
 </head>
 <body>
@@ -536,7 +666,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
         <div><span class="plan-price">₦0</span><span class="plan-period">/month</span></div>
         <div class="plan-usd">Always free · No card needed</div>
         <ul class="plan-features">
-          <li>1,000 API calls/month</li>
+          <li>3,000 API calls/month</li>
           <li>10 core skills</li>
           <li>Web search & research</li>
           <li>Code generation</li>
@@ -616,7 +746,7 @@ footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2r
 {
   <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>,
   <span class="str">"plan"</span>: <span class="str">"free"</span>,
-  <span class="str">"calls_limit"</span>: <span class="num">1000</span>
+  <span class="str">"calls_limit"</span>: <span class="num">3000</span>
 }</pre>
       </div>
 
@@ -778,7 +908,7 @@ question: <span class="str">"What text is in this image?"</span>
             <div class="plan-option selected" id="plan-free" onclick="selectPlan('free',this)">
               <div class="plan-option-name">⚡ Starter</div>
               <div class="plan-option-price">₦0/mo</div>
-              <div class="plan-option-desc">1,000 calls · No card</div>
+              <div class="plan-option-desc">3,000 calls · No card</div>
             </div>
             <div class="plan-option" id="plan-pro" onclick="selectPlan('pro',this)">
               <div class="plan-option-name">🚀 Pro</div>
@@ -923,133 +1053,267 @@ let _upgradePlan = '';
 let _myKey = localStorage.getItem('stew_api_key') || FREE_KEY;
 let _chatBusy = false;
 
-// ══════════════════════════════════════
-// 3D PARTICLE ANIMATION — WebGL canvas
-// ══════════════════════════════════════
-(function initCanvas(){
+// ══════════════════════════════════════════════════════════════
+// S.T.E.W 5.0 — ULTRA 3D SCENE (WebGL + Canvas2D hybrid)
+// Features: 3D Orbs, Neural Mesh, Aurora Waves, Mouse Parallax
+// ══════════════════════════════════════════════════════════════
+(function initUltraScene(){
   const canvas = document.getElementById('bg-canvas');
-  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-  if(!gl){ canvas.style.display='none'; return; }
+  const ctx2d  = canvas.getContext('2d');
+  if(!ctx2d){ canvas.style.display='none'; return; }
 
-  let W, H, pts=[], mouse={x:.5,y:.5};
-  const N = 180;
+  let W, H, t=0;
+  let mouse={x:0.5,y:0.5,vx:0,vy:0};
+  let lastMX=0.5, lastMY=0.5;
 
   function resize(){
-    W = canvas.width = window.innerWidth;
+    W = canvas.width  = window.innerWidth;
     H = canvas.height = window.innerHeight;
-    gl.viewport(0,0,W,H);
   }
   window.addEventListener('resize', resize);
-  window.addEventListener('mousemove', e=>{ mouse.x=e.clientX/W; mouse.y=e.clientY/H; });
+  window.addEventListener('mousemove', e=>{
+    const nx=e.clientX/W, ny=e.clientY/H;
+    mouse.vx=(nx-lastMX)*0.1; mouse.vy=(ny-lastMY)*0.1;
+    lastMX=mouse.x; lastMY=mouse.y;
+    mouse.x+=(nx-mouse.x)*0.08;
+    mouse.y+=(ny-mouse.y)*0.08;
+  });
+  window.addEventListener('touchmove', e=>{
+    mouse.x=e.touches[0].clientX/W;
+    mouse.y=e.touches[0].clientY/H;
+  },{passive:true});
   resize();
 
-  // init particles
-  for(let i=0;i<N;i++){
-    pts.push({
-      x: Math.random()*2-1, y: Math.random()*2-1, z: Math.random(),
-      vx:(Math.random()-.5)*0.003, vy:(Math.random()-.5)*0.003,
-      r: Math.random()*.6+.2
+  // ── PARTICLES ─────────────────────────────────────────────
+  const PARTICLE_COUNT = window.innerWidth < 768 ? 80 : 180;
+  const particles = [];
+  const COLORS = ['#7c3aed','#5b21b6','#06b6d4','#0891b2','#10b981','#a78bfa','#c4b5fd'];
+
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const r = Math.random();
+    particles.push({
+      x: Math.random()*W, y: Math.random()*H,
+      vx:(Math.random()-.5)*0.4, vy:(Math.random()-.5)*0.4,
+      size: Math.random()*2.2+0.5,
+      color: COLORS[Math.floor(Math.random()*COLORS.length)],
+      alpha: Math.random()*0.6+0.2,
+      phase: Math.random()*Math.PI*2,
+      speed: Math.random()*0.008+0.003,
+      depth: Math.random()  // parallax depth 0..1
     });
   }
 
-  const vsrc = `
-    attribute vec4 pos;
-    attribute float alpha;
-    varying float vA;
-    void main(){
-      gl_Position = vec4(pos.xy,0.,1.);
-      gl_PointSize = pos.z * 4.0 + 1.5;
-      vA = alpha;
-    }
-  `;
-  const fsrc = `
-    precision mediump float;
-    varying float vA;
-    void main(){
-      vec2 c = gl_PointCoord - .5;
-      float d = 1.0 - length(c)*2.0;
-      gl_FragColor = vec4(.6,.4,1., d*d*vA*.7);
-    }
-  `;
+  // ── AURORA BANDS ──────────────────────────────────────────
+  const auroras = [
+    {oy:0.25, amp:120, freq:0.0008, speed:0.0006, col:'rgba(124,58,237,', base:0.06},
+    {oy:0.45, amp:90,  freq:0.001,  speed:0.0009, col:'rgba(6,182,212,',   base:0.04},
+    {oy:0.65, amp:100, freq:0.0009, speed:0.0007, col:'rgba(16,185,129,',  base:0.03},
+  ];
 
-  function mkShader(type, src){
-    const s = gl.createShader(type);
-    gl.shaderSource(s,src); gl.compileShader(s); return s;
+  // ── 3D FLOATING ORBS ──────────────────────────────────────
+  const ORB_COUNT = window.innerWidth < 768 ? 3 : 5;
+  const orbs = [];
+  for(let i=0;i<ORB_COUNT;i++){
+    orbs.push({
+      x: W*(0.15+i*0.18+Math.random()*0.1),
+      y: H*(0.2+Math.random()*0.6),
+      baseX: 0, baseY: 0,
+      radius: 60+Math.random()*80,
+      vx:(Math.random()-.5)*0.3,
+      vy:(Math.random()-.5)*0.3,
+      phase: Math.random()*Math.PI*2,
+      color1: ['#7c3aed','#06b6d4','#10b981','#5b21b6','#a78bfa'][i%5],
+      color2: ['#5b21b6','#0891b2','#059669','#7c3aed','#8b5cf6'][i%5],
+      depth: 0.3+Math.random()*0.5,
+      glowSize: 2.5+Math.random()*1.5
+    });
+    orbs[i].baseX=orbs[i].x; orbs[i].baseY=orbs[i].y;
   }
-  const prog = gl.createProgram();
-  gl.attachShader(prog, mkShader(gl.VERTEX_SHADER, vsrc));
-  gl.attachShader(prog, mkShader(gl.FRAGMENT_SHADER, fsrc));
-  gl.linkProgram(prog); gl.useProgram(prog);
-  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-  const posLoc = gl.getAttribLocation(prog,'pos');
-  const aLoc   = gl.getAttribLocation(prog,'alpha');
-  const posBuf = gl.createBuffer();
-  const aBuf   = gl.createBuffer();
+  // ── NEURAL NODES ──────────────────────────────────────────
+  const NODE_COUNT = window.innerWidth < 768 ? 18 : 32;
+  const nodes = [];
+  for(let i=0;i<NODE_COUNT;i++){
+    nodes.push({
+      x: Math.random()*W, y: Math.random()*H,
+      vx:(Math.random()-.5)*0.35, vy:(Math.random()-.5)*0.35,
+      size: Math.random()*3+1.5,
+      pulse: Math.random()*Math.PI*2,
+      active: Math.random()>0.6
+    });
+  }
 
-  // lines prog
-  const lvsrc=`attribute vec2 lpos;void main(){gl_Position=vec4(lpos,0.,1.);}`;
-  const lfsrc=`precision mediump float;void main(){gl_FragColor=vec4(.4,.2,.9,.15);}`;
-  const lprog = gl.createProgram();
-  gl.attachShader(lprog, mkShader(gl.VERTEX_SHADER, lvsrc));
-  gl.attachShader(lprog, mkShader(gl.FRAGMENT_SHADER, lfsrc));
-  gl.linkProgram(lprog);
-  const lpLoc = gl.getAttribLocation(lprog,'lpos');
-  const lBuf = gl.createBuffer();
+  const CONN_DIST = window.innerWidth < 768 ? 160 : 220;
 
-  let t=0;
-  function frame(){
-    requestAnimationFrame(frame);
-    t+=.005;
-    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+  // ── RENDER LOOP ────────────────────────────────────────────
+  function draw(){
+    requestAnimationFrame(draw);
+    t+=0.012;
 
-    // update
-    const mx = mouse.x*2-1, my = -(mouse.y*2-1);
-    for(let p of pts){
-      p.x += p.vx + (mx-p.x)*0.0002;
-      p.y += p.vy + (my-p.y)*0.0002;
-      if(p.x>1.1) p.x=-1.1; if(p.x<-1.1) p.x=1.1;
-      if(p.y>1.1) p.y=-1.1; if(p.y<-1.1) p.y=1.1;
-      p.z = .3+.5*(0.5+0.5*Math.sin(t+p.x*3));
+    ctx2d.clearRect(0,0,W,H);
+
+    // === AURORA WAVES ===
+    for(const a of auroras){
+      const grad = ctx2d.createLinearGradient(0,0,0,H);
+      const cy = a.oy*H + Math.sin(t*a.speed*1000)*30;
+      for(let step=0;step<=10;step++){
+        const y2 = cy + Math.sin(step*0.4+t)*a.amp;
+        const alpha = a.base*(1-Math.abs(step-5)/5);
+        grad.addColorStop(Math.min(1,Math.max(0,(y2/H))),a.col+alpha+')');
+      }
+      ctx2d.save();
+      ctx2d.beginPath();
+      ctx2d.moveTo(0,0);
+      for(let x=0;x<=W;x+=8){
+        const y2 = cy + Math.sin(x*a.freq+t)*a.amp;
+        ctx2d.lineTo(x,y2);
+      }
+      ctx2d.lineTo(W,H); ctx2d.lineTo(0,H); ctx2d.closePath();
+      ctx2d.fillStyle=a.col+a.base*0.8+')';
+      ctx2d.fill();
+      ctx2d.restore();
     }
 
-    // draw lines
-    const lineData = [];
-    for(let i=0;i<N;i++){
-      for(let j=i+1;j<N;j++){
-        const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y;
-        if(dx*dx+dy*dy<.08){
-          lineData.push(pts[i].x,pts[i].y,pts[j].x,pts[j].y);
+    // === 3D ORBS ===
+    for(const orb of orbs){
+      // Parallax: deeper orbs move less with mouse
+      const px = (mouse.x-0.5)*(1-orb.depth)*80;
+      const py = (mouse.y-0.5)*(1-orb.depth)*60;
+      orb.x = orb.baseX + px + Math.sin(t*0.4+orb.phase)*12;
+      orb.y = orb.baseY + py + Math.cos(t*0.35+orb.phase)*10;
+
+      // Drift
+      orb.baseX += orb.vx; orb.baseY += orb.vy;
+      if(orb.baseX<-orb.radius||orb.baseX>W+orb.radius){ orb.vx*=-1; orb.baseX=Math.max(-orb.radius,Math.min(W+orb.radius,orb.baseX)); }
+      if(orb.baseY<-orb.radius||orb.baseY>H+orb.radius){ orb.vy*=-1; orb.baseY=Math.max(-orb.radius,Math.min(H+orb.radius,orb.baseY)); }
+
+      const pulse = 1 + 0.08*Math.sin(t*1.2+orb.phase);
+      const r = orb.radius*pulse;
+
+      // Outer glow
+      const glow = ctx2d.createRadialGradient(orb.x,orb.y,0,orb.x,orb.y,r*orb.glowSize);
+      glow.addColorStop(0, orb.color1+'33');
+      glow.addColorStop(0.5, orb.color2+'11');
+      glow.addColorStop(1,'transparent');
+      ctx2d.beginPath();
+      ctx2d.arc(orb.x,orb.y,r*orb.glowSize,0,Math.PI*2);
+      ctx2d.fillStyle=glow;
+      ctx2d.fill();
+
+      // Core orb — 3D sphere illusion
+      const sphere = ctx2d.createRadialGradient(
+        orb.x-r*0.25, orb.y-r*0.25, r*0.05,
+        orb.x, orb.y, r
+      );
+      sphere.addColorStop(0,  orb.color1+'ee');
+      sphere.addColorStop(0.3,orb.color1+'88');
+      sphere.addColorStop(0.7,orb.color2+'44');
+      sphere.addColorStop(1,  orb.color2+'00');
+      ctx2d.beginPath();
+      ctx2d.arc(orb.x,orb.y,r,0,Math.PI*2);
+      ctx2d.fillStyle=sphere;
+      ctx2d.fill();
+
+      // Highlight (specular)
+      const hl = ctx2d.createRadialGradient(
+        orb.x-r*0.3, orb.y-r*0.35, 0,
+        orb.x-r*0.1, orb.y-r*0.15, r*0.5
+      );
+      hl.addColorStop(0,'rgba(255,255,255,0.18)');
+      hl.addColorStop(1,'rgba(255,255,255,0)');
+      ctx2d.beginPath();
+      ctx2d.arc(orb.x,orb.y,r,0,Math.PI*2);
+      ctx2d.fillStyle=hl;
+      ctx2d.fill();
+    }
+
+    // === NEURAL MESH ===
+    for(const n of nodes){
+      n.x+=n.vx; n.y+=n.vy;
+      if(n.x<0||n.x>W) n.vx*=-1;
+      if(n.y<0||n.y>H) n.vy*=-1;
+      n.pulse+=0.04;
+    }
+    // Draw connections
+    ctx2d.save();
+    for(let i=0;i<nodes.length;i++){
+      for(let j=i+1;j<nodes.length;j++){
+        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y;
+        const d=Math.sqrt(dx*dx+dy*dy);
+        if(d<CONN_DIST){
+          const alpha=(1-d/CONN_DIST)*0.18;
+          const grad=ctx2d.createLinearGradient(nodes[i].x,nodes[i].y,nodes[j].x,nodes[j].y);
+          grad.addColorStop(0,'rgba(124,58,237,'+alpha+')');
+          grad.addColorStop(1,'rgba(6,182,212,'+alpha+')');
+          ctx2d.beginPath();
+          ctx2d.moveTo(nodes[i].x,nodes[i].y);
+          ctx2d.lineTo(nodes[j].x,nodes[j].y);
+          ctx2d.strokeStyle=grad;
+          ctx2d.lineWidth=0.8;
+          ctx2d.stroke();
         }
       }
     }
-    if(lineData.length>0){
-      gl.useProgram(lprog);
-      gl.bindBuffer(gl.ARRAY_BUFFER,lBuf);
-      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(lineData),gl.DYNAMIC_DRAW);
-      gl.enableVertexAttribArray(lpLoc);
-      gl.vertexAttribPointer(lpLoc,2,gl.FLOAT,false,0,0);
-      gl.drawArrays(gl.LINES,0,lineData.length/2);
+    // Draw nodes
+    for(const n of nodes){
+      const ps = n.size*(1+0.3*Math.sin(n.pulse));
+      // Node glow
+      const ng=ctx2d.createRadialGradient(n.x,n.y,0,n.x,n.y,ps*4);
+      ng.addColorStop(0,n.active?'rgba(124,58,237,0.3)':'rgba(6,182,212,0.2)');
+      ng.addColorStop(1,'transparent');
+      ctx2d.beginPath(); ctx2d.arc(n.x,n.y,ps*4,0,Math.PI*2);
+      ctx2d.fillStyle=ng; ctx2d.fill();
+      // Node core
+      ctx2d.beginPath(); ctx2d.arc(n.x,n.y,ps,0,Math.PI*2);
+      ctx2d.fillStyle=n.active?'rgba(167,139,250,0.9)':'rgba(6,182,212,0.7)';
+      ctx2d.fill();
+    }
+    ctx2d.restore();
+
+    // === PARTICLES ===
+    const mx=(mouse.x-.5), my=(mouse.y-.5);
+    for(const p of particles){
+      // Parallax drift
+      p.x += p.vx + mx*p.depth*0.4;
+      p.y += p.vy + my*p.depth*0.3;
+      if(p.x<-10) p.x=W+10; if(p.x>W+10) p.x=-10;
+      if(p.y<-10) p.y=H+10; if(p.y>H+10) p.y=-10;
+
+      // Twinkle
+      const alpha = p.alpha*(0.7+0.3*Math.sin(t*p.speed*100+p.phase));
+      // Glow
+      const pg=ctx2d.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size*3);
+      pg.addColorStop(0,p.color.replace('#','rgba(')+','+alpha+')');
+      pg.addColorStop(1,'transparent');
+
+      // Parse hex to rgba properly
+      const hex=p.color.replace('#','');
+      const pr=parseInt(hex.substring(0,2),16);
+      const pg2=parseInt(hex.substring(2,4),16);
+      const pb=parseInt(hex.substring(4,6),16);
+      const ga=ctx2d.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size*3);
+      ga.addColorStop(0,`rgba(${pr},${pg2},${pb},${alpha})`);
+      ga.addColorStop(1,`rgba(${pr},${pg2},${pb},0)`);
+      ctx2d.beginPath(); ctx2d.arc(p.x,p.y,p.size*3,0,Math.PI*2);
+      ctx2d.fillStyle=ga; ctx2d.fill();
+      ctx2d.beginPath(); ctx2d.arc(p.x,p.y,p.size,0,Math.PI*2);
+      ctx2d.fillStyle=`rgba(${pr},${pg2},${pb},${Math.min(1,alpha*1.5)})`;
+      ctx2d.fill();
     }
 
-    // draw points
-    const pData=[], aData=[];
-    for(let p of pts){ pData.push(p.x,p.y,p.z); aData.push(p.z); }
-    gl.useProgram(prog);
-    gl.bindBuffer(gl.ARRAY_BUFFER,posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pData),gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,0,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER,aBuf);
-    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(aData),gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(aLoc);
-    gl.vertexAttribPointer(aLoc,1,gl.FLOAT,false,0,0);
-    gl.drawArrays(gl.POINTS,0,N);
+    // === MOUSE CURSOR EFFECT ===
+    const cx=mouse.x*W, cy=mouse.y*H;
+    const cr=ctx2d.createRadialGradient(cx,cy,0,cx,cy,120);
+    cr.addColorStop(0,'rgba(124,58,237,0.06)');
+    cr.addColorStop(0.5,'rgba(6,182,212,0.02)');
+    cr.addColorStop(1,'transparent');
+    ctx2d.beginPath(); ctx2d.arc(cx,cy,120,0,Math.PI*2);
+    ctx2d.fillStyle=cr; ctx2d.fill();
   }
-  frame();
+
+  draw();
 })();
 
-// ══════════════════════════════════════
 // NAV SCROLL EFFECT
 // ══════════════════════════════════════
 window.addEventListener('scroll',()=>{
@@ -1411,7 +1675,7 @@ async function loadDashboard(){
       document.getElementById('d-name').textContent=data.name||'—';
       document.getElementById('d-email').textContent=data.email||key.slice(0,20)+'...';
       document.getElementById('d-plan').textContent=(data.plan||'free').toUpperCase();
-      document.getElementById('d-usage').textContent=`${data.calls_used||0} / ${data.calls_limit||1000} (${pct}%)`;
+      document.getElementById('d-usage').textContent=`${data.calls_used||0} / ${data.calls_limit||3000} (${pct}%)`;
       document.getElementById('d-bar').style.width=pct+'%';
       document.getElementById('d-status').textContent=data.active===false?'🔴 Inactive':'🟢 Active';
       document.getElementById('d-expires').textContent=data.plan==='free'?'Never (Free)':'30 days';
@@ -1512,7 +1776,28 @@ window.addEventListener('DOMContentLoaded',()=>{
     if(document.getElementById('up-key')) document.getElementById('up-key').value=saved;
   }
 });
+
+// ══════════════════════════════════════
+// 3D CARD TILT (Mouse-reactive)
+// ══════════════════════════════════════
+(function initCardTilt(){
+  const cards = document.querySelectorAll('.skill-card,.pricing-card,.monitor-card');
+  cards.forEach(card=>{
+    card.addEventListener('mousemove',e=>{
+      const rect=card.getBoundingClientRect();
+      const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+      const dx=(e.clientX-cx)/rect.width*2;
+      const dy=(e.clientY-cy)/rect.height*2;
+      card.style.transform=`translateY(-6px) rotateX(${-dy*5}deg) rotateY(${dx*5}deg) scale(1.01)`;
+    });
+    card.addEventListener('mouseleave',()=>{
+      card.style.transform='';
+    });
+  });
+})();
+
 </script>
 
 </body>
 </html>
+
