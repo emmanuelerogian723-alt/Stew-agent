@@ -56,7 +56,7 @@
     {"@type":"Offer","name":"Business Plan","price":"29000","priceCurrency":"NGN"},
     {"@type":"Offer","name":"Enterprise Plan","price":"49000","priceCurrency":"NGN"}
   ],
-  "softwareVersion": "4.0 ULTRA",
+  "softwareVersion": "5.0 ULTRA",
   "countryOfOrigin": "NG"
 }
 </script>
@@ -472,12 +472,12 @@ section::before{
 
 <!-- HERO -->
 <div class="hero">
-  <div class="eyebrow"><span class="sdot"></span> Africa's Most Powerful AI Agent · v4.0 ULTRA</div>
+  <div class="eyebrow"><span class="sdot"></span> Africa's Most Powerful AI Agent · v5.0 ULTRA</div>
   <div class="live-badge">🟢 Live & Running · Beat <span id="hero-beat">—</span></div>
   <h1>The AI Agent That<br>Does Everything</h1>
   <p class="hero-sub">
     S.T.E.W (Secret Task Execution Worker) is a fully autonomous AI agent API — browse the web, write code, research deeply, process documents, connect any API, and run across all your apps.
-    <strong style="color:#a78bfa;"> Faster than Manus. Smarter than Kimi. Built in Nigeria 🇳🇬</strong>
+    <strong style="color:#a78bfa;"> The most capable AI agent built from Africa. 🇳🇬 Built in Nigeria.</strong>
   </p>
   <div class="hero-btns">
     <button class="btn-primary" onclick="openAuth('register')">🚀 Get Free API Key</button>
@@ -504,7 +504,7 @@ section::before{
       <div class="chat-title">
         <div class="chat-icon">🤖</div>
         <div>
-          <div style="font-size:.95rem;">S.T.E.W Agent <span style="font-size:.75rem;color:var(--m);">v4.0 ULTRA</span></div>
+          <div style="font-size:.95rem;">S.T.E.W Agent <span style="font-size:.75rem;color:var(--m);">v5.0 ULTRA</span></div>
           <div style="font-size:.75rem;color:var(--g);"><span class="sdot" style="width:5px;height:5px;margin-right:3px;"></span>Online · Real-time</div>
         </div>
       </div>
@@ -577,7 +577,7 @@ section::before{
         <div class="monitor-trend trend-up">↑ Growing daily</div>
       </div>
       <div class="monitor-card">
-        <div class="monitor-num" id="m-version">4.0</div>
+        <div class="monitor-num" id="m-version">5.0</div>
         <div class="monitor-label">API Version</div>
         <div class="monitor-trend" style="color:var(--y);">ULTRA Edition</div>
       </div>
@@ -1027,7 +1027,7 @@ question: <span class="str">"What text is in this image?"</span>
     <div class="stew-status" id="stew-status">S.T.E.W is working...</div>
     <div class="stew-step" id="stew-step">Initializing task execution...</div>
     <div class="stew-progress"><div class="stew-progress-bar" id="stew-bar"></div></div>
-    <div class="stew-log" id="stew-log">S.T.E.W v4.0 ULTRA activated...</div>
+    <div class="stew-log" id="stew-log">S.T.E.W v5.0 ULTRA activated...</div>
     <button onclick="hideStewOverlay()" style="background:rgba(255,255,255,.07);border:1px solid var(--b);border-radius:10px;padding:9px 20px;color:var(--m);font-size:.85rem;cursor:pointer;font-family:var(--font);">Hide (task continues in background)</button>
   </div>
 </div>
@@ -1629,7 +1629,7 @@ async function doResetPassword(){
     });
     const data = await resp.json();
     if(resp.ok && data.success){
-      showAuthResult('reset-result','success','✅ Password changed! <a onclick="switchAuthTab('login')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Log in now →</a>');
+      showAuthResult('reset-result','success',`✅ Password changed! <a onclick="switchAuthTab('login')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Log in now →</a>`);
     } else {
       showAuthResult('reset-result','error','❌ '+(data.detail||'Reset failed. Link may have expired.'));
     }
