@@ -1,29 +1,34 @@
-# S.T.E.W 3.0 ULTRA — Minimal Render Dockerfile (guaranteed to build)
+# S.T.E.W 5.0 — Fixed Render Dockerfile
 FROM python:3.11-slim-bookworm
 
-# Core system deps only - minimal and safe
+# ALL required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ curl ca-certificates \
     libpq-dev \
+    libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
+    libgdk-pixbuf2.0-0 libcairo2 libffi-dev \
+    libxml2-dev libxslt1-dev shared-mime-info \
+    tesseract-ocr tesseract-ocr-eng \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libxkbcommon0 libxcomposite1 libxdamage1 \
+    libxfixes3 libxrandr2 libgbm1 libasound2 \
+    libx11-6 libx11-xcb1 libxcb1 libxext6 \
+    fonts-liberation fontconfig \
     && apt-get clean
 
 WORKDIR /app
 
-# Install Python dependencies
 COPY stew_deploy/requirements.txt .
 RUN pip install --upgrade pip --quiet && \
     pip install --no-cache-dir -r requirements.txt --quiet
 
-# Copy all app code
-COPY stew_deploy/ .
+RUN playwright install chromium
 
-# Copy landing page
+COPY stew_deploy/ .
 COPY landing.html /app/landing.html
 
-# Runtime directories
-RUN mkdir -p memory/data output logs workspace screenshots
+RUN mkdir -p memory/data output logs workspace screenshots uploads
 
 EXPOSE 8000
 
-# Bulletproof startup: alembic migration then server
 CMD alembic upgrade head; uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --log-level info
