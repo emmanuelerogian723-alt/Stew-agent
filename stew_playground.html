@@ -15,6 +15,12 @@
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden;}
 .bg-grid{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(124,58,237,.04)1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04)1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
 .bg-glow{position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:400px;background:radial-gradient(ellipse,rgba(124,58,237,.15)0%,transparent 70%);pointer-events:none;z-index:0;}
+/* Enhanced 3D floating orbs */
+.orb-3d{position:fixed;border-radius:50%;pointer-events:none;z-index:1;animation:orbFloat 8s ease-in-out infinite;}
+.orb-1{width:120px;height:120px;background:radial-gradient(circle,rgba(124,58,237,.12),transparent 70%);top:15%;right:10%;animation-delay:0s;}
+.orb-2{width:80px;height:80px;background:radial-gradient(circle,rgba(6,182,212,.1),transparent 70%);top:60%;left:5%;animation-delay:3s;}
+.orb-3{width:100px;height:100px;background:radial-gradient(circle,rgba(16,185,129,.08),transparent 70%);bottom:20%;right:20%;animation-delay:5s;}
+@keyframes orbFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-30px) scale(1.1)}}
 header{position:relative;z-index:10;border-bottom:1px solid var(--border);background:rgba(10,10,15,.95);backdrop-filter:blur(20px);padding:0 2rem;}
 .header-inner{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:64px;}
 .logo{display:flex;align-items:center;gap:12px;text-decoration:none;}
@@ -127,6 +133,10 @@ textarea.code-in{width:100%;min-height:110px;background:transparent;border:none;
 <body>
 <div class="bg-grid"></div>
 <div class="bg-glow"></div>
+<!-- 3D Orbs -->
+<div class="orb-3d orb-1"></div>
+<div class="orb-3d orb-2"></div>
+<div class="orb-3d orb-3"></div>
 
 <header>
   <div class="header-inner">
@@ -164,12 +174,12 @@ textarea.code-in{width:100%;min-height:110px;background:transparent;border:none;
       <div class="sb-title">⚡ Quick Tests</div>
       <div class="q-list">
         <button class="q-btn" onclick="quickTest('chat','What is the GDP of Nigeria in 2024?')">🇳🇬 Ask about Nigeria</button>
-        <button class="q-btn" onclick="quickTest('code','Write a Python function to validate Nigerian phone numbers')">🐍 Generate Python code</button>
-        <button class="q-btn" onclick="quickTest('search','Latest AI news Africa 2026')">🔍 Search AI news</button>
-        <button class="q-btn" onclick="quickTest('translate','Hello, how are you today?')">🌍 Translate to Yoruba</button>
-        <button class="q-btn" onclick="quickTest('weather','Lagos Nigeria')">⛅ Lagos weather</button>
-        <button class="q-btn" onclick="quickTest('summarize','Artificial intelligence is transforming industries across Africa. From fintech to agriculture, AI tools are enabling businesses to automate processes, gain insights, and reach millions of underserved customers. Nigeria, Kenya, South Africa, and Egypt are leading the charge with hundreds of AI startups emerging every year.')">📄 Summarize text</button>
-        <button class="q-btn" onclick="quickTest('currency','Convert 100 USD to NGN')">💱 USD to Naira</button>
+        <button class="q-btn" onclick="quickTest('task','Write a Python function to validate Nigerian phone numbers')">🐍 Generate Python code</button>
+        <button class="q-btn" onclick="quickTest('task','Search latest AI news Africa 2026')">🔍 Search AI news</button>
+        <button class="q-btn" onclick="quickTest('task','Translate Hello, how are you today? to Yoruba')">🌍 Translate to Yoruba</button>
+        <button class="q-btn" onclick="quickTest('task','What is the weather in Lagos Nigeria right now?')">🌤️ Lagos weather</button>
+        <button class="q-btn" onclick="quickTest('task','Summarize: Artificial intelligence is transforming industries across Africa. From fintech to agriculture, AI tools are enabling businesses to automate processes, gain insights, and reach millions of underserved customers. Nigeria, Kenya, South Africa, and Egypt are leading the charge with hundreds of AI startups emerging every year.')">📄 Summarize text</button>
+        <button class="q-btn" onclick="quickTest('task','Convert 100 USD to NGN today')">💱 USD to Naira</button>
         <button class="q-btn" onclick="quickTest('chat','Write a short inspiring poem about building tech in Africa')">✍️ Creative writing</button>
       </div>
     </div>
@@ -253,17 +263,17 @@ textarea.code-in{width:100%;min-height:110px;background:transparent;border:none;
 <div class="toast" id="toast"></div>
 
 <script>
+// FIXED: Updated endpoints to match backend routes exactly
 const BASE = 'https://stew-agent.onrender.com';
 const EPS = [
   {method:'POST',path:'/chat',name:'/chat',desc:'AI conversation',tag:'fast',body:'{\n  "message": "What is the capital of Nigeria?"\n}',msg:'STEW is thinking...'},
-  {method:'POST',path:'/task',name:'/task',desc:'Execute any task',tag:'power',body:'{\n  "task": "Analyze the Nigerian tech ecosystem in 2026"\n}',msg:'Deploying 100 agents...'},
-  {method:'POST',path:'/search',name:'/search',desc:'Web search',tag:'fast',body:'{\n  "query": "MUTYINT Nigeria AI 2026"\n}',msg:'Searching the web...'},
-  {method:'POST',path:'/research',name:'/research',desc:'Deep research',tag:'power',body:'{\n  "topic": "Future of AI in Africa"\n}',msg:'Doing deep research...'},
-  {method:'POST',path:'/summarize',name:'/summarize',desc:'Summarize text',tag:'fast',body:'{\n  "text": "Paste your long text here to summarize quickly."\n}',msg:'Summarizing...'},
-  {method:'POST',path:'/code',name:'/code',desc:'Generate code',tag:'fast',body:'{\n  "prompt": "Build a FastAPI endpoint that validates Nigerian phone numbers"\n}',msg:'Writing code...'},
-  {method:'POST',path:'/translate',name:'/translate',desc:'Translate text',tag:'fast',body:'{\n  "text": "Hello, how are you today?",\n  "target_language": "Yoruba"\n}',msg:'Translating...'},
-  {method:'POST',path:'/weather',name:'/weather',desc:'Weather data',tag:'fast',body:'{\n  "city": "Lagos Nigeria"\n}',msg:'Fetching weather...'},
-  {method:'POST',path:'/currency',name:'/currency',desc:'Currency convert',tag:'fast',body:'{\n  "query": "Convert 500 USD to NGN"\n}',msg:'Converting currency...'},
+  {method:'POST',path:'/task',name:'/task',desc:'Execute any task (translation, weather, etc.)',tag:'power',body:'{\n  "task": "Analyze the Nigerian tech ecosystem in 2026",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Deploying 100 agents...'},
+  {method:'POST',path:'/search',name:'/search',desc:'Web search via skills engine',tag:'fast',body:'{\n  "query": "MUTYINT Nigeria AI 2026",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Searching the web...'},
+  {method:'POST',path:'/browse/navigate',name:'/browse/navigate',desc:'Browse any URL',tag:'power',body:'{\n  "url": "https://techcrunch.com",\n  "question": "What are today\'s top stories?",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Browsing the web...'},
+  {method:'GET',path:'/skills',name:'/skills',desc:'List all 60+ skills',tag:'fast',body:null,msg:'Loading skills catalog...'},
+  {method:'POST',path:'/skills/run',name:'/skills/run',desc:'Run any skill by name',tag:'power',body:'{\n  "skill": "web_search",\n  "params": {"query": "AI in Africa 2026"},\n  "api_key": "stew_free_playground_2026"\n}',msg:'Running skill...'},
+  {method:'POST',path:'/generate/pdf',name:'/generate/pdf',desc:'Generate PDF document',tag:'fast',body:'{\n  "content": "Report on AI in Africa",\n  "title": "AI Africa Report",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Generating PDF...'},
+  {method:'POST',path:'/api/call',name:'/api/call',desc:'Proxy any API call',tag:'fast',body:'{\n  "url": "https://api.github.com/users/github",\n  "method": "GET",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Proxying API call...'},
   {method:'GET',path:'/heartbeat',name:'/heartbeat',desc:'API health check',tag:'fast',body:null,msg:'Checking status...'},
   {method:'GET',path:'/security/health',name:'/security/health',desc:'Security status',tag:'fast',body:null,msg:'Checking shield...'},
 ];
@@ -293,21 +303,21 @@ function selEp(i){
   updSnips();
 }
 
+// FIXED: Updated quickTest to use correct endpoints
 function quickTest(type,val){
-  const m={chat:0,task:1,search:2,research:3,summarize:4,code:5,translate:6,weather:7,currency:8};
-  selEp(m[type]??0);
-  const bodies={
-    chat:`{\n  "message": "${val.replace(/"/g,"'")}"\n}`,
-    task:`{\n  "task": "${val.replace(/"/g,"'")}"\n}`,
-    search:`{\n  "query": "${val.replace(/"/g,"'")}"\n}`,
-    research:`{\n  "topic": "${val.replace(/"/g,"'")}"\n}`,
-    summarize:`{\n  "text": "${val.replace(/"/g,"'")}"\n}`,
-    code:`{\n  "prompt": "${val.replace(/"/g,"'")}"\n}`,
-    translate:`{\n  "text": "${val.replace(/"/g,"'")}",\n  "target_language": "Yoruba"\n}`,
-    weather:`{\n  "city": "${val.replace(/"/g,"'")}"\n}`,
-    currency:`{\n  "query": "${val.replace(/"/g,"'")}"\n}`,
-  };
-  document.getElementById('reqBody').value=bodies[type]||'{}';
+  if(type !== 'chat' && type !== 'search'){
+    selEp(1); // Select /task endpoint
+    const body = {task: val, api_key: "stew_free_playground_2026"};
+    document.getElementById('reqBody').value = JSON.stringify(body, null, 2);
+  } else if(type === 'search'){
+    selEp(2); // Select /search endpoint
+    const body = {query: val, api_key: "stew_free_playground_2026"};
+    document.getElementById('reqBody').value = JSON.stringify(body, null, 2);
+  } else {
+    selEp(0); // Select /chat endpoint
+    const body = {message: val};
+    document.getElementById('reqBody').value = JSON.stringify(body, null, 2);
+  }
   setTimeout(runReq,100);
 }
 
@@ -365,7 +375,7 @@ async function runReq(){
 }
 
 function highlight(j){
-  return j.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,m=>{
+  return j.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*("(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,m=>{
     let c='json-num';
     if(/^"/.test(m)){c=/:$/.test(m)?'json-key':'json-str';}
     else if(/true|false/.test(m)){c='json-bool';}
@@ -434,11 +444,11 @@ response = requests.<span class="fn">${e.method.toLowerCase()}</span>(url, json=
 data = response.<span class="fn">json</span>()
 <span class="fn">print</span>(data)</pre>`,
   curl:e=>`<pre><span class="cm"># cURL — terminal</span>
-<span class="cm"># S.T.E.W API by MUTYINT Nigeria</span>
+<span class="cm">// S.T.E.W API by MUTYINT Nigeria</span>
 
-curl -X ${e.method} \\
-  <span class="str">"${BASE}${e.path}"</span> \\
-  -H <span class="str">"Content-Type: application/json"</span>${e.body&&e.method!=='GET'?` \\
+curl -X ${e.method} \
+  <span class="str">"${BASE}${e.path}"</span> \
+  -H <span class="str">"Content-Type: application/json"</span>${e.body&&e.method!=='GET'?` \
   -d <span class="str">'${e.body.replace(/\n/g,' ')}'</span>`:`</pre>`}${e.body&&e.method!=='GET'?`</pre>`:''}`,
   node:e=>`<pre><span class="cm">// Node.js — axios</span>
 <span class="cm">// npm install axios</span>
@@ -446,7 +456,8 @@ curl -X ${e.method} \\
 
 <span class="kw">const</span> axios = <span class="fn">require</span>(<span class="str">'axios'</span>);
 <span class="kw">const</span> { data } = <span class="kw">await</span> axios.<span class="fn">${e.method.toLowerCase()}</span>(
-  <span class="str">'${BASE}${e.path}'</span>${e.body&&e.method!=='GET'?`,\n  ${e.body}`:''}
+  <span class="str">'${BASE}${e.path}'</span>${e.body&&e.method!=='GET'?`,
+  ${e.body}`:''}
 );
 console.<span class="fn">log</span>(data);</pre>`,
   php:e=>`<pre><span class="cm">// PHP — cURL</span>
