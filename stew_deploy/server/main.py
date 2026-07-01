@@ -31,6 +31,7 @@ from server.document_generator import (
 )
 from server.document_processor import extract_text
 from server.llm_client import get_llm_client
+from server.orchestrator import orchestrate_text, orchestrate_image
 from server.memory import (
     append_message, build_llm_messages, get_or_create_conversation,
 )
@@ -324,27 +325,6 @@ async def get_me(current_user: User = Depends(get_current_user_jwt)):
     }
 
 
-# ── NEW: Public auth stats endpoint (for landing page developer counter) ──────
-
-@app.get("/auth/stats")
-async def get_auth_stats(db: AsyncSession = Depends(get_db)):
-    """Get public statistics about registered developers."""
-    try:
-        result = await db.execute(select(func.count(User.id)).where(User.is_active == True))
-        count = result.scalar() or 0
-        return {
-            "registered_developers": count,
-            "success": True,
-        }
-    except Exception as e:
-        logger.warning(f"Auth stats error: {e}")
-        return {
-            "registered_developers": 0,
-            "success": True,
-            "note": "Stats unavailable",
-        }
-
-
 # ── Chat ───────────────────────────────────────────────────────────────────────
 
 @app.post("/chat")
@@ -420,6 +400,51 @@ async def chat(
         "conversation_id": conv.id if user else None,
         "success": True,
     }
+
+
+# ── Orchestrator (Fugu-style mixture-of-agents) ─────────────────────────────
+
+class OrchestrateTextRequest(BaseModel):
+    prompt: str
+    system: Optional[str] = None
+    workers: Optional[list[str]] = None
+    temperature: float = 0.7
+
+
+@app.post("/orchestrate/text")
+async def orchestrate_text_endpoint(body: OrchestrateTextRequest):
+    """
+    Mixture-of-agents endpoint (Fugu-style): fans your prompt out to multiple
+    LLM workers in parallel (Groq, NVIDIA NIM, OpenRouter, HuggingFace, OpenAI —
+    whichever are configured), then synthesizes their independent answers into
+    one best-of-all-worlds response through a single call.
+    """
+    try:
+        result = await orchestrate_text(
+            body.prompt, system=body.system, workers=body.workers, temperature=body.temperature
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+class OrchestrateImageRequest(BaseModel):
+    prompt: str
+    mode: str = "first"  # "first" = fastest worker wins, "all" = return every worker's output
+
+
+@app.post("/orchestrate/image")
+async def orchestrate_image_endpoint(body: OrchestrateImageRequest):
+    """
+    Multi-worker image generation: dispatches your prompt to multiple free
+    image-generation models in parallel (pollinations.ai, HuggingFace FLUX,
+    more to come) and returns the fastest result, or all of them for comparison.
+    """
+    try:
+        result = await orchestrate_image(body.prompt, mode=body.mode)
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 # ── Task ───────────────────────────────────────────────────────────────────────
@@ -637,69 +662,6 @@ async def upload_document(
         "file_type": extracted["file_type"],
         "text": text,
         "answer": answer,
-        "document_id": doc.id,
-        "success": True,
-    }
-
-
-# ── NEW: Image Upload (for landing page vision demo) ──────────────────────────
-
-@app.post("/upload/image")
-async def upload_image(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    question: Optional[str] = Form(None),
-    api_key: str = Form(...),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upload and analyze an image using vision capabilities."""
-    user = await get_user_by_api_key(api_key, db)
-    llm = get_llm_client()
-
-    contents = await file.read()
-    file_size = len(contents)
-
-    import base64
-    b64_image = base64.b64encode(contents).decode('utf-8')
-    mime_type = file.content_type or "image/jpeg"
-
-    answer = ""
-    ocr_text = ""
-
-    if question:
-        try:
-            result = llm.chat([
-                {"role": "system", "content": "You are an image analysis expert. Describe images in detail and answer questions about them accurately."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": question},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}}
-                ]}
-            ])
-            answer = result.get("content", "")
-        except Exception as e:
-            logger.warning(f"Vision analysis failed: {e}")
-            answer = "Image received. Vision analysis temporarily unavailable."
-    else:
-        answer = "Image uploaded successfully. Ask a question about it!"
-
-    doc = Document(
-        user_id=user.id,
-        filename=file.filename,
-        file_type=mime_type,
-        content=f"[IMAGE: {file.filename}, {file_size} bytes]",
-        file_size=file_size,
-    )
-    db.add(doc)
-    await db.flush()
-
-    background_tasks.add_task(_log_call, db, user.id, "/upload/image", "POST", 0, 200)
-
-    return {
-        "filename": file.filename,
-        "file_type": mime_type,
-        "file_size": file_size,
-        "answer": answer,
-        "ocr_text": ocr_text,
         "document_id": doc.id,
         "success": True,
     }
