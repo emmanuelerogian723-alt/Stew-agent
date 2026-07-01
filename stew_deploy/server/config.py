@@ -1,87 +1,86 @@
 """
-S.T.E.W Configuration — all secrets from environment variables ONLY.
+S.T.E.W Configuration — Pydantic v2 compatible, all secrets from env vars.
 """
 import os
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
     # App
     APP_NAME: str = "S.T.E.W Agent API"
-    VERSION: str = "5.0.0"
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    DEBUG: bool = ENVIRONMENT != "production"
+    VERSION: str = "6.0.0"
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = False
 
     # LLM Providers
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GROQ_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    HF_TOKEN: str = ""
+    NVIDIA_API_KEY: str = ""  # build.nvidia.com NIM — free tier, OpenAI-compatible
+
+    # Image generation workers (free tiers)
+    HF_TOKEN_IMAGE: str = ""       # reuse HF_TOKEN if unset (Stable Diffusion / FLUX on HF Inference)
+    TOGETHER_API_KEY: str = ""     # optional extra image worker
+    POLLINATIONS_ENABLED: bool = True  # pollinations.ai needs no key at all
 
     # Search
-    SERPER_API_KEY: str = os.getenv("SERPER_API_KEY", "")
+    SERPER_API_KEY: str = ""
 
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./stew.db")
+    DATABASE_URL: str = "sqlite:///./stew.db"
 
     # Redis
-    REDIS_URL: str = os.getenv("REDIS_URL", "")
+    REDIS_URL: str = ""
 
     # Auth
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "change-me-in-production-please")
+    JWT_SECRET_KEY: str = "change-me-in-production-stew-2026"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 24
 
     # Paystack
-    PAYSTACK_SECRET_KEY: str = os.getenv("PAYSTACK_SECRET_KEY", "")
-    PAYSTACK_PUBLIC_KEY: str = os.getenv("PAYSTACK_PUBLIC_KEY", "")
+    PAYSTACK_SECRET_KEY: str = ""
+    PAYSTACK_PUBLIC_KEY: str = ""
 
     # Telegram
-    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_BOT_TOKEN: str = ""
 
-    # App URL (used for password reset links, keepalive, webhook setup)
-    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "")
-
-    # Hugging Face (4th LLM fallback)
-    HF_TOKEN: str = os.getenv("HF_TOKEN", "")
+    # App URL
+    APP_BASE_URL: str = ""
 
     # Admin
-    STEW_ADMIN_SECRET: str = os.getenv("STEW_ADMIN_SECRET", "")
+    STEW_ADMIN_SECRET: str = ""
 
-    # Email (SMTP) — for welcome emails + password reset
-    # Works with Gmail, Mailgun, SendGrid SMTP, Brevo, etc.
-    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USER: str = os.getenv("SMTP_USER", "")         # your email address
-    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "") # Gmail app password or SMTP key
-    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "S.T.E.W Agent")
-    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USER", ""))
+    # Email (SMTP)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "S.T.E.W Agent"
+    SMTP_FROM_EMAIL: str = ""
 
-    # Rate limits (requests per minute)
-    RATE_LIMIT_FREE: int = 100
-    RATE_LIMIT_PRO: int = 1000
-    RATE_LIMIT_BUSINESS: int = 5000
+    # Rate limits (calls/month per plan)
+    RATE_LIMIT_FREE: int = 4500
+    RATE_LIMIT_PRO: int = 20000
+    RATE_LIMIT_BUSINESS: int = 150000
     RATE_LIMIT_ENTERPRISE: int = 999999
 
-    # Plan pricing (Naira)
-    PLAN_PRICES: dict = {
-        "free": 0,
-        "pro": 9900,
-        "business": 29000,
-        "enterprise": 49000,
-    }
+    @property
+    def PLAN_PRICES(self) -> dict:
+        # NGN, monthly. Enterprise = custom/contact sales.
+        return {"free": 0, "pro": 12000, "business": 39000, "enterprise": 0}
 
-    # Plan API call limits
-    PLAN_CALL_LIMITS: dict = {
-        "free": 3000,
-        "pro": 10000,
-        "business": 100000,
-        "enterprise": 999999,
-    }
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    @property
+    def PLAN_CALL_LIMITS(self) -> dict:
+        return {"free": 4500, "pro": 20000, "business": 150000, "enterprise": 999999}
 
 
 @lru_cache()
