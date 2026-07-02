@@ -1,7 +1,12 @@
 """
 S.T.E.W LLM Client — multi-provider with automatic fallback.
-Updated 2026-06-29: Dead Llama models replaced with active ones.
-Chain: Groq (llama-3.3-70b) → OpenRouter → HuggingFace → OpenAI
+Updated 2026-07-02: Migrated off Groq models deprecated in the June 17, 2026
+notice (llama-3.3-70b-versatile, llama-3.1-8b-instant, qwen/qwen3-32b,
+meta-llama/llama-4-scout-17b-16e-instruct) to their recommended replacements
+(openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.6-27b) per
+console.groq.com/docs/deprecations. Old models remain live until 07/17-08/16/26
+but requests should migrate now to avoid a hard cutover later.
+Chain: Groq (gpt-oss-120b) → NVIDIA NIM → OpenRouter → HuggingFace → OpenAI
 """
 import logging
 from typing import Optional
@@ -15,13 +20,11 @@ from server.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ─── Active model list (as of June 2026) ────────────────────────────────────
-# Groq: llama3-70b-8192 DEAD → use llama-3.3-70b-versatile (best free)
-# OpenRouter: updated to current Llama 4
-# HuggingFace: Qwen3 is now the best free model on HF Router
+# ─── Active model list (as of July 2026) ────────────────────────────────────
 PROVIDER_MODELS = {
-    "groq":         "llama-3.3-70b-versatile",
-    "groq_fast":    "meta-llama/llama-4-scout-17b-16e-instruct",  # faster option
+    "groq":         "openai/gpt-oss-120b",
+    "groq_fast":    "openai/gpt-oss-20b",  # faster option
+    "nvidia":       "meta/llama-3.3-70b-instruct",   # free on build.nvidia.com NIM
     "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
     "openai":       "gpt-4o-mini",
     "huggingface":  "Qwen/Qwen3-235B-A22B",  # best free on HF Router
@@ -29,10 +32,17 @@ PROVIDER_MODELS = {
 
 # Fallback chain for Groq if primary fails
 GROQ_FALLBACKS = [
-    "llama-3.3-70b-versatile",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "llama-3.1-8b-instant",
-    "qwen/qwen3-32b",
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.6-27b",
+    "openai/gpt-oss-20b",
+]
+
+# Fallback chain for NVIDIA NIM if primary fails (all free-tier models)
+NVIDIA_FALLBACKS = [
+    "meta/llama-3.3-70b-instruct",
+    "meta/llama-3.1-405b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "mistralai/mixtral-8x22b-instruct-v0.1",
 ]
 
 
@@ -49,6 +59,16 @@ class LLMClient:
                 logger.info(f"Groq provider initialized — model: {self._groq_model}")
             except Exception as e:
                 logger.warning(f"Groq init failed: {e}")
+
+        if settings.NVIDIA_API_KEY:
+            try:
+                self.providers["nvidia"] = OpenAI(
+                    base_url="https://integrate.api.nvidia.com/v1",
+                    api_key=settings.NVIDIA_API_KEY,
+                )
+                logger.info("NVIDIA NIM provider initialized (free tier)")
+            except Exception as e:
+                logger.warning(f"NVIDIA NIM init failed: {e}")
 
         if settings.OPENROUTER_API_KEY:
             try:
@@ -86,7 +106,7 @@ class LLMClient:
 
     @property
     def fallback_order(self) -> list[str]:
-        return [p for p in ["groq", "openrouter", "huggingface", "openai"] if p in self.providers]
+        return [p for p in ["groq", "nvidia", "openrouter", "huggingface", "openai"] if p in self.providers]
 
     def _call_groq_with_fallback(self, messages: list[dict], temperature: float) -> dict:
         """Try each Groq model in fallback order."""
@@ -121,15 +141,42 @@ class LLMClient:
                     raise  # Non-model error — don't retry
         raise last_error
 
+    def _call_nvidia_with_fallback(self, messages: list[dict], temperature: float) -> dict:
+        """Try each NVIDIA NIM free-tier model in fallback order."""
+        client = self.providers["nvidia"]
+        last_error = None
+        for model in NVIDIA_FALLBACKS:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                )
+                content = response.choices[0].message.content
+                usage = response.usage
+                logger.info(f"NVIDIA NIM success with model: {model}")
+                return {
+                    "content": content,
+                    "provider": "nvidia",
+                    "model": model,
+                    "tokens": {
+                        "prompt": usage.prompt_tokens if usage else 0,
+                        "completion": usage.completion_tokens if usage else 0,
+                        "total": usage.total_tokens if usage else 0,
+                    },
+                }
+            except Exception as e:
+                last_error = e
+                logger.warning(f"NVIDIA model {model} failed, trying next... ({e})")
+                continue
+        raise last_error
+
     def _call_provider(self, provider_name: str, messages: list[dict],
                        model: Optional[str], temperature: float) -> dict:
         if provider_name == "groq":
-            # Use smart fallback for Groq
             m = model or self._groq_model
-            # If caller didn't specify a model, use full fallback chain
             if model is None:
                 return self._call_groq_with_fallback(messages, temperature)
-            # If they specified a model, try it then fall back
             client = self.providers["groq"]
             try:
                 response = client.chat.completions.create(
@@ -146,6 +193,26 @@ class LLMClient:
                 }
             except Exception:
                 return self._call_groq_with_fallback(messages, temperature)
+
+        if provider_name == "nvidia":
+            if model is None:
+                return self._call_nvidia_with_fallback(messages, temperature)
+            client = self.providers["nvidia"]
+            try:
+                response = client.chat.completions.create(
+                    model=model, messages=messages, temperature=temperature)
+                content = response.choices[0].message.content
+                usage = response.usage
+                return {
+                    "content": content, "provider": "nvidia", "model": model,
+                    "tokens": {
+                        "prompt": usage.prompt_tokens if usage else 0,
+                        "completion": usage.completion_tokens if usage else 0,
+                        "total": usage.total_tokens if usage else 0,
+                    },
+                }
+            except Exception:
+                return self._call_nvidia_with_fallback(messages, temperature)
 
         client = self.providers[provider_name]
         chosen_model = model or PROVIDER_MODELS.get(provider_name, "gpt-4o-mini")
