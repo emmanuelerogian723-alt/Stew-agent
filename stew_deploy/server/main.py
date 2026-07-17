@@ -356,7 +356,7 @@ async def chat(
         ]
         if any(kw in body.message.lower() for kw in needs_search_keywords):
             try:
-                search_results = searcher.search(body.message, num_results=5)
+                search_results = await asyncio.to_thread(searcher.search, body.message, 5)
                 if search_results.get("grounded"):
                     web_grounded = True
                     sources = [
@@ -466,7 +466,7 @@ async def task(
 
     if searcher._is_available():
         try:
-            sr = searcher.search(body.task, num_results=5)
+            sr = await asyncio.to_thread(searcher.search, body.task, 5)
             if sr.get("grounded"):
                 search_context = searcher.format_results_for_llm(sr)
                 sources = [
@@ -940,7 +940,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     ])
     if needs_search and searcher._is_available():
         try:
-            search_results = searcher.search(user_text, num_results=4)
+            search_results = await asyncio.to_thread(searcher.search, user_text, 4)
             if search_results.get("grounded"):
                 context = searcher.format_results_for_llm(search_results)
                 system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
@@ -1121,3 +1121,4 @@ async def integration_call(body: IntegrationRequest, db: AsyncSession = Depends(
         raise HTTPException(504, f"Timeout calling {body.service}")
     except Exception as e:
         raise HTTPException(500, str(e))
+
