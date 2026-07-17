@@ -14,7 +14,8 @@ from collections import defaultdict, deque
 from typing import Optional, Tuple
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
-from loguru import logger
+import logging
+logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════
 # CONFIGURATION
@@ -380,5 +381,6 @@ def manual_unblock(ip: str):
     if ip in violation_counts:
         del violation_counts[ip]
     logger.info(f"✅ IP unblocked: {ip}")
+
 
 
