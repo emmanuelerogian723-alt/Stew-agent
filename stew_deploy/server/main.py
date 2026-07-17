@@ -339,9 +339,10 @@ async def chat(
     user = None
     if body.api_key:
         try:
-            user = await get_user_by_api_key(body.api_key, db)
-        except HTTPException:
-            pass
+            import asyncio as _asyncio
+            user = await _asyncio.wait_for(get_user_by_api_key(body.api_key, db), timeout=5.0)
+        except (HTTPException, _asyncio.TimeoutError, Exception):
+            user = None  # Invalid/unknown key — treat as anonymous
 
     # Web search grounding
     search_results = None
@@ -397,7 +398,7 @@ async def chat(
         "web_grounded": web_grounded,
         "sources": sources,
         "provider": result.get("provider"),
-        "conversation_id": conv.id if user else None,
+        "conversation_id": conv.id if user and 'conv' in dir() else None,
         "success": True,
     }
 
