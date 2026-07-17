@@ -1141,24 +1141,36 @@ async function sendChat(){
   showTyping();
   showStewWorking('Researching your question...', msg);
   try{
+    // Only send api_key if user is logged in (not the free playground key that doesn't exist in DB)
+    const chatPayload = {message: msg, web_search: true};
+    if(_myKey && _myKey !== FREE_KEY) chatPayload.api_key = _myKey;
     const resp = await fetch(STEW_URL+'/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message: msg, api_key: FREE_KEY}),
-      signal: AbortSignal.timeout(45000)
+      body: JSON.stringify(chatPayload),
+      signal: AbortSignal.timeout(90000)
     });
     const data = await resp.json();
     hideTyping();
     hideStewOverlay();
+    if(!resp.ok || data.success === false || data.detail) {
+      const errMsg = data.detail || data.error || 'S.T.E.W encountered an issue. Please try again in 30 seconds.';
+      addMsg('stew','⚠️ ' + errMsg);
+      _chatBusy = false;
+      document.getElementById('chat-send').disabled = false;
+      return;
+    }
     const reply = data.response || data.result || data.answer || 'STEW processed your request.';
     const grounded = data.web_grounded ? '<div style="font-size:.72rem;color:#34d399;margin-top:.4rem;">🌐 Web-grounded · real-time data</div>' : '';
     addMsg('stew', reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>') + grounded);
   } catch(e){
     hideTyping(); hideStewOverlay();
     if(e.name==='TimeoutError')
-      addMsg('stew','⏳ STEW is warming up on Render (free tier). Try again in 15 seconds!');
+      addMsg('stew','⏳ S.T.E.W is currently very busy — all AI providers are at capacity. Please wait 30 seconds and try again! The free tier has rate limits during peak hours.');
+    else if(e.message && e.message.includes('overloaded'))
+      addMsg('stew','⚡ S.T.E.W: All AI engines are rate-limited right now. This happens on the free tier during peak hours. Please retry in 30 seconds.');
     else
-      addMsg('stew','⚠️ Connection error: '+escHtml(e.message)+'. STEW may be waking up.');
+      addMsg('stew','⚠️ Connection issue: '+escHtml(e.message||'unknown error')+'. S.T.E.W may be waking up from sleep — try again in 10 seconds!');
   }
   _chatBusy = false;
   document.getElementById('chat-send').disabled = false;
@@ -1521,3 +1533,4 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 </body>
 </html>
+
