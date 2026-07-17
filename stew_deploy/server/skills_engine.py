@@ -62,10 +62,9 @@ def list_skills(category: Optional[str] = None) -> list[dict]:
 
 @skill("web_search", "Search the web using Serper API with DuckDuckGo fallback", "web")
 async def web_search(query: str, num: int = 5) -> dict:
-    from server.search import StewSearch
-    from server.config import get_settings
-    s = StewSearch(get_settings())
-    return await s.search(query, num_results=num)
+    from server.search import get_searcher
+    s = get_searcher()
+    return await asyncio.to_thread(s.search, query, num)
 
 
 @skill("web_browse", "Fetch and read any webpage URL", "web")
@@ -138,42 +137,37 @@ async def get_page_forms(url: str) -> dict:
 
 @skill("generate_pdf", "Generate a PDF document", "documents")
 async def generate_pdf(title: str, content: str, author: str = "S.T.E.W") -> dict:
-    from server.document_generator import DocumentGenerator
-    gen = DocumentGenerator()
-    b64 = gen.generate_pdf(title=title, content=content, author=author)
-    return {"format": "pdf", "base64": b64, "filename": f"{title.lower().replace(' ','_')}.pdf"}
+    from server.document_generator import generate_pdf as _gen_pdf
+    result = await asyncio.to_thread(_gen_pdf, content, title)
+    return {"format": "pdf", **result, "filename": f"{title.lower().replace(' ','_')}.pdf"}
 
 
 @skill("generate_docx", "Generate a Word document (.docx)", "documents")
 async def generate_docx(title: str, content: str, author: str = "S.T.E.W") -> dict:
-    from server.document_generator import DocumentGenerator
-    gen = DocumentGenerator()
-    b64 = gen.generate_docx(title=title, content=content, author=author)
-    return {"format": "docx", "base64": b64, "filename": f"{title.lower().replace(' ','_')}.docx"}
+    from server.document_generator import generate_docx as _gen_docx
+    result = await asyncio.to_thread(_gen_docx, content, title)
+    return {"format": "docx", **result, "filename": f"{title.lower().replace(' ','_')}.docx"}
 
 
 @skill("generate_xlsx", "Generate an Excel spreadsheet (.xlsx)", "documents")
 async def generate_xlsx(title: str, data: list, headers: list = None) -> dict:
-    from server.document_generator import DocumentGenerator
-    gen = DocumentGenerator()
-    b64 = gen.generate_xlsx(title=title, data=data, headers=headers)
-    return {"format": "xlsx", "base64": b64, "filename": f"{title.lower().replace(' ','_')}.xlsx"}
+    from server.document_generator import generate_xlsx as _gen_xlsx
+    result = await asyncio.to_thread(_gen_xlsx, data=data or [], headers=headers or [], title=title)
+    return {"format": "xlsx", **result, "filename": f"{title.lower().replace(' ','_')}.xlsx"}
 
 
 @skill("generate_pptx", "Generate a PowerPoint presentation (.pptx)", "documents")
 async def generate_pptx(title: str, slides: list) -> dict:
-    from server.document_generator import DocumentGenerator
-    gen = DocumentGenerator()
-    b64 = gen.generate_pptx(title=title, slides=slides)
-    return {"format": "pptx", "base64": b64, "filename": f"{title.lower().replace(' ','_')}.pptx"}
+    from server.document_generator import generate_pptx as _gen_pptx
+    result = await asyncio.to_thread(_gen_pptx, slides, title)
+    return {"format": "pptx", **result, "filename": f"{title.lower().replace(' ','_')}.pptx"}
 
 
 @skill("generate_html_report", "Generate an HTML report", "documents")
 async def generate_html_report(title: str, content: str, style: str = "professional") -> dict:
-    from server.document_generator import DocumentGenerator
-    gen = DocumentGenerator()
-    b64 = gen.generate_html(title=title, content=content)
-    return {"format": "html", "base64": b64, "filename": f"{title.lower().replace(' ','_')}.html"}
+    from server.document_generator import generate_html as _gen_html
+    result = await asyncio.to_thread(_gen_html, content, title)
+    return {"format": "html", **result, "filename": f"{title.lower().replace(' ','_')}.html"}
 
 
 @skill("generate_csv", "Generate a CSV file from data", "documents")
@@ -702,3 +696,4 @@ async def list_all_skills(category: str = "") -> dict:
         "categories": sorted(categories),
         "skills": skills,
     }
+
