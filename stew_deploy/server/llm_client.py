@@ -226,22 +226,40 @@ class LLMClient:
         }
 
     def chat(self, messages: list[dict], model: Optional[str] = None,
-             temperature: float = 0.7) -> dict:
-        """Try each provider in fallback order until one succeeds."""
+             temperature: float = 0.7, _retry: int = 0) -> dict:
+        """Try each provider in fallback order until one succeeds. Auto-retries once on 429."""
+        import time as _time
         last_error = None
-        for provider_name in self.fallback_order:
+        providers = self.fallback_order
+        if not providers:
+            raise HTTPException(status_code=503, detail="No LLM providers configured. Set GROQ_API_KEY.")
+        for provider_name in providers:
             try:
                 result = self._call_provider(provider_name, messages, model, temperature)
                 logger.info(f"LLM success via {provider_name}/{result['model']}")
                 return result
             except Exception as e:
                 last_error = e
-                logger.warning(f"{provider_name} failed: {e}")
+                err_str = str(e)
+                if any(x in err_str for x in ["429", "rate_limit", "rate limit", "temporarily"]):
+                    logger.warning(f"{provider_name} rate-limited, trying next provider...")
+                elif any(x in err_str for x in ["401", "invalid_api_key", "Unauthorized"]):
+                    logger.warning(f"{provider_name} auth error, trying next provider...")
+                elif any(x in err_str for x in ["model_not_active", "decommissioned", "404"]):
+                    logger.warning(f"{provider_name} model unavailable, trying next provider...")
+                else:
+                    logger.warning(f"{provider_name} failed: {e}")
                 continue
+
+        # All providers failed — wait 3s and retry once automatically
+        if _retry == 0:
+            logger.warning("All providers failed on first pass, retrying after 3s...")
+            _time.sleep(3)
+            return self.chat(messages, model, temperature, _retry=1)
 
         raise HTTPException(
             status_code=503,
-            detail=f"All LLM providers unavailable. Last error: {last_error}",
+            detail="S.T.E.W is temporarily overloaded — all AI providers are rate-limited. Please retry in 30 seconds.",
         )
 
     def complete(self, prompt: str,
@@ -270,3 +288,4 @@ def reset_llm_client():
     """Force re-initialization (useful after config changes)."""
     global _llm_client
     _llm_client = None
+
