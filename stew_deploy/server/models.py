@@ -31,6 +31,15 @@ class User(Base):
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
     api_key: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Fine-tune / Persona system
+    persona: Mapped[Optional[str]] = mapped_column(String(50), default="general", nullable=True)
+    custom_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    persona_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    response_style: Mapped[Optional[str]] = mapped_column(String(20), default="balanced", nullable=True)  # concise|balanced|detailed
+    language: Mapped[Optional[str]] = mapped_column(String(10), default="en", nullable=True)
+    preferred_model: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Mistral API key (user can bring their own)
+    mistral_api_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
