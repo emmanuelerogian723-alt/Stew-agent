@@ -25,6 +25,7 @@ from server.auth import (
     get_user_by_api_key, hash_password, verify_password,
 )
 from server.config import get_settings
+from server.system_prompt import STEW_SYSTEM_PROMPT as _BASE_SYSTEM_PROMPT
 from server.database import get_db, init_db
 from server.document_generator import (
     generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx,
@@ -208,7 +209,7 @@ class VerifyPaymentRequest(BaseModel):
 async def heartbeat():
     return {
         "status": "ok",
-        "version": "5.0.0",
+        "version": "6.0.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "environment": settings.ENVIRONMENT,
         "providers": {
@@ -386,7 +387,26 @@ async def chat(
                 logger.warning(f"Search failed, continuing without: {e}")
 
     # Build messages
-    system = STEW_SYSTEM_PROMPT
+    # Build persona-aware system prompt
+    settings_obj = get_settings()
+    persona = getattr(user, 'persona', 'general') if user else 'general'
+    persona_prompts = settings_obj.PERSONA_PROMPTS
+    system = persona_prompts.get(persona, persona_prompts['general'])
+    
+    # Append custom instructions if user has set them
+    if user and getattr(user, 'custom_instructions', None):
+        style = getattr(user, 'response_style', 'balanced')
+        style_note = ""
+        if style == "concise":
+            style_note = "\n\nRESPONSE STYLE: Be concise and direct. Keep responses short and to the point."
+        elif style == "detailed":
+            style_note = "\n\nRESPONSE STYLE: Be comprehensive and detailed. Explain thoroughly."
+        system = system + f"\n\nUSER CUSTOM INSTRUCTIONS:\n{user.custom_instructions}" + style_note
+    
+    # Use user's Mistral key if they have one set
+    if user and getattr(user, 'mistral_api_key', None) and settings.MISTRAL_API_KEY == "":
+        import os as _os
+        _os.environ["MISTRAL_API_KEY"] = user.mistral_api_key
     if search_results and web_grounded:
         context = searcher.format_results_for_llm(search_results)
         system += f"\n\nWEB SEARCH CONTEXT (use ONLY this for factual claims):\n{context}"
@@ -854,6 +874,149 @@ async def list_conversations(current_user: User = Depends(get_current_user_jwt),
 
 
 # ── Error handlers ─────────────────────────────────────────────────────────────
+
+
+
+# ── Fine-tune / Persona System ─────────────────────────────────────────────────
+
+PERSONA_OPTIONS = {
+    "general": {"label": "General Assistant", "icon": "🤖", "desc": "Powerful all-purpose AI for any task"},
+    "doctor": {"label": "Medical Doctor", "icon": "🩺", "desc": "Clinical AI for healthcare professionals & patients"},
+    "health": {"label": "Health & Wellness", "icon": "💚", "desc": "Nutrition, fitness, mental wellness & preventive care"},
+    "startup": {"label": "Startup Co-founder", "icon": "🚀", "desc": "Strategy, fundraising, product & growth hacking"},
+    "legal": {"label": "Legal Assistant", "icon": "⚖️", "desc": "Contracts, compliance, legal research & documentation"},
+    "finance": {"label": "Finance Advisor", "icon": "📈", "desc": "Financial modeling, investment analysis & budgeting"},
+    "education": {"label": "AI Tutor", "icon": "🎓", "desc": "Learning plans, explanations & educational content"},
+    "ecommerce": {"label": "E-Commerce Expert", "icon": "🛒", "desc": "Product listings, marketing copy & store optimization"},
+    "developer": {"label": "Software Engineer", "icon": "💻", "desc": "Code review, architecture & production-quality development"},
+    "marketing": {"label": "Growth Marketer", "icon": "📣", "desc": "Copywriting, SEO, campaigns & conversion optimization"},
+    "hr": {"label": "HR & People Ops", "icon": "👥", "desc": "Job descriptions, interviews, onboarding & culture"},
+    "customer_support": {"label": "Customer Support", "icon": "💬", "desc": "Empathetic, efficient customer query resolution"},
+}
+
+
+class FineTuneRequest(BaseModel):
+    api_key: str
+    persona: Optional[str] = "general"
+    custom_instructions: Optional[str] = None
+    persona_name: Optional[str] = None
+    response_style: Optional[str] = "balanced"  # concise | balanced | detailed
+    language: Optional[str] = "en"
+    preferred_model: Optional[str] = None
+    mistral_api_key: Optional[str] = None
+
+
+class TestKeyRequest(BaseModel):
+    api_key: str
+    mistral_api_key: Optional[str] = None
+
+
+@app.get("/personas")
+async def list_personas():
+    """List all available persona fine-tune options."""
+    return {
+        "personas": [
+            {"id": k, "label": v["label"], "icon": v["icon"], "desc": v["desc"]}
+            for k, v in PERSONA_OPTIONS.items()
+        ],
+        "total": len(PERSONA_OPTIONS),
+    }
+
+
+@app.post("/finetune")
+async def fine_tune_key(body: FineTuneRequest, db: AsyncSession = Depends(get_db)):
+    """Fine-tune your S.T.E.W API key for a specific domain/persona."""
+    user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+
+    updates = {}
+    if body.persona and body.persona in PERSONA_OPTIONS:
+        updates["persona"] = body.persona
+    if body.custom_instructions is not None:
+        updates["custom_instructions"] = body.custom_instructions[:2000]  # cap at 2000 chars
+    if body.persona_name is not None:
+        updates["persona_name"] = body.persona_name[:100]
+    if body.response_style in ["concise", "balanced", "detailed"]:
+        updates["response_style"] = body.response_style
+    if body.language:
+        updates["language"] = body.language[:10]
+    if body.preferred_model:
+        updates["preferred_model"] = body.preferred_model[:50]
+    if body.mistral_api_key is not None:
+        updates["mistral_api_key"] = body.mistral_api_key
+
+    if updates:
+        from sqlalchemy import update as sql_update
+        await db.execute(sql_update(User).where(User.id == user.id).values(**updates))
+        await db.commit()
+
+    return {
+        "success": True,
+        "message": f"API key fine-tuned to {body.persona or 'general'} persona",
+        "settings": {
+            "persona": getattr(user, 'persona', 'general'),
+            "persona_label": PERSONA_OPTIONS.get(body.persona or 'general', {}).get('label', 'General'),
+            "response_style": body.response_style or "balanced",
+            "language": body.language or "en",
+            "preferred_model": body.preferred_model,
+            "custom_instructions_set": bool(body.custom_instructions),
+        }
+    }
+
+
+@app.get("/finetune/{api_key}")
+async def get_fine_tune_settings(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Get current fine-tune settings for an API key."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    return {
+        "success": True,
+        "persona": getattr(user, 'persona', 'general'),
+        "persona_label": PERSONA_OPTIONS.get(getattr(user, 'persona', 'general'), {}).get('label', 'General'),
+        "custom_instructions": getattr(user, 'custom_instructions', None),
+        "persona_name": getattr(user, 'persona_name', None),
+        "response_style": getattr(user, 'response_style', 'balanced'),
+        "language": getattr(user, 'language', 'en'),
+        "preferred_model": getattr(user, 'preferred_model', None),
+        "has_mistral_key": bool(getattr(user, 'mistral_api_key', None)),
+    }
+
+
+@app.post("/test-key")
+async def test_api_key(body: TestKeyRequest, db: AsyncSession = Depends(get_db)):
+    """Test that an API key works and optionally verify a Mistral key."""
+    user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid or inactive API key")
+
+    result = {
+        "valid": True,
+        "plan": user.plan,
+        "persona": getattr(user, 'persona', 'general'),
+        "name": user.name,
+        "email": user.email,
+        "key_preview": user.api_key[:12] + "..." + user.api_key[-4:],
+    }
+
+    # Test Mistral key if provided
+    if body.mistral_api_key:
+        try:
+            from mistralai import Mistral as _Mistral
+            _mc = _Mistral(api_key=body.mistral_api_key)
+            _resp = _mc.chat.complete(
+                model="mistral-small-latest",
+                messages=[{"role":"user","content":"reply with the word: ok"}],
+            )
+            result["mistral_key_valid"] = True
+            result["mistral_test_response"] = _resp.choices[0].message.content
+        except Exception as e:
+            result["mistral_key_valid"] = False
+            result["mistral_key_error"] = str(e)[:100]
+
+    return result
+
 
 @app.exception_handler(404)
 async def not_found(request: Request, exc):
