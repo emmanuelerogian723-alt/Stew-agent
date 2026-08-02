@@ -3,460 +3,463 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>S.T.E.W — Africa's Most Powerful AI Agent API | MUTYINT Nigeria</title>
-<meta name="description" content="S.T.E.W (Smart Task Execution Worker) — Africa's #1 AI Agent API. Browser automation, deep research, code generation, 60+ skills, fine-tuned for any industry. Free to start.">
-<meta name="keywords" content="AI API Nigeria, STEW AI, MUTYINT, AI agent Africa, autonomous AI, browser automation, code generation, Mistral AI Nigeria">
-<meta name="author" content="MUTYINT Nigeria">
-<meta name="theme-color" content="#0a0014">
-<link rel="canonical" href="https://stew-agent.onrender.com/">
+<title>S.T.E.W — Build AI-Powered Apps in Minutes | Africa's #1 Agent API</title>
+<meta name="description" content="S.T.E.W gives developers and builders in Africa a powerful AI agent API — web research, code generation, 60+ skills, Mistral AI, fine-tuned personas. Start free.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg: #06000f;
-  --bg2: #0a0018;
-  --surface: #100020;
-  --card: #14002a;
-  --border: rgba(139,92,246,0.15);
-  --border2: rgba(139,92,246,0.3);
-  --accent: #8b5cf6;
-  --accent2: #a78bfa;
-  --accent3: #7c3aed;
-  --cyan: #22d3ee;
-  --pink: #f472b6;
-  --green: #34d399;
-  --yellow: #fbbf24;
-  --text: #f1f0ff;
-  --muted: #9ca3af;
-  --muted2: #6b7280;
-  --mono: 'JetBrains Mono', monospace;
-  --font: 'Inter', system-ui, sans-serif;
-}
 *{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#050d07;
+  --bg2:#091210;
+  --surface:#0d1f14;
+  --card:#0f2318;
+  --border:rgba(52,211,99,.12);
+  --border2:rgba(52,211,99,.28);
+  --accent:#22c55e;
+  --accent2:#4ade80;
+  --accent3:#16a34a;
+  --dim:#86efac;
+  --text:#f0fdf4;
+  --muted:#6b8f74;
+  --muted2:#4a6b52;
+  --dark:#020b04;
+  --mono:'JetBrains Mono',monospace;
+  --font:'Inter',system-ui,sans-serif;
+  --r8:8px;--r12:12px;--r16:16px;--r20:20px;--r24:24px;
+}
 html{scroll-behavior:smooth;}
-body{background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;min-height:100vh;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:rgba(34,197,94,.3);border-radius:2px;}
 
-/* ── Animated background ── */
-.bg-canvas{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
-.bg-canvas canvas{position:absolute;inset:0;width:100%;height:100%;}
-.noise{position:fixed;inset:0;z-index:1;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");pointer-events:none;}
-.orb{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:0;}
-.orb1{width:600px;height:600px;background:radial-gradient(circle,rgba(139,92,246,.18),transparent 70%);top:-200px;left:-200px;animation:drift1 20s ease-in-out infinite;}
-.orb2{width:500px;height:500px;background:radial-gradient(circle,rgba(34,211,238,.1),transparent 70%);bottom:-100px;right:-100px;animation:drift2 25s ease-in-out infinite;}
-.orb3{width:400px;height:400px;background:radial-gradient(circle,rgba(244,114,182,.08),transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation:drift3 18s ease-in-out infinite;}
-@keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(100px,60px) scale(1.1)}66%{transform:translate(-60px,100px) scale(.9)}}
-@keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(-80px,-50px) scale(1.05)}66%{transform:translate(50px,-80px) scale(.95)}}
-@keyframes drift3{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.2)}}
+/* ── NOISE + GRID ── */
+.noise{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.025;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+.grid{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(34,197,94,.03)1px,transparent 1px),linear-gradient(90deg,rgba(34,197,94,.03)1px,transparent 1px);
+  background-size:48px 48px;}
 
-/* ── Grid overlay ── */
-.grid-overlay{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(139,92,246,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.04) 1px,transparent 1px);background-size:60px 60px;}
+/* ── AMBIENT GLOWS ── */
+.glow{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0;}
+.g1{width:700px;height:500px;background:radial-gradient(ellipse,rgba(34,197,94,.12),transparent 70%);top:-150px;right:-200px;animation:ga 22s ease-in-out infinite;}
+.g2{width:500px;height:500px;background:radial-gradient(ellipse,rgba(34,197,94,.07),transparent 70%);bottom:-100px;left:-150px;animation:gb 28s ease-in-out infinite;}
+.g3{width:300px;height:300px;background:radial-gradient(ellipse,rgba(74,222,128,.06),transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation:gc 16s ease-in-out infinite;}
+@keyframes ga{0%,100%{transform:translate(0,0)}40%{transform:translate(-80px,60px)}70%{transform:translate(40px,-80px)}}
+@keyframes gb{0%,100%{transform:translate(0,0)}35%{transform:translate(60px,-40px)}70%{transform:translate(-40px,60px)}}
+@keyframes gc{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.4)}}
 
 /* ── NAV ── */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:0 2rem;height:64px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(139,92,246,.1);background:rgba(6,0,15,.8);backdrop-filter:blur(24px);}
-.nav-logo{display:flex;align-items:center;gap:12px;text-decoration:none;}
-.nav-logo-mark{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--cyan));border-radius:10px;display:grid;place-items:center;font-weight:900;font-size:13px;color:#fff;letter-spacing:.5px;box-shadow:0 0 20px rgba(139,92,246,.4);}
-.nav-logo-text{font-weight:800;font-size:1rem;letter-spacing:-.3px;}
-.nav-logo-text span{color:var(--accent2);}
-.nav-links{display:flex;align-items:center;gap:2rem;}
-.nav-links a{color:var(--muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:color .2s;}
-.nav-links a:hover{color:var(--text);}
-.nav-right{display:flex;align-items:center;gap:1rem;}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 20px;border-radius:8px;font-weight:600;font-size:.875rem;text-decoration:none;cursor:pointer;transition:all .2s;border:none;font-family:var(--font);}
-.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text);}
-.btn-ghost:hover{background:rgba(139,92,246,.1);}
-.btn-primary{background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;box-shadow:0 0 20px rgba(139,92,246,.3);}
-.btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 30px rgba(139,92,246,.5);}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite;}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;border-bottom:1px solid rgba(34,197,94,.08);background:rgba(5,13,7,.85);backdrop-filter:blur(20px);}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;}
+.logo-box{width:34px;height:34px;background:var(--accent);border-radius:var(--r8);display:grid;place-items:center;font-weight:900;font-size:11px;color:#000;letter-spacing:.5px;}
+.logo-name{font-weight:800;font-size:.95rem;letter-spacing:-.2px;color:var(--text);}
+.logo-name em{font-style:normal;color:var(--accent);}
+.nav-center{display:flex;align-items:center;gap:2rem;}
+.nav-center a{color:var(--muted);text-decoration:none;font-size:.875rem;font-weight:500;transition:color .18s;}
+.nav-center a:hover{color:var(--text);}
+.nav-right{display:flex;align-items:center;gap:.75rem;}
+.pill{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .18s;text-decoration:none;}
+.pill-ghost{background:rgba(34,197,94,.07);border:1px solid var(--border);color:var(--dim);}
+.pill-ghost:hover{background:rgba(34,197,94,.14);border-color:var(--border2);}
+.pill-solid{background:var(--accent);color:#000;border:1px solid transparent;}
+.pill-solid:hover{background:var(--accent2);transform:translateY(-1px);}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 /* ── HERO ── */
-.hero{position:relative;z-index:10;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 1.5rem 60px;}
-.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-radius:100px;background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);font-size:.75rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent2);margin-bottom:2rem;animation:fadeUp .6s ease both;}
-.hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2s infinite;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-.hero h1{font-size:clamp(2.8rem,7vw,6rem);font-weight:900;line-height:1.05;letter-spacing:-2px;margin-bottom:1.5rem;animation:fadeUp .8s .1s ease both;}
-.hero h1 .line1{display:block;background:linear-gradient(135deg,#fff 0%,var(--accent2) 60%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.hero h1 .line2{display:block;background:linear-gradient(135deg,var(--cyan) 0%,var(--pink) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.hero-sub{max-width:600px;margin:0 auto 3rem;color:var(--muted);font-size:1.15rem;line-height:1.7;animation:fadeUp .8s .2s ease both;}
-.hero-sub strong{color:var(--text);}
-.hero-ctas{display:flex;align-items:center;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp .8s .3s ease both;}
-.btn-xl{padding:14px 32px;font-size:1rem;border-radius:12px;}
-.btn-accent{background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;box-shadow:0 0 30px rgba(139,92,246,.4);}
-.btn-accent:hover{transform:translateY(-2px);box-shadow:0 8px 40px rgba(139,92,246,.6);}
-.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text);}
-.btn-outline:hover{background:rgba(139,92,246,.08);}
-.hero-stats{display:flex;align-items:center;justify-content:center;gap:3rem;margin-top:3.5rem;animation:fadeUp .8s .4s ease both;}
-.stat-item{text-align:center;}
-.stat-num{font-size:2.2rem;font-weight:900;background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-family:var(--mono);}
-.stat-label{font-size:.75rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
-.stat-divider{width:1px;height:40px;background:var(--border);}
-/* Floating code card */
-.hero-card{position:relative;margin:3rem auto 0;max-width:580px;width:100%;animation:fadeUp .8s .5s ease both;}
-.code-window{background:rgba(16,0,32,.8);border:1px solid var(--border2);border-radius:16px;overflow:hidden;backdrop-filter:blur(20px);box-shadow:0 0 60px rgba(139,92,246,.2),0 40px 80px rgba(0,0,0,.5);}
-.code-bar{background:rgba(255,255,255,.04);padding:12px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);}
-.code-dot{width:12px;height:12px;border-radius:50%;}
-.code-dot.r{background:#ff5f57;}.code-dot.y{background:#febc2e;}.code-dot.g{background:#28c840;}
-.code-bar-title{flex:1;text-align:center;font-size:.75rem;color:var(--muted2);font-family:var(--mono);}
-.code-body{padding:1.5rem;font-family:var(--mono);font-size:.85rem;line-height:1.8;text-align:left;}
-.code-line{display:flex;gap:.5rem;}
-.c-gray{color:var(--muted2);}.c-purple{color:var(--accent2);}.c-cyan{color:var(--cyan);}.c-green{color:var(--green);}.c-yellow{color:var(--yellow);}.c-pink{color:var(--pink);}
-.code-response{margin-top:.5rem;padding:.75rem 1rem;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:8px;color:var(--green);font-size:.8rem;}
-.code-cursor{display:inline-block;width:2px;height:1em;background:var(--accent2);animation:blink 1s infinite;vertical-align:middle;}
+.hero{position:relative;z-index:10;min-height:100vh;display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:4rem;padding:100px 2.5rem 60px;max-width:1280px;margin:0 auto;}
+@media(max-width:900px){.hero{grid-template-columns:1fr;padding:90px 1.5rem 60px;text-align:center;}}
+.hero-left{animation:fadeUp .7s ease both;}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:7px;padding:5px 14px;border-radius:100px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);font-size:.72rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent2);margin-bottom:2rem;}
+.hero h1{font-size:clamp(3rem,5.5vw,5.2rem);font-weight:900;line-height:1.04;letter-spacing:-2.5px;margin-bottom:1.5rem;}
+.hero h1 .hl{color:var(--accent);}
+.hero-desc{color:var(--muted);font-size:1.1rem;line-height:1.75;max-width:500px;margin-bottom:2.5rem;}
+.hero-actions{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:var(--r12);font-weight:700;font-size:.9rem;text-decoration:none;cursor:pointer;transition:all .2s;border:none;font-family:var(--font);}
+.btn-green{background:var(--accent);color:#000;}
+.btn-green:hover{background:var(--accent2);transform:translateY(-2px);box-shadow:0 8px 30px rgba(34,197,94,.3);}
+.btn-line{background:transparent;border:1px solid var(--border2);color:var(--text);}
+.btn-line:hover{background:rgba(34,197,94,.07);}
+.hero-social-proof{display:flex;align-items:center;gap:1rem;margin-top:2rem;}
+.sp-avatars{display:flex;}
+.sp-avatar{width:32px;height:32px;border-radius:50%;border:2px solid var(--bg);background:linear-gradient(135deg,var(--accent3),var(--accent));display:grid;place-items:center;font-weight:800;font-size:.65rem;color:#000;margin-left:-8px;}
+.sp-avatar:first-child{margin-left:0;}
+.sp-text{font-size:.8rem;color:var(--muted);line-height:1.4;}
+.sp-text strong{color:var(--text);}
 
-/* ── SECTION BASE ── */
-section{position:relative;z-index:10;padding:100px 1.5rem;}
-.section-inner{max-width:1200px;margin:0 auto;}
-.section-label{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent2);margin-bottom:1rem;}
-.section-label::before{content:'';width:24px;height:1px;background:var(--accent2);}
-h2.section-title{font-size:clamp(2rem,4vw,3.2rem);font-weight:900;line-height:1.1;letter-spacing:-1px;margin-bottom:1rem;}
-h2.section-title span{background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.section-desc{color:var(--muted);font-size:1.05rem;line-height:1.7;max-width:560px;}
+/* ── HERO RIGHT: floating UI cards ── */
+.hero-right{position:relative;animation:fadeUp .7s .15s ease both;height:480px;}
+@media(max-width:900px){.hero-right{height:320px;}}
+.float-card{position:absolute;background:rgba(13,31,20,.9);border:1px solid var(--border);border-radius:var(--r16);backdrop-filter:blur(20px);padding:1.25rem 1.5rem;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.fc-main{top:0;left:0;right:0;padding:1.5rem;}
+.fc-main-label{font-size:.7rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem;}
+.fc-main-val{font-size:2.5rem;font-weight:900;color:var(--accent);font-family:var(--mono);}
+.fc-main-sub{font-size:.8rem;color:var(--muted);margin-top:.25rem;}
+.fc-chat{bottom:120px;right:0;width:260px;}
+.fc-chat-msg{font-size:.8rem;padding:.6rem .8rem;border-radius:var(--r8);margin-bottom:.5rem;line-height:1.5;}
+.fc-chat-msg.user{background:rgba(34,197,94,.12);color:var(--accent2);text-align:right;}
+.fc-chat-msg.ai{background:rgba(255,255,255,.05);color:var(--muted);}
+.fc-chat-typing{display:flex;align-items:center;gap:.3rem;padding:.4rem .6rem;}
+.typing-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:tdot 1.2s ease-in-out infinite;}
+.typing-dot:nth-child(2){animation-delay:.2s;}.typing-dot:nth-child(3){animation-delay:.4s;}
+@keyframes tdot{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}
+.fc-stats{bottom:0;left:0;right:80px;display:flex;gap:1.5rem;}
+.fc-stat{text-align:center;flex:1;}
+.fc-stat-n{font-size:1.6rem;font-weight:900;color:var(--accent);font-family:var(--mono);}
+.fc-stat-l{font-size:.65rem;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;}
+.fc-badge{top:140px;right:0;padding:.6rem 1rem;display:flex;align-items:center;gap:.5rem;border-radius:100px;}
+.fc-badge-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite;}
+.fc-badge-text{font-size:.75rem;font-weight:600;color:var(--accent2);}
 
-/* ── FEATURES GRID ── */
-.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.5rem;margin-top:4rem;}
-.feature-card{background:rgba(20,0,42,.6);border:1px solid var(--border);border-radius:16px;padding:2rem;position:relative;overflow:hidden;transition:all .3s;cursor:default;}
-.feature-card:hover{border-color:var(--border2);transform:translateY(-4px);box-shadow:0 20px 60px rgba(139,92,246,.15);}
-.feature-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(139,92,246,.05),transparent);opacity:0;transition:opacity .3s;}
-.feature-card:hover::before{opacity:1;}
-.feature-icon{width:48px;height:48px;border-radius:12px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.25);display:grid;place-items:center;font-size:1.4rem;margin-bottom:1.25rem;}
-.feature-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.5rem;}
-.feature-card p{color:var(--muted);font-size:.9rem;line-height:1.6;}
-.feature-tag{display:inline-flex;align-items:center;gap:4px;margin-top:1rem;padding:3px 10px;border-radius:100px;font-size:.7rem;font-weight:700;letter-spacing:.5px;}
-.tag-new{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2);}
-.tag-power{background:rgba(139,92,246,.12);color:var(--accent2);border:1px solid rgba(139,92,246,.2);}
-.tag-fast{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2);}
+/* ── TAGS MARQUEE ── */
+.marquee-section{position:relative;z-index:10;padding:24px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;background:rgba(0,0,0,.2);}
+.marquee-track{display:flex;gap:0;animation:marquee 30s linear infinite;}
+.marquee-track:hover{animation-play-state:paused;}
+.m-tag{white-space:nowrap;padding:7px 22px;margin:0 6px;border-radius:100px;font-size:.8rem;font-weight:600;border:1px solid var(--border);color:var(--muted);background:rgba(34,197,94,.04);}
+.m-tag.accent{background:rgba(34,197,94,.1);border-color:var(--border2);color:var(--accent2);}
+@keyframes marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
-/* ── PERSONA / FINE-TUNE SECTION ── */
-.persona-section{background:linear-gradient(180deg,transparent,rgba(139,92,246,.04),transparent);}
-.persona-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;margin-top:3rem;}
-.persona-card{background:rgba(20,0,42,.5);border:1px solid var(--border);border-radius:14px;padding:1.5rem;transition:all .25s;cursor:pointer;}
-.persona-card:hover,.persona-card.active{border-color:var(--accent);background:rgba(139,92,246,.1);box-shadow:0 0 30px rgba(139,92,246,.15);}
-.persona-card .pi{font-size:2rem;margin-bottom:.75rem;}
-.persona-card h4{font-size:.95rem;font-weight:700;margin-bottom:.3rem;}
-.persona-card p{font-size:.8rem;color:var(--muted);line-height:1.5;}
+/* ── SECTION WRAPPER ── */
+.section{position:relative;z-index:10;padding:100px 2.5rem;}
+.inner{max-width:1280px;margin:0 auto;}
+.s-label{font-size:.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem;}
+.s-label::before{content:'';width:20px;height:1.5px;background:var(--accent);}
+h2.s-title{font-size:clamp(2.2rem,4vw,3.4rem);font-weight:900;letter-spacing:-1.5px;line-height:1.1;margin-bottom:1rem;}
+h2.s-title em{font-style:normal;color:var(--accent);}
+.s-desc{color:var(--muted);font-size:1rem;line-height:1.75;max-width:520px;}
+
+/* ── FEATURES BENTO ── */
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-top:3.5rem;}
+.b-card{background:rgba(13,31,20,.7);border:1px solid var(--border);border-radius:var(--r20);padding:2rem;position:relative;overflow:hidden;transition:all .25s;}
+.b-card:hover{border-color:var(--border2);transform:translateY(-3px);box-shadow:0 16px 50px rgba(34,197,94,.1);}
+.b-card::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 100% 0%,rgba(34,197,94,.06),transparent 60%);opacity:0;transition:opacity .25s;}
+.b-card:hover::after{opacity:1;}
+.b1{grid-column:span 5;}.b2{grid-column:span 7;}
+.b3{grid-column:span 4;}.b4{grid-column:span 4;}.b5{grid-column:span 4;}
+.b6{grid-column:span 7;}.b7{grid-column:span 5;}
+@media(max-width:900px){.b1,.b2,.b3,.b4,.b5,.b6,.b7{grid-column:span 12;}}
+.b-icon{font-size:1.8rem;margin-bottom:1.25rem;}
+.b-tag{display:inline-block;padding:3px 10px;border-radius:100px;font-size:.65rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);color:var(--accent2);margin-bottom:.75rem;}
+.b-card h3{font-size:1.1rem;font-weight:800;margin-bottom:.5rem;letter-spacing:-.3px;}
+.b-card p{color:var(--muted);font-size:.875rem;line-height:1.65;}
+.b-number{position:absolute;top:1.5rem;right:1.5rem;font-size:3rem;font-weight:900;color:rgba(34,197,94,.07);font-family:var(--mono);line-height:1;}
+/* big feature card */
+.b-card.big{padding:2.5rem;}
+.b-card.big h3{font-size:1.5rem;}
+.b-card.big p{font-size:.95rem;}
+/* code mini */
+.mini-code{margin-top:1rem;padding:.75rem 1rem;background:rgba(0,0,0,.4);border:1px solid rgba(34,197,94,.1);border-radius:var(--r8);font-family:var(--mono);font-size:.75rem;color:var(--accent2);line-height:1.6;}
+
+/* ── PERSONAS / FINE-TUNE ── */
+.persona-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;margin-top:2.5rem;}
+.p-card{background:rgba(9,18,10,.8);border:1px solid var(--border);border-radius:var(--r12);padding:1.25rem;cursor:pointer;transition:all .2s;}
+.p-card:hover,.p-card.sel{border-color:var(--border2);background:rgba(34,197,94,.08);}
+.p-card.sel{box-shadow:0 0 24px rgba(34,197,94,.15);}
+.p-icon{font-size:1.5rem;margin-bottom:.6rem;}
+.p-card h4{font-size:.875rem;font-weight:700;margin-bottom:.2rem;}
+.p-card p{font-size:.75rem;color:var(--muted);line-height:1.4;}
 
 /* Fine-tune panel */
-.finetune-panel{background:rgba(16,0,32,.8);border:1px solid var(--border2);border-radius:20px;padding:2.5rem;margin-top:3rem;backdrop-filter:blur(20px);}
-.finetune-panel h3{font-size:1.4rem;font-weight:800;margin-bottom:.5rem;}
-.finetune-panel p{color:var(--muted);font-size:.9rem;margin-bottom:2rem;}
-.finetune-form{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;}
-@media(max-width:640px){.finetune-form{grid-template-columns:1fr;}}
-.form-group{display:flex;flex-direction:column;gap:.5rem;}
-.form-group label{font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
-.form-input{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:.9rem;font-family:var(--font);transition:border-color .2s;outline:none;}
-.form-input:focus{border-color:var(--accent);}
-.form-input::placeholder{color:var(--muted2);}
-textarea.form-input{resize:vertical;min-height:100px;}
-.form-select{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:.9rem;font-family:var(--font);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b5cf6' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:16px;outline:none;}
-.form-select:focus{border-color:var(--accent);}
-.form-select option{background:#14002a;}
-.full-width{grid-column:1/-1;}
-.finetune-result{margin-top:1.5rem;padding:1.25rem;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:10px;display:none;}
-.finetune-result.show{display:block;}
-.ft-success{color:var(--green);font-weight:700;font-size:.95rem;margin-bottom:.5rem;}
-.ft-detail{color:var(--muted);font-size:.85rem;}
+.ft-panel{background:rgba(9,18,10,.9);border:1px solid var(--border2);border-radius:var(--r24);padding:2.5rem;margin-top:2.5rem;backdrop-filter:blur(20px);}
+.ft-panel h3{font-size:1.3rem;font-weight:800;letter-spacing:-.4px;margin-bottom:.4rem;}
+.ft-panel > p{color:var(--muted);font-size:.875rem;margin-bottom:2rem;}
+.ft-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;}
+@media(max-width:600px){.ft-grid{grid-template-columns:1fr;}}
+.fg{display:flex;flex-direction:column;gap:.4rem;}
+.fg label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
+.fi{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:var(--r8);padding:10px 14px;color:var(--text);font-family:var(--font);font-size:.875rem;outline:none;transition:border-color .18s;width:100%;}
+.fi:focus{border-color:var(--accent);}
+.fi::placeholder{color:var(--muted2);}
+textarea.fi{resize:vertical;min-height:90px;}
+select.fi{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%2322c55e'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px;}
+select.fi option{background:#0d1f14;}
+.span2{grid-column:1/-1;}
+.ft-actions{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.5rem;}
+.ft-result{margin-top:1.25rem;padding:1rem 1.25rem;border-radius:var(--r12);font-size:.875rem;display:none;}
+.ft-result.show{display:block;}
+.ft-ok{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:var(--accent2);}
+.ft-err{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);color:#fca5a5;}
+.ft-info{background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.2);color:#67e8f9;}
+
+/* ── AUTH ── */
+.auth-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;}
+@media(max-width:860px){.auth-wrap{grid-template-columns:1fr;gap:2rem;}}
+.auth-box{background:rgba(9,18,10,.9);border:1px solid var(--border2);border-radius:var(--r24);padding:2.5rem;backdrop-filter:blur(20px);}
+.auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:2rem;gap:0;}
+.a-tab{flex:1;padding:9px;text-align:center;font-size:.875rem;font-weight:600;color:var(--muted2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .18s;}
+.a-tab.on{color:var(--accent);border-bottom-color:var(--accent);}
+.auth-form{display:flex;flex-direction:column;gap:1rem;}
+.auth-form .fg{display:flex;flex-direction:column;gap:.4rem;}
+.auth-form label{font-size:.78rem;font-weight:600;color:var(--muted);}
+.auth-btn{width:100%;padding:13px;border-radius:var(--r12);background:var(--accent);color:#000;font-weight:800;font-size:.95rem;border:none;cursor:pointer;transition:all .2s;font-family:var(--font);letter-spacing:-.2px;}
+.auth-btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 6px 24px rgba(34,197,94,.35);}
+.auth-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.auth-msg{margin-top:.75rem;padding:.9rem 1.1rem;border-radius:var(--r12);font-size:.84rem;display:none;}
+.auth-msg.ok{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:var(--accent2);display:block;}
+.auth-msg.err{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);color:#fca5a5;display:block;}
+.key-reveal{margin-top:.9rem;padding:1rem;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:var(--r8);}
+.key-label{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.35rem;}
+.key-val{font-family:var(--mono);font-size:.8rem;color:var(--accent2);word-break:break-all;line-height:1.5;}
+.copy-btn{margin-top:.5rem;padding:5px 12px;border-radius:6px;background:rgba(34,197,94,.12);border:1px solid var(--border);color:var(--accent2);font-size:.72rem;cursor:pointer;font-family:var(--font);transition:all .18s;}
+.copy-btn:hover{background:rgba(34,197,94,.22);}
+/* Auth right side info */
+.auth-info h3{font-size:2rem;font-weight:900;letter-spacing:-1px;line-height:1.15;margin-bottom:1rem;}
+.auth-info h3 em{font-style:normal;color:var(--accent);}
+.auth-info>p{color:var(--muted);font-size:.95rem;line-height:1.7;margin-bottom:2rem;}
+.auth-perks{display:flex;flex-direction:column;gap:.9rem;}
+.perk{display:flex;align-items:flex-start;gap:.9rem;}
+.perk-icon{width:38px;height:38px;border-radius:var(--r8);background:rgba(34,197,94,.1);border:1px solid var(--border);display:grid;place-items:center;font-size:1rem;flex-shrink:0;margin-top:1px;}
+.perk h4{font-size:.9rem;font-weight:700;margin-bottom:.15rem;}
+.perk p{font-size:.8rem;color:var(--muted);line-height:1.5;}
+
+/* ── PLAYGROUND ── */
+.play-wrap{display:grid;grid-template-columns:260px 1fr;gap:1.25rem;margin-top:3rem;}
+@media(max-width:860px){.play-wrap{grid-template-columns:1fr;}}
+.ep-list{display:flex;flex-direction:column;gap:.35rem;}
+.ep{padding:9px 13px;border-radius:var(--r8);cursor:pointer;border:1px solid transparent;transition:all .18s;}
+.ep:hover{background:rgba(34,197,94,.06);}
+.ep.on{background:rgba(34,197,94,.1);border-color:var(--border2);}
+.ep-m{font-size:.65rem;font-weight:700;letter-spacing:.5px;padding:2px 7px;border-radius:4px;display:inline-block;margin-bottom:.2rem;}
+.m-post{background:rgba(34,197,94,.15);color:var(--accent2);}
+.m-get{background:rgba(74,222,128,.12);color:#86efac;}
+.ep-path{font-family:var(--mono);font-size:.78rem;color:var(--text);}
+.ep-d{font-size:.72rem;color:var(--muted);margin-top:.1rem;}
+.play-panel{background:rgba(9,18,10,.9);border:1px solid var(--border2);border-radius:var(--r20);overflow:hidden;backdrop-filter:blur(20px);}
+.pp-head{padding:.9rem 1.4rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.pp-title{font-family:var(--mono);font-size:.875rem;color:var(--accent2);}
+.pp-url{font-size:.75rem;color:var(--muted2);padding:.3rem .7rem;background:rgba(255,255,255,.03);border-radius:6px;font-family:var(--mono);}
+.pp-body{padding:1.4rem;}
+.pp-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media(max-width:640px){.pp-grid{grid-template-columns:1fr;}}
+.pp-lbl{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.4rem;}
+.pp-ta{width:100%;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:var(--r8);padding:.75rem 1rem;color:var(--text);font-family:var(--mono);font-size:.775rem;resize:vertical;min-height:220px;outline:none;transition:border-color .18s;line-height:1.6;}
+.pp-ta:focus{border-color:var(--accent);}
+.pp-actions{margin-top:1rem;display:flex;align-items:center;gap:1rem;}
+.run-btn{padding:9px 24px;border-radius:var(--r8);background:var(--accent);color:#000;font-weight:700;font-size:.875rem;border:none;cursor:pointer;font-family:var(--font);transition:all .2s;}
+.run-btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 18px rgba(34,197,94,.3);}
+.run-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.run-status{font-size:.8rem;color:var(--muted);}
+.res-code{display:inline-flex;align-items:center;gap:.35rem;padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:700;font-family:var(--mono);margin-bottom:.6rem;}
+.rc-ok{background:rgba(34,197,94,.1);color:var(--accent2);border:1px solid rgba(34,197,94,.2);}
+.rc-err{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.2);}
+pre.pp-pre{background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:var(--r8);padding:.9rem;font-family:var(--mono);font-size:.775rem;color:#86efac;overflow:auto;max-height:380px;white-space:pre-wrap;word-break:break-word;line-height:1.65;}
 
 /* ── PRICING ── */
-.pricing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.5rem;margin-top:3rem;}
-.price-card{background:rgba(16,0,32,.7);border:1px solid var(--border);border-radius:20px;padding:2rem;position:relative;transition:all .3s;}
-.price-card.popular{border-color:var(--accent);box-shadow:0 0 40px rgba(139,92,246,.2);}
-.popular-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent3),var(--accent));padding:4px 16px;border-radius:100px;font-size:.72rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;}
-.price-plan{font-size:.8rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem;}
-.price-amount{font-size:2.8rem;font-weight:900;font-family:var(--mono);line-height:1;margin-bottom:.25rem;}
-.price-amount span{font-size:1rem;font-weight:400;color:var(--muted);}
-.price-period{font-size:.8rem;color:var(--muted);margin-bottom:1.5rem;}
-.price-features{list-style:none;display:flex;flex-direction:column;gap:.6rem;margin-bottom:2rem;}
-.price-features li{display:flex;align-items:center;gap:.5rem;font-size:.875rem;color:var(--muted);}
-.price-features li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0;}
-.price-features li.na{color:var(--muted2);}
-.price-features li.na::before{content:'—';color:var(--muted2);}
+.price-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;margin-top:3rem;}
+.pc{background:rgba(9,18,10,.85);border:1px solid var(--border);border-radius:var(--r20);padding:2rem;position:relative;transition:all .25s;}
+.pc:hover{transform:translateY(-4px);}
+.pc.pop{border-color:var(--accent);box-shadow:0 0 40px rgba(34,197,94,.15);}
+.pop-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#000;padding:3px 14px;border-radius:100px;font-size:.68rem;font-weight:800;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;}
+.pc-plan{font-size:.72rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem;}
+.pc-price{font-size:2.6rem;font-weight:900;font-family:var(--mono);line-height:1;margin-bottom:.2rem;}
+.pc-per{font-size:.8rem;color:var(--muted);margin-bottom:1.4rem;}
+.pc-feats{list-style:none;display:flex;flex-direction:column;gap:.55rem;margin-bottom:1.75rem;}
+.pc-feats li{display:flex;align-items:center;gap:.5rem;font-size:.83rem;color:var(--muted);}
+.pc-feats li::before{content:'✓';color:var(--accent);font-weight:700;flex-shrink:0;}
+.pc-feats li.no{color:var(--muted2);}
+.pc-feats li.no::before{content:'—';color:var(--muted2);}
 
-/* ── AUTH SECTION ── */
-.auth-section{background:linear-gradient(180deg,transparent,rgba(139,92,246,.03),transparent);}
-.auth-container{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:start;}
-@media(max-width:768px){.auth-container{grid-template-columns:1fr;}}
-.auth-panel{background:rgba(16,0,32,.85);border:1px solid var(--border2);border-radius:20px;padding:2.5rem;backdrop-filter:blur(20px);}
-.auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:2rem;}
-.auth-tab{flex:1;padding:10px;text-align:center;font-size:.875rem;font-weight:600;color:var(--muted);cursor:pointer;transition:color .2s;border-bottom:2px solid transparent;margin-bottom:-1px;}
-.auth-tab.active{color:var(--accent2);border-bottom-color:var(--accent2);}
-.auth-form{display:flex;flex-direction:column;gap:1rem;}
-.auth-form .form-group{display:flex;flex-direction:column;gap:.4rem;}
-.auth-form label{font-size:.8rem;font-weight:600;color:var(--muted);}
-.auth-submit{width:100%;padding:12px;border-radius:10px;background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;font-weight:700;font-size:.95rem;border:none;cursor:pointer;transition:all .2s;font-family:var(--font);}
-.auth-submit:hover{transform:translateY(-1px);box-shadow:0 6px 25px rgba(139,92,246,.4);}
-.auth-result{margin-top:1rem;padding:1rem;border-radius:10px;font-size:.875rem;display:none;}
-.auth-result.success{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25);color:var(--green);display:block;}
-.auth-result.error{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#f87171;display:block;}
-.api-key-display{margin-top:1rem;padding:1rem;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;}
-.api-key-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.4rem;}
-.api-key-value{font-family:var(--mono);font-size:.85rem;color:var(--accent2);word-break:break-all;}
-.copy-btn{margin-top:.5rem;padding:5px 12px;border-radius:6px;background:rgba(139,92,246,.15);border:1px solid var(--border);color:var(--accent2);font-size:.75rem;cursor:pointer;transition:all .2s;}
-.copy-btn:hover{background:rgba(139,92,246,.3);}
-/* Auth info side */
-.auth-info h3{font-size:1.6rem;font-weight:800;margin-bottom:1rem;line-height:1.2;}
-.auth-info p{color:var(--muted);font-size:.95rem;line-height:1.7;margin-bottom:2rem;}
-.auth-features-list{display:flex;flex-direction:column;gap:.75rem;}
-.auth-feature{display:flex;align-items:flex-start;gap:.75rem;}
-.auth-feature-icon{width:36px;height:36px;border-radius:8px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.2);display:grid;place-items:center;font-size:1rem;flex-shrink:0;}
-.auth-feature-text h4{font-size:.9rem;font-weight:700;margin-bottom:.15rem;}
-.auth-feature-text p{font-size:.8rem;color:var(--muted);}
-
-/* ── TEST PLAYGROUND INLINE ── */
-.test-section{}
-.test-container{display:grid;grid-template-columns:280px 1fr;gap:2rem;margin-top:3rem;}
-@media(max-width:860px){.test-container{grid-template-columns:1fr;}}
-.test-sidebar{display:flex;flex-direction:column;gap:.5rem;}
-.test-ep{padding:10px 14px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:all .2s;}
-.test-ep:hover{background:rgba(139,92,246,.08);}
-.test-ep.active{background:rgba(139,92,246,.12);border-color:var(--border2);}
-.test-ep-method{font-size:.68rem;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;margin-bottom:.3rem;display:inline-block;}
-.ep-post{background:rgba(139,92,246,.2);color:var(--accent2);}
-.ep-get{background:rgba(52,211,153,.15);color:var(--green);}
-.test-ep-path{font-family:var(--mono);font-size:.8rem;color:var(--text);}
-.test-ep-desc{font-size:.75rem;color:var(--muted);margin-top:.15rem;}
-.test-panel{background:rgba(16,0,32,.8);border:1px solid var(--border2);border-radius:16px;overflow:hidden;backdrop-filter:blur(20px);}
-.test-panel-header{padding:1rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem;}
-.test-panel-title{font-family:var(--mono);font-size:.9rem;color:var(--accent2);}
-.test-url{font-size:.8rem;color:var(--muted2);padding:.4rem .8rem;background:rgba(255,255,255,.04);border-radius:6px;font-family:var(--mono);}
-.test-body{padding:1.5rem;}
-.test-request{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
-@media(max-width:640px){.test-request{grid-template-columns:1fr;}}
-.test-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.4rem;}
-.test-textarea{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;color:var(--text);font-family:var(--mono);font-size:.8rem;resize:vertical;min-height:200px;outline:none;transition:border-color .2s;}
-.test-textarea:focus{border-color:var(--accent);}
-.test-actions{margin-top:1rem;display:flex;align-items:center;gap:1rem;}
-.test-run-btn{padding:10px 24px;border-radius:8px;background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;font-weight:700;font-size:.875rem;border:none;cursor:pointer;transition:all .2s;font-family:var(--font);}
-.test-run-btn:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(139,92,246,.4);}
-.test-run-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
-.test-status{font-size:.8rem;color:var(--muted);}
-.test-response{padding:1.5rem;border-top:1px solid var(--border);}
-.test-response-code{display:inline-flex;align-items:center;gap:.4rem;padding:3px 10px;border-radius:6px;font-size:.75rem;font-weight:700;font-family:var(--mono);margin-bottom:.75rem;}
-.res-200{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.2);}
-.res-error{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2);}
-.res-loading{background:rgba(251,191,36,.1);color:var(--yellow);border:1px solid rgba(251,191,36,.2);}
-.test-response pre{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:8px;padding:1rem;font-family:var(--mono);font-size:.8rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;line-height:1.6;}
-
-/* ── PROVIDERS STRIP ── */
-.providers-strip{padding:60px 1.5rem;text-align:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
-.providers-label{font-size:.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:2rem;}
-.providers-list{display:flex;align-items:center;justify-content:center;gap:3rem;flex-wrap:wrap;}
-.provider-chip{display:flex;align-items:center;gap.5rem;gap:8px;padding:8px 20px;border-radius:100px;background:rgba(255,255,255,.04);border:1px solid var(--border);font-size:.85rem;font-weight:600;color:var(--muted);transition:all .2s;}
-.provider-chip:hover{border-color:var(--border2);color:var(--text);}
-.p-dot{width:8px;height:8px;border-radius:50%;}
+/* ── PROVIDERS BAND ── */
+.providers{padding:48px 2.5rem;border-top:1px solid var(--border);border-bottom:1px solid var(--border);text-align:center;position:relative;z-index:10;}
+.prov-label{font-size:.7rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:1.5rem;}
+.prov-row{display:flex;align-items:center;justify-content:center;gap:2rem;flex-wrap:wrap;}
+.pchip{display:flex;align-items:center;gap:.5rem;padding:7px 18px;border-radius:100px;background:rgba(34,197,94,.05);border:1px solid var(--border);font-size:.82rem;font-weight:600;color:var(--muted);transition:all .18s;}
+.pchip:hover{border-color:var(--border2);color:var(--text);}
+.pd{width:7px;height:7px;border-radius:50%;}
 
 /* ── FOOTER ── */
-footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:60px 1.5rem 40px;}
-.footer-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem;}
-@media(max-width:768px){.footer-inner{grid-template-columns:1fr 1fr;gap:2rem;}}
-.footer-brand p{color:var(--muted);font-size:.875rem;line-height:1.7;margin-top:.75rem;}
-.footer-col h4{font-size:.8rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:1rem;}
-.footer-col a{display:block;color:var(--muted);font-size:.875rem;text-decoration:none;margin-bottom:.5rem;transition:color .2s;}
-.footer-col a:hover{color:var(--text);}
-.footer-bottom{max-width:1200px;margin:2rem auto 0;padding-top:1.5rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
-.footer-bottom p{color:var(--muted2);font-size:.8rem;}
-.live-badge{display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--green);font-weight:600;}
+footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:60px 2.5rem 40px;}
+.foot-grid{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem;}
+@media(max-width:768px){.foot-grid{grid-template-columns:1fr 1fr;gap:2rem;}}
+.fb>p{color:var(--muted);font-size:.83rem;line-height:1.7;margin-top:.65rem;max-width:280px;}
+.fc-col h4{font-size:.7rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);margin-bottom:.9rem;}
+.fc-col a{display:block;color:var(--muted);font-size:.83rem;text-decoration:none;margin-bottom:.45rem;transition:color .18s;}
+.fc-col a:hover{color:var(--text);}
+.foot-bottom{max-width:1280px;margin:2rem auto 0;padding-top:1.5rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;}
+.foot-bottom p{color:var(--muted2);font-size:.78rem;}
+.live{display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--accent);font-weight:600;}
 
-/* ── SCROLL ANIMATIONS ── */
-.reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease;}
-.reveal.visible{opacity:1;transform:none;}
-
-/* ── MOBILE ── */
-@media(max-width:768px){
-  .nav-links{display:none;}
-  .hero h1{letter-spacing:-1px;}
-  .hero-stats{gap:1.5rem;}
-  .code-window{margin:0 -1rem;}
-  .test-request{grid-template-columns:1fr;}
-}
-
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar{width:6px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:rgba(139,92,246,.4);border-radius:3px;}
+/* ── REVEAL ANIMS ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease;}
+.reveal.vis{opacity:1;transform:none;}
 </style>
 </head>
 <body>
 
-<!-- BACKGROUND -->
-<div class="bg-canvas"><canvas id="starfield"></canvas></div>
 <div class="noise"></div>
-<div class="orb orb1"></div>
-<div class="orb orb2"></div>
-<div class="orb orb3"></div>
-<div class="grid-overlay"></div>
+<div class="grid"></div>
+<div class="glow g1"></div>
+<div class="glow g2"></div>
+<div class="glow g3"></div>
 
-<!-- NAVIGATION -->
+<!-- NAV -->
 <nav>
-  <a href="/" class="nav-logo">
-    <div class="nav-logo-mark">STEW</div>
-    <div class="nav-logo-text">S.T.E.W <span>Agent</span></div>
+  <a href="/" class="logo">
+    <div class="logo-box">S·T·W</div>
+    <span class="logo-name">S.T.E.W <em>Agent</em></span>
   </a>
-  <div class="nav-links">
+  <div class="nav-center">
     <a href="#features">Features</a>
     <a href="#finetune">Fine-Tune</a>
     <a href="#pricing">Pricing</a>
     <a href="#test">Playground</a>
-    <a href="/docs">API Docs</a>
+    <a href="https://stew-agent.onrender.com/docs" target="_blank">API Docs</a>
   </div>
   <div class="nav-right">
     <span class="status-dot"></span>
-    <a href="#auth" class="btn btn-ghost">Sign In</a>
-    <a href="#auth" class="btn btn-primary">Get Free API Key →</a>
+    <a href="#auth" class="pill pill-ghost">Sign In</a>
+    <a href="#auth" class="pill pill-solid">Get Free Key →</a>
   </div>
 </nav>
 
 <!-- HERO -->
-<section class="hero">
-  <div class="hero-badge">
-    <span class="dot"></span>
-    Africa's #1 Autonomous AI Agent API — Now with Mistral AI
-  </div>
-  <h1>
-    <span class="line1">The AI that actually</span>
-    <span class="line2">does the work.</span>
-  </h1>
-  <p class="hero-sub">
-    S.T.E.W is a <strong>fully autonomous AI agent API</strong> that browses the web, writes code, generates documents, runs 60+ skills, and fine-tunes to <strong>any industry or persona</strong>. Built in Nigeria. Serving Africa and beyond.
-  </p>
-  <div class="hero-ctas">
-    <a href="#auth" class="btn btn-xl btn-accent">Start Free — No Credit Card →</a>
-    <a href="/docs" class="btn btn-xl btn-outline">View API Docs</a>
-  </div>
-  <div class="hero-stats">
-    <div class="stat-item"><div class="stat-num">60+</div><div class="stat-label">Skills</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-num">6</div><div class="stat-label">AI Providers</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-num">12</div><div class="stat-label">Personas</div></div>
-    <div class="stat-divider"></div>
-    <div class="stat-item"><div class="stat-num">100%</div><div class="stat-label">African Built</div></div>
-  </div>
-  <!-- Floating code window -->
-  <div class="hero-card">
-    <div class="code-window">
-      <div class="code-bar">
-        <div class="code-dot r"></div><div class="code-dot y"></div><div class="code-dot g"></div>
-        <div class="code-bar-title">S.T.E.W API — Quick Start</div>
+<div style="position:relative;z-index:10;max-width:1280px;margin:0 auto;">
+  <div class="hero">
+    <div class="hero-left">
+      <div class="hero-eyebrow"><span class="status-dot"></span> Now with Mistral AI · 6 providers</div>
+      <h1>Build AI apps<br>that actually<br><span class="hl">get things done.</span></h1>
+      <p class="hero-desc">S.T.E.W is Africa's most powerful AI agent API. Browse the web, write code, generate documents, run 60+ skills — all from a single endpoint. Fine-tune for any industry.</p>
+      <div class="hero-actions">
+        <a href="#auth" class="btn btn-green">Start Free — No Card Needed →</a>
+        <a href="https://stew-agent.onrender.com/docs" class="btn btn-line" target="_blank">View API Docs</a>
       </div>
-      <div class="code-body">
-        <div class="code-line"><span class="c-gray">// 1. Get your free API key at stew-agent.onrender.com</span></div>
-        <div class="code-line">&nbsp;</div>
-        <div class="code-line"><span class="c-purple">const</span> <span class="c-cyan">response</span> <span class="c-gray">=</span> <span class="c-purple">await</span> <span class="c-green">fetch</span><span class="c-gray">(</span><span class="c-yellow">'https://stew-agent.onrender.com/chat'</span><span class="c-gray">,</span> <span class="c-gray">{</span></div>
-        <div class="code-line">&nbsp;&nbsp;<span class="c-cyan">method</span><span class="c-gray">:</span> <span class="c-yellow">'POST'</span><span class="c-gray">,</span></div>
-        <div class="code-line">&nbsp;&nbsp;<span class="c-cyan">headers</span><span class="c-gray">: {</span><span class="c-yellow">'Content-Type'</span><span class="c-gray">:</span> <span class="c-yellow">'application/json'</span><span class="c-gray">},</span></div>
-        <div class="code-line">&nbsp;&nbsp;<span class="c-cyan">body</span><span class="c-gray">:</span> <span class="c-green">JSON.stringify</span><span class="c-gray">({</span></div>
-        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-cyan">message</span><span class="c-gray">:</span> <span class="c-yellow">'Research the top 5 Nigerian fintechs'</span><span class="c-gray">,</span></div>
-        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-cyan">api_key</span><span class="c-gray">:</span> <span class="c-yellow">'stew_your_key_here'</span></div>
-        <div class="code-line">&nbsp;&nbsp;<span class="c-gray">})</span></div>
-        <div class="code-line"><span class="c-gray">});</span></div>
-        <div class="code-response">✓ {"response": "Here are the top 5 Nigerian fintechs...", "web_grounded": true, "success": true}</div>
+      <div class="hero-social-proof">
+        <div class="sp-avatars">
+          <div class="sp-avatar">TI</div><div class="sp-avatar">AM</div>
+          <div class="sp-avatar">KO</div><div class="sp-avatar">EB</div>
+        </div>
+        <div class="sp-text">Trusted by <strong>developers across Africa</strong><br>100% Nigerian-built · Naira billing</div>
       </div>
     </div>
-  </div>
-</section>
-
-<!-- PROVIDERS STRIP -->
-<div class="providers-strip">
-  <div class="providers-label">Powered by 6 world-class AI providers</div>
-  <div class="providers-list">
-    <div class="provider-chip"><span class="p-dot" style="background:#f97316"></span> Groq</div>
-    <div class="provider-chip"><span class="p-dot" style="background:#0ea5e9"></span> Mistral AI</div>
-    <div class="provider-chip"><span class="p-dot" style="background:#76a9fa"></span> OpenRouter</div>
-    <div class="provider-chip"><span class="p-dot" style="background:#22c55e"></span> NVIDIA NIM</div>
-    <div class="provider-chip"><span class="p-dot" style="background:#a78bfa"></span> HuggingFace</div>
-    <div class="provider-chip"><span class="p-dot" style="background:#e5e7eb"></span> OpenAI</div>
+    <div class="hero-right">
+      <div class="float-card fc-main">
+        <div class="fc-main-label">Active API Requests</div>
+        <div class="fc-main-val" id="liveCounter">2,847</div>
+        <div class="fc-main-sub">requests this minute · 6 AI providers online</div>
+      </div>
+      <div class="float-card fc-badge">
+        <div class="fc-badge-dot"></div>
+        <div class="fc-badge-text">Mistral AI · Online</div>
+      </div>
+      <div class="float-card fc-chat">
+        <div class="fc-chat-msg user">Research top Nigerian fintechs 2026</div>
+        <div class="fc-chat-msg ai">Found 8 results via web search. Flutterwave leads at $3B valuation, followed by Paystack (acquired $200M), Moniepoint...</div>
+        <div class="fc-chat-typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>
+      </div>
+      <div class="float-card fc-stats">
+        <div class="fc-stat"><div class="fc-stat-n">60+</div><div class="fc-stat-l">Skills</div></div>
+        <div class="fc-stat"><div class="fc-stat-n">12</div><div class="fc-stat-l">Personas</div></div>
+        <div class="fc-stat"><div class="fc-stat-n">6</div><div class="fc-stat-l">AI Models</div></div>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- FEATURES -->
-<section id="features">
-  <div class="section-inner">
+<!-- MARQUEE TAGS -->
+<div class="marquee-section">
+  <div class="marquee-track" id="mtrack"></div>
+</div>
+
+<!-- PROVIDERS -->
+<div class="providers">
+  <div class="prov-label">Powered by 6 world-class AI providers — automatic failover</div>
+  <div class="prov-row">
+    <div class="pchip"><span class="pd" style="background:#f97316"></span>Groq</div>
+    <div class="pchip"><span class="pd" style="background:#22c55e"></span>Mistral AI</div>
+    <div class="pchip"><span class="pd" style="background:#38bdf8"></span>NVIDIA NIM</div>
+    <div class="pchip"><span class="pd" style="background:#a78bfa"></span>OpenRouter</div>
+    <div class="pchip"><span class="pd" style="background:#fbbf24"></span>HuggingFace</div>
+    <div class="pchip"><span class="pd" style="background:#e2e8f0"></span>OpenAI</div>
+  </div>
+</div>
+
+<!-- FEATURES BENTO -->
+<section class="section" id="features">
+  <div class="inner">
     <div class="reveal">
-      <div class="section-label">What S.T.E.W Can Do</div>
-      <h2 class="section-title">60+ skills. One <span>powerful API.</span></h2>
-      <p class="section-desc">From web browsing to document generation — S.T.E.W handles the full stack of AI-powered automation.</p>
+      <div class="s-label">What S.T.E.W does</div>
+      <h2 class="s-title">One API. Every skill<br>your app needs.</h2>
+      <p class="s-desc">From live web research to binary document generation — S.T.E.W handles the complete AI automation stack.</p>
     </div>
-    <div class="features-grid reveal">
-      <div class="feature-card">
-        <div class="feature-icon">🌐</div>
+    <div class="bento reveal">
+      <div class="b-card b1 big">
+        <div class="b-icon">🌐</div>
+        <div class="b-tag">Real-time</div>
         <h3>Live Web Research</h3>
-        <p>Browse any URL, extract key information, and ground answers in real-time web data using Serper API integration.</p>
-        <span class="feature-tag tag-fast">⚡ Real-time</span>
+        <p>Ground every response in real-time web data. S.T.E.W searches the web, extracts information, and cites sources automatically.</p>
+        <div class="mini-code">POST /search<br>{"query": "Nigeria tech news today"}</div>
+        <div class="b-number">01</div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">💻</div>
+      <div class="b-card b2 big">
+        <div class="b-icon">🎭</div>
+        <div class="b-tag">New Feature</div>
+        <h3>Fine-Tune for Any Industry</h3>
+        <p>Configure your API key once — choose from 12 domain personas including Medical, Legal, Finance, Startup, and more. Add custom instructions that travel with every request.</p>
+        <div class="mini-code">POST /finetune<br>{"persona": "doctor", "custom_instructions": "Always cite NHS guidelines"}</div>
+        <div class="b-number">02</div>
+      </div>
+      <div class="b-card b3">
+        <div class="b-icon">💻</div>
+        <div class="b-tag">Full-stack</div>
         <h3>Code Generation</h3>
-        <p>Write production-quality code in any language with error handling, security best practices, and full documentation.</p>
-        <span class="feature-tag tag-power">🔥 Full-stack</span>
+        <p>Production-quality code in any language with error handling and documentation.</p>
+        <div class="b-number">03</div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">📄</div>
+      <div class="b-card b4">
+        <div class="b-icon">📄</div>
+        <div class="b-tag">Binary</div>
         <h3>Document Generation</h3>
-        <p>Create real binary PDF, DOCX, XLSX, PPTX, and HTML reports. Download-ready files, not just text output.</p>
-        <span class="feature-tag tag-power">🔥 Binary files</span>
+        <p>Real PDF, DOCX, XLSX, PPTX files. Download-ready, not just text output.</p>
+        <div class="b-number">04</div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">🧠</div>
-        <h3>Multi-Provider AI</h3>
-        <p>Automatic fallback across Groq, Mistral AI, NVIDIA NIM, OpenRouter, HuggingFace, and OpenAI. Always online.</p>
-        <span class="feature-tag tag-new">✨ New: Mistral</span>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🎭</div>
-        <h3>Fine-Tune Personas</h3>
-        <p>Configure your API key for 12 specialized domains — medical, legal, finance, startup, and more. Custom instructions supported.</p>
-        <span class="feature-tag tag-new">✨ New Feature</span>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🤖</div>
+      <div class="b-card b5">
+        <div class="b-icon">🤖</div>
+        <div class="b-tag">Enterprise</div>
         <h3>100-Agent Swarm</h3>
-        <p>Spawn up to 100 specialized AI agents working in parallel on complex multi-step tasks. Orchestrated automatically.</p>
-        <span class="feature-tag tag-power">🔥 Enterprise</span>
+        <p>Spawn 100 agents in parallel for complex multi-step orchestration tasks.</p>
+        <div class="b-number">05</div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">🔐</div>
-        <h3>JWT + API Key Auth</h3>
-        <p>Full authentication with JWT tokens, bcrypt passwords, rate limiting per plan, and password reset via email.</p>
-        <span class="feature-tag tag-fast">⚡ Secure</span>
+      <div class="b-card b6">
+        <div class="b-icon">🔑</div>
+        <div class="b-tag">New</div>
+        <h3>Bring Your Mistral AI Key</h3>
+        <p>Pro users can plug in their own Mistral AI key — your billing, your limits, your control. Test and save it in seconds. The key is encrypted and stored securely per API key.</p>
+        <div class="mini-code">POST /test-key<br>{"api_key": "stew_...", "mistral_api_key": "sk-..."}</div>
+        <div class="b-number">06</div>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">💳</div>
-        <h3>Paystack Payments</h3>
-        <p>Upgrade plans with Paystack — built for Nigeria and Africa. Naira-native billing, no dollar card required.</p>
-        <span class="feature-tag tag-new">✨ 🇳🇬 Native</span>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📱</div>
-        <h3>Telegram Bot</h3>
-        <p>Deploy S.T.E.W directly to Telegram. Let users chat with your AI agent without building a frontend.</p>
-        <span class="feature-tag tag-fast">⚡ Instant</span>
+      <div class="b-card b7">
+        <div class="b-icon">🇳🇬</div>
+        <div class="b-tag">Nigerian</div>
+        <h3>Paystack · Naira Billing</h3>
+        <p>Upgrade with Paystack. No dollar card required. Built for African developers first.</p>
+        <div class="b-number">07</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- FINE-TUNE SECTION -->
-<section id="finetune" class="persona-section">
-  <div class="section-inner">
+<!-- FINE-TUNE / PERSONA SECTION -->
+<section class="section" id="finetune" style="background:rgba(0,0,0,.2);">
+  <div class="inner">
     <div class="reveal">
-      <div class="section-label">Fine-Tune Your API Key</div>
-      <h2 class="section-title">Make S.T.E.W work <span>exactly how you need.</span></h2>
-      <p class="section-desc">Choose a domain persona, add custom instructions, set your response style, and even plug in your own Mistral AI key. Your API key, your rules.</p>
+      <div class="s-label">Fine-Tune</div>
+      <h2 class="s-title">Your API key.<br>Your <em>rules.</em></h2>
+      <p class="s-desc">Pick a domain, add your own instructions, choose a response style. S.T.E.W becomes a specialist built exactly for your use case.</p>
     </div>
-    <div class="persona-grid reveal" id="personaGrid">
-      <!-- Populated by JS -->
-    </div>
-    <div class="finetune-panel reveal">
-      <h3>⚙️ Configure Your API Key</h3>
-      <p>Enter your S.T.E.W API key and customize how it behaves. These settings travel with your key — every request you make will automatically use them.</p>
-      <div class="finetune-form">
-        <div class="form-group">
-          <label>Your API Key</label>
-          <input type="text" class="form-input" id="ftApiKey" placeholder="stew_xxxxxxxxxxxxxx" />
+    <div class="persona-grid reveal" id="pgrid"></div>
+    <div class="ft-panel reveal">
+      <h3>⚙️ Configure Your Key</h3>
+      <p>Changes are saved server-side and applied automatically to every future request you make with this key.</p>
+      <div class="ft-grid">
+        <div class="fg">
+          <label>Your S.T.E.W API Key *</label>
+          <input class="fi" type="text" id="ftKey" placeholder="stew_xxxxxxxxxxxxxxxx">
         </div>
-        <div class="form-group">
-          <label>Persona / Domain</label>
-          <select class="form-select" id="ftPersona">
+        <div class="fg">
+          <label>Domain Persona</label>
+          <select class="fi" id="ftPersona">
             <option value="general">🤖 General Assistant</option>
             <option value="doctor">🩺 Medical Doctor</option>
             <option value="health">💚 Health & Wellness</option>
@@ -471,238 +474,186 @@ footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:6
             <option value="customer_support">💬 Customer Support</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="fg">
           <label>Response Style</label>
-          <select class="form-select" id="ftStyle">
+          <select class="fi" id="ftStyle">
             <option value="balanced">Balanced (default)</option>
-            <option value="concise">Concise — short & direct</option>
+            <option value="concise">Concise — short &amp; direct</option>
             <option value="detailed">Detailed — comprehensive</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Your Mistral AI Key (optional)</label>
-          <input type="password" class="form-input" id="ftMistralKey" placeholder="sk-..." />
-        </div>
-        <div class="form-group full-width">
-          <label>Custom Instructions (optional)</label>
-          <textarea class="form-input" id="ftInstructions" placeholder="Example: Always respond in Nigerian Pidgin English. Focus on Nigerian market data. Use Naira for currency. Be concise."></textarea>
-        </div>
-        <div class="form-group">
-          <label>Persona Name (optional)</label>
-          <input type="text" class="form-input" id="ftName" placeholder="e.g. Lagos HealthBot, StartupMentor AI" />
-        </div>
-        <div class="form-group">
-          <label>Preferred Language</label>
-          <select class="form-select" id="ftLang">
+        <div class="fg">
+          <label>Language</label>
+          <select class="fi" id="ftLang">
             <option value="en">English</option>
+            <option value="pcm">Nigerian Pidgin</option>
             <option value="yo">Yoruba</option>
             <option value="ig">Igbo</option>
             <option value="ha">Hausa</option>
-            <option value="pcm">Nigerian Pidgin</option>
             <option value="fr">French</option>
           </select>
         </div>
+        <div class="fg">
+          <label>Your Mistral AI Key (optional)</label>
+          <input class="fi" type="password" id="ftMistral" placeholder="sk-...">
+        </div>
+        <div class="fg">
+          <label>Persona Display Name (optional)</label>
+          <input class="fi" type="text" id="ftName" placeholder="e.g. LagosHealthBot">
+        </div>
+        <div class="fg span2">
+          <label>Custom Instructions (optional · max 2000 chars)</label>
+          <textarea class="fi" id="ftInstructions" placeholder="e.g. Always respond in Nigerian context. Use Naira for prices. Focus on Lagos market data. Be direct and practical."></textarea>
+        </div>
       </div>
-      <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;">
-        <button class="test-run-btn" onclick="saveFinetuneSettings()">💾 Save Fine-Tune Settings</button>
-        <button class="btn btn-ghost" onclick="loadFinetuneSettings()">📥 Load Current Settings</button>
-        <button class="btn btn-ghost" onclick="testMistralKey()">🔑 Test Mistral Key</button>
+      <div class="ft-actions">
+        <button class="btn btn-green" onclick="saveFT()">💾 Save Settings</button>
+        <button class="btn btn-line" onclick="loadFT()">📥 Load My Settings</button>
+        <button class="btn btn-line" onclick="testMistral()">🔑 Test Mistral Key</button>
       </div>
-      <div class="finetune-result" id="finetuneResult"></div>
+      <div class="ft-result" id="ftRes"></div>
     </div>
   </div>
 </section>
 
 <!-- PRICING -->
-<section id="pricing">
-  <div class="section-inner">
+<section class="section" id="pricing">
+  <div class="inner">
     <div class="reveal">
-      <div class="section-label">Pricing</div>
-      <h2 class="section-title">Start free. <span>Scale as you grow.</span></h2>
-      <p class="section-desc">No credit card needed. Nigerian Naira billing. Paystack-powered.</p>
+      <div class="s-label">Pricing</div>
+      <h2 class="s-title">Start free.<br><em>Scale as you grow.</em></h2>
+      <p class="s-desc">Naira billing. No dollar card. Powered by Paystack.</p>
     </div>
-    <div class="pricing-grid reveal">
-      <div class="price-card">
-        <div class="price-plan">Free</div>
-        <div class="price-amount">₦0<span>/mo</span></div>
-        <div class="price-period">Forever free tier</div>
-        <ul class="price-features">
-          <li>3,000 API calls/month</li>
-          <li>All 60+ skills</li>
-          <li>Web research</li>
-          <li>Document generation</li>
-          <li>Fine-tune personas</li>
-          <li class="na">Priority support</li>
-          <li class="na">Custom Mistral key</li>
-          <li class="na">100-agent swarm</li>
+    <div class="price-grid reveal">
+      <div class="pc">
+        <div class="pc-plan">Free</div>
+        <div class="pc-price">₦0</div>
+        <div class="pc-per">forever</div>
+        <ul class="pc-feats">
+          <li>3,000 API calls/month</li><li>All 60+ skills</li><li>Web research</li>
+          <li>Document generation</li><li>Fine-tune personas</li>
+          <li class="no">Custom Mistral key</li><li class="no">100-agent swarm</li>
         </ul>
-        <a href="#auth" class="btn btn-outline" style="width:100%;justify-content:center;">Start Free</a>
+        <a href="#auth" class="btn btn-line" style="width:100%;justify-content:center;">Start Free</a>
       </div>
-      <div class="price-card popular">
-        <div class="popular-badge">Most Popular</div>
-        <div class="price-plan">Pro</div>
-        <div class="price-amount">₦9,900<span>/mo</span></div>
-        <div class="price-period">~$6 USD/month</div>
-        <ul class="price-features">
-          <li>10,000 API calls/month</li>
-          <li>All 60+ skills</li>
-          <li>Priority AI routing</li>
-          <li>Custom Mistral key ✓</li>
-          <li>Fine-tune personas</li>
-          <li>Email support</li>
-          <li>Conversation memory</li>
-          <li class="na">100-agent swarm</li>
+      <div class="pc pop">
+        <div class="pop-badge">Most Popular</div>
+        <div class="pc-plan">Pro</div>
+        <div class="pc-price">₦9,900</div>
+        <div class="pc-per">per month · ~$6 USD</div>
+        <ul class="pc-feats">
+          <li>10,000 API calls/month</li><li>All skills + priority routing</li>
+          <li>Custom Mistral AI key ✓</li><li>Fine-tune personas</li>
+          <li>Conversation memory</li><li>Email support</li>
+          <li class="no">100-agent swarm</li>
         </ul>
-        <a href="#auth" class="btn btn-accent" style="width:100%;justify-content:center;">Upgrade to Pro</a>
+        <a href="#auth" class="btn btn-green" style="width:100%;justify-content:center;">Upgrade to Pro</a>
       </div>
-      <div class="price-card">
-        <div class="price-plan">Business</div>
-        <div class="price-amount">₦29,000<span>/mo</span></div>
-        <div class="price-period">~$18 USD/month</div>
-        <ul class="price-features">
-          <li>100,000 API calls/month</li>
-          <li>All skills + priority</li>
-          <li>100-agent swarm ✓</li>
-          <li>Custom Mistral key ✓</li>
-          <li>All 12 personas</li>
-          <li>Priority support</li>
-          <li>Telegram bot setup</li>
-          <li>Custom system prompts</li>
+      <div class="pc">
+        <div class="pc-plan">Business</div>
+        <div class="pc-price">₦29,000</div>
+        <div class="pc-per">per month · ~$18 USD</div>
+        <ul class="pc-feats">
+          <li>100,000 API calls/month</li><li>100-agent swarm ✓</li>
+          <li>Custom Mistral key ✓</li><li>Telegram bot setup</li>
+          <li>All 12 personas</li><li>Priority support</li><li>Custom system prompts</li>
         </ul>
-        <a href="#auth" class="btn btn-outline" style="width:100%;justify-content:center;">Get Business</a>
+        <a href="#auth" class="btn btn-line" style="width:100%;justify-content:center;">Get Business</a>
       </div>
-      <div class="price-card">
-        <div class="price-plan">Enterprise</div>
-        <div class="price-amount">₦49,000<span>/mo</span></div>
-        <div class="price-period">~$30 USD/month</div>
-        <ul class="price-features">
-          <li>Unlimited API calls</li>
-          <li>All features</li>
-          <li>Dedicated AI instances</li>
-          <li>White-label option</li>
-          <li>SLA guaranteed</li>
-          <li>Phone + email support</li>
-          <li>Custom integrations</li>
-          <li>On-premise deployment</li>
+      <div class="pc">
+        <div class="pc-plan">Enterprise</div>
+        <div class="pc-price">₦49k+</div>
+        <div class="pc-per">per month · custom</div>
+        <ul class="pc-feats">
+          <li>Unlimited API calls</li><li>Dedicated AI instances</li>
+          <li>White-label option</li><li>SLA guarantee</li>
+          <li>Phone + email support</li><li>Custom integrations</li><li>On-premise deployment</li>
         </ul>
-        <a href="#auth" class="btn btn-outline" style="width:100%;justify-content:center;">Contact Sales</a>
+        <a href="#auth" class="btn btn-line" style="width:100%;justify-content:center;">Contact Sales</a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- AUTH SECTION -->
-<section id="auth" class="auth-section">
-  <div class="section-inner">
-    <div class="auth-container">
-      <div class="reveal">
-        <div class="auth-panel">
-          <div class="auth-tabs">
-            <div class="auth-tab active" onclick="switchTab('register')">Create Account</div>
-            <div class="auth-tab" onclick="switchTab('login')">Sign In</div>
+<!-- AUTH -->
+<section class="section" id="auth">
+  <div class="inner">
+    <div class="auth-wrap">
+      <div class="auth-box reveal">
+        <div class="auth-tabs">
+          <div class="a-tab on" onclick="swTab('reg')">Create Account</div>
+          <div class="a-tab" onclick="swTab('login')">Sign In</div>
+        </div>
+        <!-- Register -->
+        <form id="regForm" class="auth-form" onsubmit="doReg(event)">
+          <div class="fg"><label>Full Name</label><input class="fi" type="text" id="rName" placeholder="Your name" required></div>
+          <div class="fg"><label>Email</label><input class="fi" type="email" id="rEmail" placeholder="you@example.com" required></div>
+          <div class="fg"><label>Password</label><input class="fi" type="password" id="rPass" placeholder="Min 8 characters" required minlength="8"></div>
+          <button type="submit" class="auth-btn" id="rBtn">Create Account &amp; Get API Key →</button>
+        </form>
+        <!-- Login -->
+        <form id="loginForm" class="auth-form" style="display:none;" onsubmit="doLogin(event)">
+          <div class="fg"><label>Email</label><input class="fi" type="email" id="lEmail" placeholder="you@example.com" required></div>
+          <div class="fg"><label>Password</label><input class="fi" type="password" id="lPass" placeholder="Your password" required></div>
+          <button type="submit" class="auth-btn" id="lBtn">Sign In →</button>
+          <p style="text-align:center;font-size:.78rem;color:var(--muted);margin-top:.25rem;">
+            <a href="#" style="color:var(--accent);text-decoration:none;" onclick="doForgot()">Forgot password?</a>
+          </p>
+        </form>
+        <div id="authMsg"></div>
+        <div id="keyBox" style="display:none;">
+          <div class="key-reveal">
+            <div class="key-label">Your S.T.E.W API Key</div>
+            <div class="key-val" id="keyVal"></div>
+            <button class="copy-btn" onclick="copyKey()">Copy Key</button>
           </div>
-          <!-- Register -->
-          <form id="registerForm" class="auth-form" onsubmit="handleRegister(event)">
-            <div class="form-group">
-              <label>Full Name</label>
-              <input type="text" class="form-input" id="regName" placeholder="Your name" required />
-            </div>
-            <div class="form-group">
-              <label>Email Address</label>
-              <input type="email" class="form-input" id="regEmail" placeholder="you@example.com" required />
-            </div>
-            <div class="form-group">
-              <label>Password</label>
-              <input type="password" class="form-input" id="regPass" placeholder="Min 8 characters" required />
-            </div>
-            <button type="submit" class="auth-submit" id="regBtn">Create Account & Get API Key →</button>
-          </form>
-          <!-- Login -->
-          <form id="loginForm" class="auth-form" style="display:none;" onsubmit="handleLogin(event)">
-            <div class="form-group">
-              <label>Email Address</label>
-              <input type="email" class="form-input" id="loginEmail" placeholder="you@example.com" required />
-            </div>
-            <div class="form-group">
-              <label>Password</label>
-              <input type="password" class="form-input" id="loginPass" placeholder="Your password" required />
-            </div>
-            <button type="submit" class="auth-submit" id="loginBtn">Sign In →</button>
-            <p style="text-align:center;margin-top:.5rem;font-size:.8rem;color:var(--muted)">
-              <a href="#" style="color:var(--accent2);text-decoration:none;" onclick="handleForgotPassword()">Forgot password?</a>
-            </p>
-          </form>
-          <div id="authResult"></div>
-          <div id="apiKeySection" style="display:none;">
-            <div class="api-key-display">
-              <div class="api-key-label">Your S.T.E.W API Key</div>
-              <div class="api-key-value" id="apiKeyValue"></div>
-              <button class="copy-btn" onclick="copyKey()">Copy Key</button>
-            </div>
-            <p style="margin-top:.75rem;font-size:.8rem;color:var(--muted);">Keep this key safe. Use it in every API request. <a href="#finetune" style="color:var(--accent2);">Fine-tune it →</a></p>
-          </div>
+          <p style="margin-top:.6rem;font-size:.78rem;color:var(--muted);">Keep this safe. <a href="#finetune" style="color:var(--accent);text-decoration:none;">Fine-tune it now →</a></p>
         </div>
       </div>
       <div class="auth-info reveal">
-        <h3>Your key to Africa's most powerful AI.</h3>
-        <p>Get instant access to 60+ AI skills, Mistral AI integration, and persona fine-tuning — all from a single API key. Free forever for the base tier.</p>
-        <div class="auth-features-list">
-          <div class="auth-feature">
-            <div class="auth-feature-icon">⚡</div>
-            <div class="auth-feature-text"><h4>Instant Access</h4><p>Your API key is ready the moment you register. No approval waiting.</p></div>
-          </div>
-          <div class="auth-feature">
-            <div class="auth-feature-icon">🎭</div>
-            <div class="auth-feature-text"><h4>12 Domain Personas</h4><p>Fine-tune for medical, legal, finance, startup, and 8 more specialized domains.</p></div>
-          </div>
-          <div class="auth-feature">
-            <div class="auth-feature-icon">🔑</div>
-            <div class="auth-feature-text"><h4>Bring Your Mistral Key</h4><p>Pro users can plug in their own Mistral AI key for unlimited power.</p></div>
-          </div>
-          <div class="auth-feature">
-            <div class="auth-feature-icon">🇳🇬</div>
-            <div class="auth-feature-text"><h4>Naira Billing</h4><p>Upgrade with Paystack — no dollar card, no international fees.</p></div>
-          </div>
+        <h3>Your key to Africa's most <em>powerful AI.</em></h3>
+        <p>Instant access to 60+ AI skills, Mistral AI integration, and 12-domain persona fine-tuning. Free forever on the base tier.</p>
+        <div class="auth-perks">
+          <div class="perk"><div class="perk-icon">⚡</div><div><h4>Instant API Key</h4><p>Ready the moment you register. No approval waiting, no setup.</p></div></div>
+          <div class="perk"><div class="perk-icon">🎭</div><div><h4>12 Domain Personas</h4><p>Medical, legal, finance, startup and 8 more — fine-tuned for your industry.</p></div></div>
+          <div class="perk"><div class="perk-icon">🔑</div><div><h4>Bring Your Mistral Key</h4><p>Pro users plug in their own Mistral AI key for unlimited power at your cost.</p></div></div>
+          <div class="perk"><div class="perk-icon">🇳🇬</div><div><h4>Naira Billing via Paystack</h4><p>No dollar card needed. Made for Nigeria, designed for Africa.</p></div></div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- TEST PLAYGROUND -->
-<section id="test" class="test-section">
-  <div class="section-inner">
+<!-- PLAYGROUND -->
+<section class="section" id="test">
+  <div class="inner">
     <div class="reveal">
-      <div class="section-label">Live Playground</div>
-      <h2 class="section-title">Test the API <span>right here.</span></h2>
-      <p class="section-desc">Try any endpoint with your real API key. No extra setup needed.</p>
+      <div class="s-label">Live Playground</div>
+      <h2 class="s-title">Test the API <em>right here.</em></h2>
+      <p class="s-desc">Pick an endpoint, edit the request body, hit Run. No Postman needed.</p>
     </div>
-    <div class="test-container reveal">
-      <div class="test-sidebar" id="testSidebar">
-        <!-- Populated by JS -->
-      </div>
-      <div class="test-panel">
-        <div class="test-panel-header">
-          <span class="test-panel-title" id="testPanelTitle">POST /chat</span>
-          <span class="test-url" id="testUrl">https://stew-agent.onrender.com/chat</span>
+    <div class="play-wrap reveal">
+      <div class="ep-list" id="epList"></div>
+      <div class="play-panel">
+        <div class="pp-head">
+          <span class="pp-title" id="ppTitle">POST /chat</span>
+          <span class="pp-url" id="ppUrl">https://stew-agent.onrender.com/chat</span>
         </div>
-        <div class="test-body">
-          <div class="test-request">
+        <div class="pp-body">
+          <div class="pp-grid">
             <div>
-              <div class="test-label">Request Body (JSON)</div>
-              <textarea class="test-textarea" id="testReqBody">{"message": "What are the top 5 Nigerian AI startups in 2026?", "api_key": "", "web_search": true}</textarea>
+              <div class="pp-lbl">Request Body</div>
+              <textarea class="pp-ta" id="ppReq">{"message": "What are the top 5 Nigerian AI startups in 2026?", "api_key": "", "web_search": true}</textarea>
             </div>
             <div>
-              <div class="test-label">Response</div>
-              <div id="testResponseArea">
-                <div class="test-response-code res-loading" style="display:none;" id="testStatusCode">● 200 OK</div>
-                <pre id="testResponsePre" style="color:var(--muted);background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:8px;padding:1rem;font-family:var(--mono);font-size:.8rem;min-height:200px;">// Response will appear here</pre>
-              </div>
+              <div class="pp-lbl">Response</div>
+              <div id="ppResCode"></div>
+              <pre class="pp-pre" id="ppRes">// Response appears here</pre>
             </div>
           </div>
-          <div class="test-actions">
-            <button class="test-run-btn" onclick="runTest()" id="testRunBtn">▶ Run Request</button>
-            <span class="test-status" id="testStatusMsg"></span>
+          <div class="pp-actions">
+            <button class="run-btn" onclick="runReq()" id="runBtn">▶ Run</button>
+            <span class="run-status" id="runStat"></span>
           </div>
         </div>
       </div>
@@ -712,358 +663,229 @@ footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:6
 
 <!-- FOOTER -->
 <footer>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <div class="nav-logo" style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem;">
-        <div class="nav-logo-mark">STEW</div>
-        <div class="nav-logo-text">S.T.E.W <span>Agent</span></div>
-      </div>
-      <p>Africa's most powerful AI agent API. Built by MUTYINT Nigeria. Solving real problems for African developers and businesses.</p>
+  <div class="foot-grid">
+    <div class="fb">
+      <div class="logo"><div class="logo-box">S·T·W</div><span class="logo-name">S.T.E.W <em>Agent</em></span></div>
+      <p>Africa's most powerful AI agent API. Built by MUTYINT Nigeria. Solving real problems for African developers.</p>
     </div>
-    <div class="footer-col">
-      <h4>Product</h4>
-      <a href="#features">Features</a>
-      <a href="#finetune">Fine-Tune</a>
-      <a href="#pricing">Pricing</a>
-      <a href="/playground">Playground</a>
-    </div>
-    <div class="footer-col">
-      <h4>Developers</h4>
-      <a href="/docs">API Docs</a>
-      <a href="/openapi.json">OpenAPI Spec</a>
-      <a href="/heartbeat">Status</a>
-      <a href="/skills">60+ Skills</a>
-    </div>
-    <div class="footer-col">
-      <h4>Company</h4>
-      <a href="#">MUTYINT Nigeria</a>
-      <a href="#">About</a>
-      <a href="#">Blog</a>
-      <a href="#">Contact</a>
-    </div>
+    <div class="fc-col"><h4>Product</h4><a href="#features">Features</a><a href="#finetune">Fine-Tune</a><a href="#pricing">Pricing</a><a href="https://stew-agent.onrender.com/playground">Playground</a></div>
+    <div class="fc-col"><h4>Developers</h4><a href="https://stew-agent.onrender.com/docs">API Docs</a><a href="https://stew-agent.onrender.com/heartbeat">Status</a><a href="https://stew-agent.onrender.com/skills">60+ Skills</a><a href="https://stew-agent.onrender.com/personas">Personas API</a></div>
+    <div class="fc-col"><h4>Company</h4><a href="#">MUTYINT Nigeria</a><a href="#">About</a><a href="#">Contact</a><a href="#">Telegram Bot</a></div>
   </div>
-  <div class="footer-bottom">
-    <p>© 2026 MUTYINT Nigeria. S.T.E.W — Smart Task Execution Worker. All rights reserved.</p>
-    <div class="live-badge"><span class="status-dot"></span> All systems operational</div>
+  <div class="foot-bottom">
+    <p>© 2026 MUTYINT Nigeria · S.T.E.W — Smart Task Execution Worker</p>
+    <div class="live"><span class="status-dot"></span> All systems operational</div>
   </div>
 </footer>
 
 <script>
 const BASE = 'https://stew-agent.onrender.com';
 
-// ── Starfield canvas ─────────────────────────────────────────────────────────
-(function(){
-  const canvas = document.getElementById('starfield');
-  const ctx = canvas.getContext('2d');
-  let stars = [];
-  function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
-  function initStars(){
-    stars=[];
-    for(let i=0;i<180;i++){
-      stars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*1.5+.3,o:Math.random()*.8+.2,s:Math.random()*.3+.05});
-    }
-  }
-  function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    stars.forEach(s=>{
-      s.o+=s.s*(s.o>1||s.o<.2?-1:1);
-      if(s.o>1)s.s=-Math.abs(s.s); if(s.o<.2)s.s=Math.abs(s.s);
-      ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
-      ctx.fillStyle=`rgba(167,139,250,${Math.min(1,s.o)})`;ctx.fill();
-    });
-    requestAnimationFrame(draw);
-  }
-  resize();initStars();draw();
-  window.addEventListener('resize',()=>{resize();initStars();});
-})();
+/* ── Reveal on scroll ── */
+const obs = new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('vis');}),{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
 
-// ── Scroll reveal ────────────────────────────────────────────────────────────
-const observer = new IntersectionObserver(entries=>{
-  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');}});
-},{threshold:.1});
-document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+/* ── Live counter animation ── */
+let counterVal = 2847;
+setInterval(()=>{
+  counterVal += Math.floor(Math.random()*12)-4;
+  if(counterVal<2600)counterVal=2800;
+  document.getElementById('liveCounter').textContent = counterVal.toLocaleString();
+},1800);
 
-// ── Auth tabs ────────────────────────────────────────────────────────────────
-function switchTab(tab){
-  document.querySelectorAll('.auth-tab').forEach((t,i)=>{t.classList.toggle('active',i===(tab==='register'?0:1));});
-  document.getElementById('registerForm').style.display = tab==='register'?'flex':'none';
-  document.getElementById('loginForm').style.display = tab==='login'?'flex':'none';
-  document.getElementById('authResult').innerHTML='';
-  document.getElementById('authResult').className='';
-  document.getElementById('apiKeySection').style.display='none';
-}
-
-function showAuthResult(msg, type){
-  const el = document.getElementById('authResult');
-  el.className = 'auth-result ' + type;
-  el.innerHTML = msg;
-}
-
-// ── Register ─────────────────────────────────────────────────────────────────
-async function handleRegister(e){
-  e.preventDefault();
-  const btn = document.getElementById('regBtn');
-  btn.disabled=true; btn.textContent='Creating account...';
-  const name=document.getElementById('regName').value.trim();
-  const email=document.getElementById('regEmail').value.trim();
-  const password=document.getElementById('regPass').value;
-  try{
-    const r = await fetch(BASE+'/auth/register',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,email,password})
-    });
-    const data = await r.json();
-    if(r.ok && data.api_key){
-      localStorage.setItem('stew_api_key', data.api_key);
-      localStorage.setItem('stew_token', data.token||'');
-      showAuthResult('Account created successfully!', 'success');
-      document.getElementById('apiKeySection').style.display='block';
-      document.getElementById('apiKeyValue').textContent = data.api_key;
-      document.getElementById('ftApiKey').value = data.api_key;
-    } else {
-      showAuthResult('Error: '+(data.detail||data.message||'Registration failed'), 'error');
-    }
-  } catch(err){
-    showAuthResult('Connection error — S.T.E.W may be waking up (free tier). Retry in 15s.', 'error');
-  }
-  btn.disabled=false; btn.textContent='Create Account & Get API Key →';
-}
-
-// ── Login ─────────────────────────────────────────────────────────────────────
-async function handleLogin(e){
-  e.preventDefault();
-  const btn = document.getElementById('loginBtn');
-  btn.disabled=true; btn.textContent='Signing in...';
-  const email=document.getElementById('loginEmail').value.trim();
-  const password=document.getElementById('loginPass').value;
-  try{
-    const r = await fetch(BASE+'/auth/login',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email,password})
-    });
-    const data = await r.json();
-    if(r.ok && (data.token||data.access_token)){
-      const token = data.token||data.access_token;
-      const apiKey = data.user?.api_key || data.api_key;
-      localStorage.setItem('stew_token', token);
-      if(apiKey) localStorage.setItem('stew_api_key', apiKey);
-      showAuthResult('Signed in successfully! Welcome back, '+(data.user?.name||email)+'.', 'success');
-      if(apiKey){
-        document.getElementById('apiKeySection').style.display='block';
-        document.getElementById('apiKeyValue').textContent = apiKey;
-        document.getElementById('ftApiKey').value = apiKey;
-      }
-    } else {
-      showAuthResult('Error: '+(data.detail||data.message||'Invalid credentials'), 'error');
-    }
-  } catch(err){
-    showAuthResult('Connection error — please retry.', 'error');
-  }
-  btn.disabled=false; btn.textContent='Sign In →';
-}
-
-// ── Forgot password ──────────────────────────────────────────────────────────
-async function handleForgotPassword(){
-  const email = document.getElementById('loginEmail').value.trim();
-  if(!email){showAuthResult('Enter your email first.','error');return;}
-  const r = await fetch(BASE+'/auth/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
-  const data = await r.json();
-  showAuthResult(r.ok?'Password reset link sent to '+email+'.':'Error: '+(data.detail||'Failed'), r.ok?'success':'error');
-}
-
-function copyKey(){
-  const k = document.getElementById('apiKeyValue').textContent;
-  navigator.clipboard.writeText(k).then(()=>{
-    const btn = document.querySelector('.copy-btn');
-    btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy Key',2000);
-  });
-}
-
-// ── Persona grid ─────────────────────────────────────────────────────────────
-const PERSONAS = [
-  {id:'general',icon:'🤖',label:'General Assistant',desc:'All-purpose AI for any task'},
-  {id:'doctor',icon:'🩺',label:'Medical Doctor',desc:'Healthcare & clinical AI'},
-  {id:'health',icon:'💚',label:'Health & Wellness',desc:'Nutrition, fitness & wellness'},
-  {id:'startup',icon:'🚀',label:'Startup Co-founder',desc:'Strategy, product & fundraising'},
-  {id:'legal',icon:'⚖️',label:'Legal Assistant',desc:'Contracts & legal research'},
-  {id:'finance',icon:'📈',label:'Finance Advisor',desc:'Modeling & investment analysis'},
-  {id:'education',icon:'🎓',label:'AI Tutor',desc:'Learning plans & explanations'},
-  {id:'ecommerce',icon:'🛒',label:'E-Commerce',desc:'Product & store optimization'},
-  {id:'developer',icon:'💻',label:'Software Engineer',desc:'Code, review & architecture'},
-  {id:'marketing',icon:'📣',label:'Growth Marketer',desc:'Copy, SEO & campaigns'},
-  {id:'hr',icon:'👥',label:'HR & People Ops',desc:'Hiring, onboarding & culture'},
-  {id:'customer_support',icon:'💬',label:'Customer Support',desc:'Empathetic query resolution'},
-];
-
-const grid = document.getElementById('personaGrid');
-PERSONAS.forEach(p=>{
-  const card = document.createElement('div');
-  card.className='persona-card'; card.dataset.id=p.id;
-  card.innerHTML=`<div class="pi">${p.icon}</div><h4>${p.label}</h4><p>${p.desc}</p>`;
-  card.addEventListener('click',()=>{
-    document.querySelectorAll('.persona-card').forEach(c=>c.classList.remove('active'));
-    card.classList.add('active');
-    document.getElementById('ftPersona').value=p.id;
-  });
-  grid.appendChild(card);
+/* ── Marquee tags ── */
+const tags = ['Web Research','Code Generation','PDF Generator','DOCX Export','XLSX Spreadsheet','PPTX Slides','HTML Reports','Telegram Bot','100-Agent Swarm','Mistral AI','Groq Llama 3.3','NVIDIA NIM','Web Scraping','API Proxy','Document Upload','Persona Fine-Tune','Medical AI','Legal AI','Finance AI','Startup AI','Developer AI','Nigerian Market','Paystack Billing','JWT Auth','Conversation Memory','Skill Engine','Web Search','Auto Fallback'];
+const track = document.getElementById('mtrack');
+[...tags,...tags].forEach(t=>{
+  const el=document.createElement('span');
+  el.className='m-tag'+(Math.random()>.7?' accent':'');
+  el.textContent='· '+t;
+  track.appendChild(el);
 });
 
-// ── Fine-tune ─────────────────────────────────────────────────────────────────
-async function saveFinetuneSettings(){
-  const apiKey = document.getElementById('ftApiKey').value.trim();
-  if(!apiKey){showFtResult('Enter your API key first.','error');return;}
-  const body = {
-    api_key: apiKey,
-    persona: document.getElementById('ftPersona').value,
-    response_style: document.getElementById('ftStyle').value,
-    language: document.getElementById('ftLang').value,
-    custom_instructions: document.getElementById('ftInstructions').value.trim()||null,
-    persona_name: document.getElementById('ftName').value.trim()||null,
-    mistral_api_key: document.getElementById('ftMistralKey').value.trim()||null,
-  };
+/* ── Persona grid ── */
+const PERSONAS=[
+  {id:'general',icon:'🤖',label:'General',desc:'All-purpose AI'},
+  {id:'doctor',icon:'🩺',label:'Medical',desc:'Healthcare & clinical'},
+  {id:'health',icon:'💚',label:'Wellness',desc:'Fitness & nutrition'},
+  {id:'startup',icon:'🚀',label:'Startup',desc:'Strategy & growth'},
+  {id:'legal',icon:'⚖️',label:'Legal',desc:'Contracts & compliance'},
+  {id:'finance',icon:'📈',label:'Finance',desc:'Investment & modeling'},
+  {id:'education',icon:'🎓',label:'Education',desc:'Tutoring & learning'},
+  {id:'ecommerce',icon:'🛒',label:'E-Commerce',desc:'Store optimization'},
+  {id:'developer',icon:'💻',label:'Dev',desc:'Code & architecture'},
+  {id:'marketing',icon:'📣',label:'Marketing',desc:'Copy & campaigns'},
+  {id:'hr',icon:'👥',label:'HR',desc:'People ops & hiring'},
+  {id:'customer_support',icon:'💬',label:'Support',desc:'Customer service'},
+];
+const pg = document.getElementById('pgrid');
+PERSONAS.forEach(p=>{
+  const c=document.createElement('div');c.className='p-card';c.dataset.id=p.id;
+  c.innerHTML=`<div class="p-icon">${p.icon}</div><h4>${p.label}</h4><p>${p.desc}</p>`;
+  c.onclick=()=>{document.querySelectorAll('.p-card').forEach(x=>x.classList.remove('sel'));c.classList.add('sel');document.getElementById('ftPersona').value=p.id;};
+  pg.appendChild(c);
+});
+
+/* ── Auth ── */
+function swTab(t){
+  ['reg','login'].forEach(x=>{document.getElementById(x+'Form').style.display=x===t?'flex':'none';});
+  document.querySelectorAll('.a-tab').forEach((el,i)=>el.classList.toggle('on',i===(t==='reg'?0:1)));
+  document.getElementById('authMsg').innerHTML='';document.getElementById('authMsg').className='auth-msg';
+  document.getElementById('keyBox').style.display='none';
+}
+function showMsg(msg,type){const el=document.getElementById('authMsg');el.className='auth-msg '+type;el.innerHTML=msg;}
+async function doReg(e){
+  e.preventDefault();
+  const btn=document.getElementById('rBtn');btn.disabled=true;btn.textContent='Creating...';
+  try{
+    const r=await fetch(BASE+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:document.getElementById('rName').value.trim(),email:document.getElementById('rEmail').value.trim(),password:document.getElementById('rPass').value})});
+    const d=await r.json();
+    if(r.ok&&d.api_key){
+      localStorage.setItem('stew_api_key',d.api_key);
+      if(d.token)localStorage.setItem('stew_token',d.token);
+      showMsg('Account created!','auth-msg ok');
+      document.getElementById('keyBox').style.display='block';
+      document.getElementById('keyVal').textContent=d.api_key;
+      document.getElementById('ftKey').value=d.api_key;
+      injectKey(d.api_key);
+    }else{showMsg('Error: '+(d.detail||d.message||'Registration failed'),'auth-msg err');}
+  }catch{showMsg('Connection error — STEW may be waking up on free tier. Retry in 15s.','auth-msg err');}
+  btn.disabled=false;btn.textContent='Create Account & Get API Key →';
+}
+async function doLogin(e){
+  e.preventDefault();
+  const btn=document.getElementById('lBtn');btn.disabled=true;btn.textContent='Signing in...';
+  try{
+    const r=await fetch(BASE+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:document.getElementById('lEmail').value.trim(),password:document.getElementById('lPass').value})});
+    const d=await r.json();
+    if(r.ok&&(d.token||d.access_token)){
+      const token=d.token||d.access_token,key=d.user?.api_key||d.api_key;
+      localStorage.setItem('stew_token',token);
+      if(key){localStorage.setItem('stew_api_key',key);document.getElementById('ftKey').value=key;injectKey(key);}
+      showMsg('Welcome back, '+(d.user?.name||'')+'!','auth-msg ok');
+      if(key){document.getElementById('keyBox').style.display='block';document.getElementById('keyVal').textContent=key;}
+    }else{showMsg('Error: '+(d.detail||d.message||'Invalid credentials'),'auth-msg err');}
+  }catch{showMsg('Connection error — please retry.','auth-msg err');}
+  btn.disabled=false;btn.textContent='Sign In →';
+}
+async function doForgot(){
+  const email=document.getElementById('lEmail').value.trim();
+  if(!email){showMsg('Enter your email first.','auth-msg err');return;}
+  const r=await fetch(BASE+'/auth/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  const d=await r.json();showMsg(r.ok?'Reset link sent to '+email:'Error: '+(d.detail||'Failed'),r.ok?'auth-msg ok':'auth-msg err');
+}
+function copyKey(){
+  navigator.clipboard.writeText(document.getElementById('keyVal').textContent);
+  const b=document.querySelector('.copy-btn');b.textContent='Copied!';setTimeout(()=>b.textContent='Copy Key',2000);
+}
+
+/* ── Fine-tune ── */
+function showFT(msg,type){const el=document.getElementById('ftRes');el.className='ft-result show ft-'+type;el.innerHTML=msg;}
+async function saveFT(){
+  const key=document.getElementById('ftKey').value.trim();
+  if(!key){showFT('Enter your API key first.','err');return;}
+  const body={api_key:key,persona:document.getElementById('ftPersona').value,response_style:document.getElementById('ftStyle').value,
+    language:document.getElementById('ftLang').value,custom_instructions:document.getElementById('ftInstructions').value.trim()||null,
+    persona_name:document.getElementById('ftName').value.trim()||null,mistral_api_key:document.getElementById('ftMistral').value.trim()||null};
   try{
     const r=await fetch(BASE+'/finetune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const data=await r.json();
-    if(r.ok&&data.success){
-      showFtResult('Settings saved! Your API key is now fine-tuned for <strong>'+data.settings.persona_label+'</strong>.','success');
-    } else {
-      showFtResult('Error: '+(data.detail||'Failed to save'),'error');
-    }
-  } catch(e){showFtResult('Connection error — retry in a moment.','error');}
+    const d=await r.json();
+    if(r.ok&&d.success)showFT('Saved! API key is now tuned for <strong>'+d.settings.persona_label+'</strong>.','ok');
+    else showFT('Error: '+(d.detail||'Save failed'),'err');
+  }catch{showFT('Connection error — retry.','err');}
 }
-
-async function loadFinetuneSettings(){
-  const apiKey = document.getElementById('ftApiKey').value.trim();
-  if(!apiKey){showFtResult('Enter your API key first.','error');return;}
+async function loadFT(){
+  const key=document.getElementById('ftKey').value.trim();
+  if(!key){showFT('Enter your API key first.','err');return;}
   try{
-    const r=await fetch(BASE+'/finetune/'+encodeURIComponent(apiKey));
-    const data=await r.json();
-    if(r.ok&&data.success){
-      document.getElementById('ftPersona').value=data.persona||'general';
-      document.getElementById('ftStyle').value=data.response_style||'balanced';
-      document.getElementById('ftLang').value=data.language||'en';
-      if(data.custom_instructions) document.getElementById('ftInstructions').value=data.custom_instructions;
-      if(data.persona_name) document.getElementById('ftName').value=data.persona_name;
-      document.querySelectorAll('.persona-card').forEach(c=>{c.classList.toggle('active',c.dataset.id===data.persona);});
-      showFtResult('Settings loaded! Persona: <strong>'+data.persona_label+'</strong>. Has Mistral key: '+(data.has_mistral_key?'Yes':'No')+'.','success');
-    } else {
-      showFtResult('Error: '+(data.detail||'Could not load'),'error');
-    }
-  } catch(e){showFtResult('Connection error.','error');}
+    const r=await fetch(BASE+'/finetune/'+encodeURIComponent(key));
+    const d=await r.json();
+    if(r.ok&&d.success){
+      document.getElementById('ftPersona').value=d.persona||'general';
+      document.getElementById('ftStyle').value=d.response_style||'balanced';
+      document.getElementById('ftLang').value=d.language||'en';
+      if(d.custom_instructions)document.getElementById('ftInstructions').value=d.custom_instructions;
+      if(d.persona_name)document.getElementById('ftName').value=d.persona_name;
+      document.querySelectorAll('.p-card').forEach(c=>c.classList.toggle('sel',c.dataset.id===d.persona));
+      showFT('Loaded! Persona: <strong>'+d.persona_label+'</strong> · Mistral key stored: '+(d.has_mistral_key?'Yes':'No'),'ok');
+    }else showFT('Error: '+(d.detail||'Load failed'),'err');
+  }catch{showFT('Connection error.','err');}
 }
-
-async function testMistralKey(){
-  const apiKey = document.getElementById('ftApiKey').value.trim();
-  const mistralKey = document.getElementById('ftMistralKey').value.trim();
-  if(!apiKey){showFtResult('Enter your API key first.','error');return;}
-  if(!mistralKey){showFtResult('Enter your Mistral AI key first.','error');return;}
-  showFtResult('Testing Mistral key...','info');
+async function testMistral(){
+  const key=document.getElementById('ftKey').value.trim(),mk=document.getElementById('ftMistral').value.trim();
+  if(!key){showFT('Enter your API key first.','err');return;}
+  if(!mk){showFT('Enter your Mistral key first.','err');return;}
+  showFT('Testing Mistral key...','info');
   try{
-    const r=await fetch(BASE+'/test-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey,mistral_api_key:mistralKey})});
-    const data=await r.json();
-    if(r.ok&&data.mistral_key_valid===true){
-      showFtResult('Mistral key is valid! Response: "'+data.mistral_test_response+'"','success');
-    } else if(r.ok&&data.mistral_key_valid===false){
-      showFtResult('Mistral key invalid: '+data.mistral_key_error,'error');
-    } else {
-      showFtResult('API key test result — valid: '+(data.valid?'Yes':'No')+', Plan: '+data.plan,'success');
-    }
-  } catch(e){showFtResult('Connection error.','error');}
+    const r=await fetch(BASE+'/test-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key,mistral_api_key:mk})});
+    const d=await r.json();
+    if(d.mistral_key_valid===true)showFT('✅ Mistral key is valid! Response: "'+d.mistral_test_response+'"','ok');
+    else if(d.mistral_key_valid===false)showFT('❌ Mistral key invalid: '+d.mistral_key_error,'err');
+    else showFT('Key valid. Plan: '+d.plan,'ok');
+  }catch{showFT('Connection error.','err');}
 }
 
-function showFtResult(msg,type){
-  const el=document.getElementById('finetuneResult');
-  el.className='finetune-result show';
-  const colors={success:'var(--green)',error:'#f87171',info:'var(--cyan)'};
-  el.innerHTML=`<div style="color:${colors[type]||'var(--text)'};">${msg}</div>`;
-}
-
-// ── Test Playground ───────────────────────────────────────────────────────────
-const TEST_ENDPOINTS = [
-  {method:'POST',path:'/chat',desc:'Chat with STEW',body:{message:'Hello! What can you do?',api_key:'',web_search:false}},
-  {method:'POST',path:'/task',desc:'Execute any task',body:{task:'List top 5 fintech startups in Nigeria 2026',api_key:''}},
-  {method:'GET',path:'/heartbeat',desc:'API health check',body:null},
-  {method:'GET',path:'/personas',desc:'List all personas',body:null},
-  {method:'POST',path:'/finetune',desc:'Fine-tune API key',body:{api_key:'',persona:'startup',response_style:'concise'}},
-  {method:'POST',path:'/test-key',desc:'Validate your API key',body:{api_key:''}},
-  {method:'POST',path:'/search',desc:'Web search',body:{query:'Nigeria tech news 2026',api_key:''}},
-  {method:'POST',path:'/generate/pdf',desc:'Generate PDF',body:{content:'Report on AI in Africa',title:'AI Africa Report 2026',api_key:''}},
-  {method:'GET',path:'/skills',desc:'List 60+ skills',body:null},
-  {method:'POST',path:'/skills/run',desc:'Run a skill',body:{skill:'web_search',params:{query:'Nigerian AI 2026'},api_key:''}},
+/* ── Playground ── */
+const EPS=[
+  {m:'POST',p:'/chat',d:'Chat with STEW',b:{message:'What are the top 5 Nigerian AI startups in 2026?',api_key:'',web_search:true}},
+  {m:'POST',p:'/task',d:'Execute complex task',b:{task:'Analyze the Nigerian fintech market in 2026',api_key:''}},
+  {m:'GET',p:'/personas',d:'List all personas',b:null},
+  {m:'POST',p:'/finetune',d:'Fine-tune API key',b:{api_key:'',persona:'startup',response_style:'concise'}},
+  {m:'POST',p:'/test-key',d:'Validate API key',b:{api_key:''}},
+  {m:'POST',p:'/search',d:'Web search',b:{query:'Nigeria tech news 2026',api_key:''}},
+  {m:'POST',p:'/generate/pdf',d:'Generate PDF',b:{content:'Report on AI in Africa 2026',title:'AI Africa Report',api_key:''}},
+  {m:'GET',p:'/skills',d:'List 60+ skills',b:null},
+  {m:'POST',p:'/skills/run',d:'Run a skill',b:{skill:'web_search',params:{query:'Nigerian AI 2026'},api_key:''}},
+  {m:'GET',p:'/heartbeat',d:'API health check',b:null},
 ];
-
-let activeEp = 0;
-const sidebar = document.getElementById('testSidebar');
-TEST_ENDPOINTS.forEach((ep,i)=>{
-  const el = document.createElement('div');
-  el.className='test-ep'+(i===0?' active':'');
-  el.innerHTML=`<div><span class="test-ep-method ${ep.method==='GET'?'ep-get':'ep-post'}">${ep.method}</span></div><div class="test-ep-path">${ep.path}</div><div class="test-ep-desc">${ep.desc}</div>`;
-  el.addEventListener('click',()=>{
-    activeEp=i;
-    document.querySelectorAll('.test-ep').forEach((e,j)=>e.classList.toggle('active',j===i));
-    document.getElementById('testPanelTitle').textContent=ep.method+' '+ep.path;
-    document.getElementById('testUrl').textContent=BASE+ep.path;
-    const savedKey = localStorage.getItem('stew_api_key')||'';
-    let body = ep.body ? JSON.parse(JSON.stringify(ep.body)) : null;
-    if(body&&'api_key' in body) body.api_key=savedKey;
-    document.getElementById('testReqBody').value = body ? JSON.stringify(body,null,2) : '// GET request — no body needed';
-    document.getElementById('testReqBody').disabled = ep.method==='GET';
-    document.getElementById('testResponsePre').textContent='// Response will appear here';
-    document.getElementById('testStatusCode').style.display='none';
-  });
-  sidebar.appendChild(el);
+let curEp=0;
+const saved=localStorage.getItem('stew_api_key')||'';
+const epList=document.getElementById('epList');
+EPS.forEach((ep,i)=>{
+  const el=document.createElement('div');el.className='ep'+(i===0?' on':'');
+  el.innerHTML=`<span class="ep-m ${ep.m==='GET'?'m-get':'m-post'}">${ep.m}</span><div class="ep-path">${ep.p}</div><div class="ep-d">${ep.d}</div>`;
+  el.onclick=()=>{curEp=i;document.querySelectorAll('.ep').forEach((x,j)=>x.classList.toggle('on',j===i));
+    document.getElementById('ppTitle').textContent=ep.m+' '+ep.p;
+    document.getElementById('ppUrl').textContent=BASE+ep.p;
+    let b=ep.b?JSON.parse(JSON.stringify(ep.b)):null;
+    if(b&&'api_key' in b)b.api_key=saved;
+    document.getElementById('ppReq').value=b?JSON.stringify(b,null,2):'// GET — no body needed';
+    document.getElementById('ppReq').disabled=ep.m==='GET';
+    document.getElementById('ppRes').textContent='// Response appears here';
+    document.getElementById('ppResCode').innerHTML='';
+  };
+  epList.appendChild(el);
 });
-
-async function runTest(){
-  const ep = TEST_ENDPOINTS[activeEp];
-  const btn = document.getElementById('testRunBtn');
-  btn.disabled=true; btn.textContent='Running...';
-  document.getElementById('testStatusMsg').textContent='Sending request...';
-  document.getElementById('testStatusCode').style.display='none';
+function injectKey(key){
+  EPS.forEach((ep,i)=>{if(ep.b&&'api_key' in ep.b){ep.b.api_key=key;}});
+  try{const b=JSON.parse(document.getElementById('ppReq').value);if('api_key' in b){b.api_key=key;document.getElementById('ppReq').value=JSON.stringify(b,null,2);}}catch{}
+}
+if(saved){document.getElementById('ftKey').value=saved;injectKey(saved);}
+async function runReq(){
+  const ep=EPS[curEp],btn=document.getElementById('runBtn');
+  btn.disabled=true;btn.textContent='Running...';
+  document.getElementById('runStat').textContent='Sending...';
+  document.getElementById('ppResCode').innerHTML='';
   try{
-    const opts = {method:ep.method,headers:{'Content-Type':'application/json'}};
-    if(ep.method!=='GET'){
-      try{opts.body=document.getElementById('testReqBody').value;}catch(e){}
-    }
-    const start=Date.now();
-    const r = await fetch(BASE+ep.path, opts);
-    const elapsed = Date.now()-start;
-    let text='';
-    try{const j=await r.json();text=JSON.stringify(j,null,2);}catch{text=await r.text();}
-    const codeEl = document.getElementById('testStatusCode');
-    codeEl.style.display='inline-flex';
-    codeEl.className='test-response-code '+(r.ok?'res-200':'res-error');
-    codeEl.textContent='● '+r.status+' '+(r.ok?'OK':'Error')+' ('+elapsed+'ms)';
-    document.getElementById('testResponsePre').textContent=text;
-    document.getElementById('testStatusMsg').textContent='Completed in '+elapsed+'ms';
-  } catch(err){
-    document.getElementById('testResponsePre').textContent='Error: '+err.message+'\n\nNote: If STEW is on Render free tier, it may be waking up. Wait 15s and retry.';
-    document.getElementById('testStatusMsg').textContent='Request failed';
+    const opts={method:ep.m,headers:{'Content-Type':'application/json'}};
+    if(ep.m!=='GET')opts.body=document.getElementById('ppReq').value;
+    const t=Date.now(),r=await fetch(BASE+ep.p,opts),ms=Date.now()-t;
+    let txt='';try{const j=await r.json();txt=JSON.stringify(j,null,2);}catch{txt=await r.text();}
+    document.getElementById('ppResCode').innerHTML=`<div class="res-code ${r.ok?'rc-ok':'rc-err'}">● ${r.status} ${r.ok?'OK':'Error'} (${ms}ms)</div>`;
+    document.getElementById('ppRes').textContent=txt;
+    document.getElementById('runStat').textContent='Done in '+ms+'ms';
+  }catch(err){
+    document.getElementById('ppRes').textContent='Error: '+err.message+'\n\nNote: Render free tier spins down — wait 15s if this is the first request.';
+    document.getElementById('runStat').textContent='Failed';
   }
-  btn.disabled=false; btn.textContent='▶ Run Request';
+  btn.disabled=false;btn.textContent='▶ Run';
 }
 
-// Load saved key into test forms
-const savedKey = localStorage.getItem('stew_api_key');
-if(savedKey){
-  document.getElementById('ftApiKey').value = savedKey;
-  // Update default test body
-  try{const b=JSON.parse(document.getElementById('testReqBody').value);if('api_key' in b){b.api_key=savedKey;document.getElementById('testReqBody').value=JSON.stringify(b,null,2);}}catch{}
-}
-
-// ── Smooth chat scroll ───────────────────────────────────────────────────────
-const STEW_URL = BASE;
-let _myKey = localStorage.getItem('stew_api_key') || '';
-const chatMsgs = [];
-
-function addMsg(role, text){
-  chatMsgs.push({role, text});
-}
-
-// Navbar scroll effect
+/* ── Nav scroll ── */
 window.addEventListener('scroll',()=>{
-  const nav = document.querySelector('nav');
-  nav.style.background = window.scrollY>50 ? 'rgba(6,0,15,.95)' : 'rgba(6,0,15,.8)';
+  document.querySelector('nav').style.background=window.scrollY>40?'rgba(5,13,7,.97)':'rgba(5,13,7,.85)';
 });
 </script>
 </body>
