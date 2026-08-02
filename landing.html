@@ -1046,11 +1046,11 @@ const STEW_URL = (function(){
   return origin; // Same server serves the API
 })();
 const PAY_FN = 'https://superagent-55bc0d3a.base44.app/functions/stewPayment';
-const FREE_KEY = 'stew_free_playground_2026';
+const FREE_KEY = '';
 
 let _selectedPlan = 'free';
 let _upgradePlan = '';
-let _myKey = localStorage.getItem('stew_api_key') || FREE_KEY;
+let _myKey = localStorage.getItem('stew_api_key') || '';
 let _chatBusy = false;
 
 // ══════════════════════════════════════════════════════════════
@@ -1403,7 +1403,7 @@ async function sendChat(){
     const resp = await fetch(STEW_URL+'/chat',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message: msg, api_key: FREE_KEY}),
+      body: JSON.stringify({message: msg, api_key: _myKey || undefined}),
       signal: AbortSignal.timeout(45000)
     });
     const data = await resp.json();
@@ -1469,7 +1469,7 @@ function openAuth(tab='register'){
   switchAuthTab(tab);
   // pre-fill saved key
   const saved = localStorage.getItem('stew_api_key');
-  if(saved && saved !== FREE_KEY){
+  if(saved && saved !== ''){
     if(document.getElementById('dash-key')) document.getElementById('dash-key').value = saved;
     if(document.getElementById('up-key')) document.getElementById('up-key').value = saved;
   }
