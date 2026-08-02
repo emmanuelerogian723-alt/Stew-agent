@@ -4,843 +4,707 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>S.T.E.W — Africa's Most Powerful AI Agent API | MUTYINT Nigeria</title>
-
-<!-- ══ GOOGLE SEARCH VERIFICATION ══ -->
-<meta name="google-site-verification" content="BBHLR0945oVzFsu-C0G8NRNHkvYdCEDCxf3Mpho30A">
-<meta name="google-site-verification" content="google4414167ffddc8a5f">
-
-<!-- ══ PRIMARY SEO META TAGS ══ -->
-<meta name="description" content="S.T.E.W (Secret Task Execution Worker) is Africa's most powerful AI agent API. 60+ skills including browser automation, deep research, code generation, vision AI, and 100-agent swarm. Built by MUTYINT Nigeria. Get your free API key today.">
-<meta name="keywords" content="AI API Nigeria, AI agent Africa, STEW AI, MUTYINT, Nigeria AI, African AI, browser automation API, code generation API, web research AI, Yoruba AI translation, AI developer tool, Nigerian AI startup, autonomous AI agent, GPT alternative Africa">
-<meta name="author" content="Emmanuel Ene Rejoice Gideon - MUTYINT Nigeria">
-<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
-<meta name="language" content="English">
-<meta name="revisit-after" content="3 days">
-<meta name="theme-color" content="#7B2FBE">
+<meta name="description" content="S.T.E.W (Smart Task Execution Worker) — Africa's #1 AI Agent API. Browser automation, deep research, code generation, 60+ skills, fine-tuned for any industry. Free to start.">
+<meta name="keywords" content="AI API Nigeria, STEW AI, MUTYINT, AI agent Africa, autonomous AI, browser automation, code generation, Mistral AI Nigeria">
+<meta name="author" content="MUTYINT Nigeria">
+<meta name="theme-color" content="#0a0014">
 <link rel="canonical" href="https://stew-agent.onrender.com/">
-
-<!-- ══ OPEN GRAPH ══ -->
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://stew-agent.onrender.com/">
-<meta property="og:title" content="S.T.E.W — Africa's Most Powerful AI Agent API">
-<meta property="og:description" content="60+ AI skills. Browser automation. Deep research. Code generation. Vision AI. 100-agent swarm. Built in Nigeria for the world.">
-<meta property="og:image" content="https://stew-agent.onrender.com/og-image.png">
-<meta property="og:site_name" content="S.T.E.W API by MUTYINT">
-<meta property="og:locale" content="en_NG">
-
-<!-- ══ TWITTER CARD ══ -->
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:site" content="@MUTYINT_AI">
-<meta name="twitter:title" content="S.T.E.W — Africa's Most Powerful AI Agent API">
-<meta name="twitter:description" content="60+ AI skills. Browser automation. Code generation. Vision AI. 100-agent swarm. Built in Nigeria 🇳🇬 by MUTYINT.">
-<meta name="twitter:image" content="https://stew-agent.onrender.com/og-image.png">
-
-<!-- ══ STRUCTURED DATA ══ -->
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "S.T.E.W API",
-  "alternateName": "Secret Task Execution Worker",
-  "description": "Africa's most powerful AI agent API with 60+ skills including browser automation, deep research, code generation, vision AI, translation, and 100-agent swarm deployment.",
-  "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "Any",
-  "url": "https://stew-agent.onrender.com",
-  "author": {
-    "@type": "Person",
-    "name": "Emmanuel Ene Rejoice Gideon"
-  },
-  "offers": [
-    {"@type":"Offer","name":"Starter Plan","price":"0","priceCurrency":"NGN"},
-    {"@type":"Offer","name":"Pro Plan","price":"9900","priceCurrency":"NGN"},
-    {"@type":"Offer","name":"Business Plan","price":"29000","priceCurrency":"NGN"},
-    {"@type":"Offer","name":"Enterprise Plan","price":"49000","priceCurrency":"NGN"}
-  ],
-  "softwareVersion": "5.0 ULTRA",
-  "countryOfOrigin": "NG"
-}
-</script>
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#05050f;--s:#0a0a18;--card:#10101e;--b:#1e1e30;
-  --p:#7c3aed;--p2:#5b21b6;--c:#06b6d4;--g:#10b981;
-  --r:#ef4444;--y:#f59e0b;--t:#e2e8f0;--m:#64748b;
-  --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+:root {
+  --bg: #06000f;
+  --bg2: #0a0018;
+  --surface: #100020;
+  --card: #14002a;
+  --border: rgba(139,92,246,0.15);
+  --border2: rgba(139,92,246,0.3);
+  --accent: #8b5cf6;
+  --accent2: #a78bfa;
+  --accent3: #7c3aed;
+  --cyan: #22d3ee;
+  --pink: #f472b6;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --text: #f1f0ff;
+  --muted: #9ca3af;
+  --muted2: #6b7280;
+  --mono: 'JetBrains Mono', monospace;
+  --font: 'Inter', system-ui, sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 html{scroll-behavior:smooth;}
-body{background:var(--bg);color:var(--t);font-family:var(--font);min-height:100vh;overflow-x:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;min-height:100vh;}
 
-/* ══ 3D CANVAS BG ══ */
-#bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;}
-.bg-overlay{position:fixed;inset:0;z-index:1;background:radial-gradient(ellipse at 50% 0%,rgba(124,58,237,.18) 0%,transparent 60%),radial-gradient(ellipse at 0% 100%,rgba(6,182,212,.08) 0%,transparent 50%),radial-gradient(ellipse at 100% 50%,rgba(16,185,129,.06) 0%,transparent 50%);pointer-events:none;}
+/* ── Animated background ── */
+.bg-canvas{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
+.bg-canvas canvas{position:absolute;inset:0;width:100%;height:100%;}
+.noise{position:fixed;inset:0;z-index:1;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");pointer-events:none;}
+.orb{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:0;}
+.orb1{width:600px;height:600px;background:radial-gradient(circle,rgba(139,92,246,.18),transparent 70%);top:-200px;left:-200px;animation:drift1 20s ease-in-out infinite;}
+.orb2{width:500px;height:500px;background:radial-gradient(circle,rgba(34,211,238,.1),transparent 70%);bottom:-100px;right:-100px;animation:drift2 25s ease-in-out infinite;}
+.orb3{width:400px;height:400px;background:radial-gradient(circle,rgba(244,114,182,.08),transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation:drift3 18s ease-in-out infinite;}
+@keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(100px,60px) scale(1.1)}66%{transform:translate(-60px,100px) scale(.9)}}
+@keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(-80px,-50px) scale(1.05)}66%{transform:translate(50px,-80px) scale(.95)}}
+@keyframes drift3{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.2)}}
 
-/* ══ NAV ══ */
-nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(5,5,15,.85);backdrop-filter:blur(24px);border-bottom:1px solid rgba(124,58,237,.15);display:flex;align-items:center;justify-content:space-between;padding:0 2rem;transition:all .3s;}
-nav.scrolled{background:rgba(5,5,15,.97);box-shadow:0 4px 30px rgba(0,0,0,.5);}
-.nav-logo{display:flex;align-items:center;gap:10px;font-weight:900;font-size:1rem;cursor:pointer;}
-.logo-box{width:36px;height:36px;background:linear-gradient(135deg,var(--p),var(--c));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;box-shadow:0 0 20px rgba(124,58,237,.5);animation:logoPulse 3s ease-in-out infinite;}
-@keyframes logoPulse{0%,100%{box-shadow:0 0 20px rgba(124,58,237,.5)}50%{box-shadow:0 0 40px rgba(124,58,237,.9),0 0 80px rgba(6,182,212,.3)}}
-.nav-links{display:flex;align-items:center;gap:.25rem;}
-.nav-link{padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;color:var(--m);text-decoration:none;transition:all .15s;cursor:pointer;background:none;border:none;font-family:var(--font);}
-.nav-link:hover{color:var(--t);background:rgba(255,255,255,.06);}
-.nav-cta{padding:8px 18px;background:linear-gradient(135deg,var(--p),var(--p2));border-radius:9px;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:var(--font);transition:all .2s;box-shadow:0 0 20px rgba(124,58,237,.35);}
-.nav-cta:hover{transform:translateY(-1px);box-shadow:0 0 30px rgba(124,58,237,.7);}
-.sdot{width:7px;height:7px;border-radius:50%;background:var(--g);box-shadow:0 0 10px var(--g);animation:sdpulse 2s infinite;display:inline-block;margin-right:6px;}
-@keyframes sdpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
-.burger{display:none;background:none;border:none;color:var(--t);font-size:1.4rem;cursor:pointer;padding:8px;}
+/* ── Grid overlay ── */
+.grid-overlay{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(139,92,246,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(139,92,246,.04) 1px,transparent 1px);background-size:60px 60px;}
+
+/* ── NAV ── */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:0 2rem;height:64px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(139,92,246,.1);background:rgba(6,0,15,.8);backdrop-filter:blur(24px);}
+.nav-logo{display:flex;align-items:center;gap:12px;text-decoration:none;}
+.nav-logo-mark{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--cyan));border-radius:10px;display:grid;place-items:center;font-weight:900;font-size:13px;color:#fff;letter-spacing:.5px;box-shadow:0 0 20px rgba(139,92,246,.4);}
+.nav-logo-text{font-weight:800;font-size:1rem;letter-spacing:-.3px;}
+.nav-logo-text span{color:var(--accent2);}
+.nav-links{display:flex;align-items:center;gap:2rem;}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:color .2s;}
+.nav-links a:hover{color:var(--text);}
+.nav-right{display:flex;align-items:center;gap:1rem;}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 20px;border-radius:8px;font-weight:600;font-size:.875rem;text-decoration:none;cursor:pointer;transition:all .2s;border:none;font-family:var(--font);}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text);}
+.btn-ghost:hover{background:rgba(139,92,246,.1);}
+.btn-primary{background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;box-shadow:0 0 20px rgba(139,92,246,.3);}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 30px rgba(139,92,246,.5);}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── HERO ── */
+.hero{position:relative;z-index:10;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 1.5rem 60px;}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-radius:100px;background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);font-size:.75rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent2);margin-bottom:2rem;animation:fadeUp .6s ease both;}
+.hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2s infinite;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.hero h1{font-size:clamp(2.8rem,7vw,6rem);font-weight:900;line-height:1.05;letter-spacing:-2px;margin-bottom:1.5rem;animation:fadeUp .8s .1s ease both;}
+.hero h1 .line1{display:block;background:linear-gradient(135deg,#fff 0%,var(--accent2) 60%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.hero h1 .line2{display:block;background:linear-gradient(135deg,var(--cyan) 0%,var(--pink) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.hero-sub{max-width:600px;margin:0 auto 3rem;color:var(--muted);font-size:1.15rem;line-height:1.7;animation:fadeUp .8s .2s ease both;}
+.hero-sub strong{color:var(--text);}
+.hero-ctas{display:flex;align-items:center;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp .8s .3s ease both;}
+.btn-xl{padding:14px 32px;font-size:1rem;border-radius:12px;}
+.btn-accent{background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;box-shadow:0 0 30px rgba(139,92,246,.4);}
+.btn-accent:hover{transform:translateY(-2px);box-shadow:0 8px 40px rgba(139,92,246,.6);}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text);}
+.btn-outline:hover{background:rgba(139,92,246,.08);}
+.hero-stats{display:flex;align-items:center;justify-content:center;gap:3rem;margin-top:3.5rem;animation:fadeUp .8s .4s ease both;}
+.stat-item{text-align:center;}
+.stat-num{font-size:2.2rem;font-weight:900;background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-family:var(--mono);}
+.stat-label{font-size:.75rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+.stat-divider{width:1px;height:40px;background:var(--border);}
+/* Floating code card */
+.hero-card{position:relative;margin:3rem auto 0;max-width:580px;width:100%;animation:fadeUp .8s .5s ease both;}
+.code-window{background:rgba(16,0,32,.8);border:1px solid var(--border2);border-radius:16px;overflow:hidden;backdrop-filter:blur(20px);box-shadow:0 0 60px rgba(139,92,246,.2),0 40px 80px rgba(0,0,0,.5);}
+.code-bar{background:rgba(255,255,255,.04);padding:12px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);}
+.code-dot{width:12px;height:12px;border-radius:50%;}
+.code-dot.r{background:#ff5f57;}.code-dot.y{background:#febc2e;}.code-dot.g{background:#28c840;}
+.code-bar-title{flex:1;text-align:center;font-size:.75rem;color:var(--muted2);font-family:var(--mono);}
+.code-body{padding:1.5rem;font-family:var(--mono);font-size:.85rem;line-height:1.8;text-align:left;}
+.code-line{display:flex;gap:.5rem;}
+.c-gray{color:var(--muted2);}.c-purple{color:var(--accent2);}.c-cyan{color:var(--cyan);}.c-green{color:var(--green);}.c-yellow{color:var(--yellow);}.c-pink{color:var(--pink);}
+.code-response{margin-top:.5rem;padding:.75rem 1rem;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:8px;color:var(--green);font-size:.8rem;}
+.code-cursor{display:inline-block;width:2px;height:1em;background:var(--accent2);animation:blink 1s infinite;vertical-align:middle;}
+
+/* ── SECTION BASE ── */
+section{position:relative;z-index:10;padding:100px 1.5rem;}
+.section-inner{max-width:1200px;margin:0 auto;}
+.section-label{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent2);margin-bottom:1rem;}
+.section-label::before{content:'';width:24px;height:1px;background:var(--accent2);}
+h2.section-title{font-size:clamp(2rem,4vw,3.2rem);font-weight:900;line-height:1.1;letter-spacing:-1px;margin-bottom:1rem;}
+h2.section-title span{background:linear-gradient(135deg,var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.section-desc{color:var(--muted);font-size:1.05rem;line-height:1.7;max-width:560px;}
+
+/* ── FEATURES GRID ── */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.5rem;margin-top:4rem;}
+.feature-card{background:rgba(20,0,42,.6);border:1px solid var(--border);border-radius:16px;padding:2rem;position:relative;overflow:hidden;transition:all .3s;cursor:default;}
+.feature-card:hover{border-color:var(--border2);transform:translateY(-4px);box-shadow:0 20px 60px rgba(139,92,246,.15);}
+.feature-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(139,92,246,.05),transparent);opacity:0;transition:opacity .3s;}
+.feature-card:hover::before{opacity:1;}
+.feature-icon{width:48px;height:48px;border-radius:12px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.25);display:grid;place-items:center;font-size:1.4rem;margin-bottom:1.25rem;}
+.feature-card h3{font-size:1.1rem;font-weight:700;margin-bottom:.5rem;}
+.feature-card p{color:var(--muted);font-size:.9rem;line-height:1.6;}
+.feature-tag{display:inline-flex;align-items:center;gap:4px;margin-top:1rem;padding:3px 10px;border-radius:100px;font-size:.7rem;font-weight:700;letter-spacing:.5px;}
+.tag-new{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2);}
+.tag-power{background:rgba(139,92,246,.12);color:var(--accent2);border:1px solid rgba(139,92,246,.2);}
+.tag-fast{background:rgba(34,211,238,.1);color:var(--cyan);border:1px solid rgba(34,211,238,.2);}
+
+/* ── PERSONA / FINE-TUNE SECTION ── */
+.persona-section{background:linear-gradient(180deg,transparent,rgba(139,92,246,.04),transparent);}
+.persona-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;margin-top:3rem;}
+.persona-card{background:rgba(20,0,42,.5);border:1px solid var(--border);border-radius:14px;padding:1.5rem;transition:all .25s;cursor:pointer;}
+.persona-card:hover,.persona-card.active{border-color:var(--accent);background:rgba(139,92,246,.1);box-shadow:0 0 30px rgba(139,92,246,.15);}
+.persona-card .pi{font-size:2rem;margin-bottom:.75rem;}
+.persona-card h4{font-size:.95rem;font-weight:700;margin-bottom:.3rem;}
+.persona-card p{font-size:.8rem;color:var(--muted);line-height:1.5;}
+
+/* Fine-tune panel */
+.finetune-panel{background:rgba(16,0,32,.8);border:1px solid var(--border2);border-radius:20px;padding:2.5rem;margin-top:3rem;backdrop-filter:blur(20px);}
+.finetune-panel h3{font-size:1.4rem;font-weight:800;margin-bottom:.5rem;}
+.finetune-panel p{color:var(--muted);font-size:.9rem;margin-bottom:2rem;}
+.finetune-form{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;}
+@media(max-width:640px){.finetune-form{grid-template-columns:1fr;}}
+.form-group{display:flex;flex-direction:column;gap:.5rem;}
+.form-group label{font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.form-input{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:.9rem;font-family:var(--font);transition:border-color .2s;outline:none;}
+.form-input:focus{border-color:var(--accent);}
+.form-input::placeholder{color:var(--muted2);}
+textarea.form-input{resize:vertical;min-height:100px;}
+.form-select{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:.9rem;font-family:var(--font);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b5cf6' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:16px;outline:none;}
+.form-select:focus{border-color:var(--accent);}
+.form-select option{background:#14002a;}
+.full-width{grid-column:1/-1;}
+.finetune-result{margin-top:1.5rem;padding:1.25rem;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:10px;display:none;}
+.finetune-result.show{display:block;}
+.ft-success{color:var(--green);font-weight:700;font-size:.95rem;margin-bottom:.5rem;}
+.ft-detail{color:var(--muted);font-size:.85rem;}
+
+/* ── PRICING ── */
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.5rem;margin-top:3rem;}
+.price-card{background:rgba(16,0,32,.7);border:1px solid var(--border);border-radius:20px;padding:2rem;position:relative;transition:all .3s;}
+.price-card.popular{border-color:var(--accent);box-shadow:0 0 40px rgba(139,92,246,.2);}
+.popular-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent3),var(--accent));padding:4px 16px;border-radius:100px;font-size:.72rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;}
+.price-plan{font-size:.8rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:.75rem;}
+.price-amount{font-size:2.8rem;font-weight:900;font-family:var(--mono);line-height:1;margin-bottom:.25rem;}
+.price-amount span{font-size:1rem;font-weight:400;color:var(--muted);}
+.price-period{font-size:.8rem;color:var(--muted);margin-bottom:1.5rem;}
+.price-features{list-style:none;display:flex;flex-direction:column;gap:.6rem;margin-bottom:2rem;}
+.price-features li{display:flex;align-items:center;gap:.5rem;font-size:.875rem;color:var(--muted);}
+.price-features li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0;}
+.price-features li.na{color:var(--muted2);}
+.price-features li.na::before{content:'—';color:var(--muted2);}
+
+/* ── AUTH SECTION ── */
+.auth-section{background:linear-gradient(180deg,transparent,rgba(139,92,246,.03),transparent);}
+.auth-container{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:start;}
+@media(max-width:768px){.auth-container{grid-template-columns:1fr;}}
+.auth-panel{background:rgba(16,0,32,.85);border:1px solid var(--border2);border-radius:20px;padding:2.5rem;backdrop-filter:blur(20px);}
+.auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:2rem;}
+.auth-tab{flex:1;padding:10px;text-align:center;font-size:.875rem;font-weight:600;color:var(--muted);cursor:pointer;transition:color .2s;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.auth-tab.active{color:var(--accent2);border-bottom-color:var(--accent2);}
+.auth-form{display:flex;flex-direction:column;gap:1rem;}
+.auth-form .form-group{display:flex;flex-direction:column;gap:.4rem;}
+.auth-form label{font-size:.8rem;font-weight:600;color:var(--muted);}
+.auth-submit{width:100%;padding:12px;border-radius:10px;background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;font-weight:700;font-size:.95rem;border:none;cursor:pointer;transition:all .2s;font-family:var(--font);}
+.auth-submit:hover{transform:translateY(-1px);box-shadow:0 6px 25px rgba(139,92,246,.4);}
+.auth-result{margin-top:1rem;padding:1rem;border-radius:10px;font-size:.875rem;display:none;}
+.auth-result.success{background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25);color:var(--green);display:block;}
+.auth-result.error{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#f87171;display:block;}
+.api-key-display{margin-top:1rem;padding:1rem;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;}
+.api-key-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.4rem;}
+.api-key-value{font-family:var(--mono);font-size:.85rem;color:var(--accent2);word-break:break-all;}
+.copy-btn{margin-top:.5rem;padding:5px 12px;border-radius:6px;background:rgba(139,92,246,.15);border:1px solid var(--border);color:var(--accent2);font-size:.75rem;cursor:pointer;transition:all .2s;}
+.copy-btn:hover{background:rgba(139,92,246,.3);}
+/* Auth info side */
+.auth-info h3{font-size:1.6rem;font-weight:800;margin-bottom:1rem;line-height:1.2;}
+.auth-info p{color:var(--muted);font-size:.95rem;line-height:1.7;margin-bottom:2rem;}
+.auth-features-list{display:flex;flex-direction:column;gap:.75rem;}
+.auth-feature{display:flex;align-items:flex-start;gap:.75rem;}
+.auth-feature-icon{width:36px;height:36px;border-radius:8px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.2);display:grid;place-items:center;font-size:1rem;flex-shrink:0;}
+.auth-feature-text h4{font-size:.9rem;font-weight:700;margin-bottom:.15rem;}
+.auth-feature-text p{font-size:.8rem;color:var(--muted);}
+
+/* ── TEST PLAYGROUND INLINE ── */
+.test-section{}
+.test-container{display:grid;grid-template-columns:280px 1fr;gap:2rem;margin-top:3rem;}
+@media(max-width:860px){.test-container{grid-template-columns:1fr;}}
+.test-sidebar{display:flex;flex-direction:column;gap:.5rem;}
+.test-ep{padding:10px 14px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:all .2s;}
+.test-ep:hover{background:rgba(139,92,246,.08);}
+.test-ep.active{background:rgba(139,92,246,.12);border-color:var(--border2);}
+.test-ep-method{font-size:.68rem;font-weight:700;letter-spacing:.5px;padding:2px 6px;border-radius:4px;margin-bottom:.3rem;display:inline-block;}
+.ep-post{background:rgba(139,92,246,.2);color:var(--accent2);}
+.ep-get{background:rgba(52,211,153,.15);color:var(--green);}
+.test-ep-path{font-family:var(--mono);font-size:.8rem;color:var(--text);}
+.test-ep-desc{font-size:.75rem;color:var(--muted);margin-top:.15rem;}
+.test-panel{background:rgba(16,0,32,.8);border:1px solid var(--border2);border-radius:16px;overflow:hidden;backdrop-filter:blur(20px);}
+.test-panel-header{padding:1rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem;}
+.test-panel-title{font-family:var(--mono);font-size:.9rem;color:var(--accent2);}
+.test-url{font-size:.8rem;color:var(--muted2);padding:.4rem .8rem;background:rgba(255,255,255,.04);border-radius:6px;font-family:var(--mono);}
+.test-body{padding:1.5rem;}
+.test-request{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media(max-width:640px){.test-request{grid-template-columns:1fr;}}
+.test-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:.4rem;}
+.test-textarea{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;color:var(--text);font-family:var(--mono);font-size:.8rem;resize:vertical;min-height:200px;outline:none;transition:border-color .2s;}
+.test-textarea:focus{border-color:var(--accent);}
+.test-actions{margin-top:1rem;display:flex;align-items:center;gap:1rem;}
+.test-run-btn{padding:10px 24px;border-radius:8px;background:linear-gradient(135deg,var(--accent3),var(--accent));color:#fff;font-weight:700;font-size:.875rem;border:none;cursor:pointer;transition:all .2s;font-family:var(--font);}
+.test-run-btn:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(139,92,246,.4);}
+.test-run-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.test-status{font-size:.8rem;color:var(--muted);}
+.test-response{padding:1.5rem;border-top:1px solid var(--border);}
+.test-response-code{display:inline-flex;align-items:center;gap:.4rem;padding:3px 10px;border-radius:6px;font-size:.75rem;font-weight:700;font-family:var(--mono);margin-bottom:.75rem;}
+.res-200{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.2);}
+.res-error{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2);}
+.res-loading{background:rgba(251,191,36,.1);color:var(--yellow);border:1px solid rgba(251,191,36,.2);}
+.test-response pre{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:8px;padding:1rem;font-family:var(--mono);font-size:.8rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;line-height:1.6;}
+
+/* ── PROVIDERS STRIP ── */
+.providers-strip{padding:60px 1.5rem;text-align:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+.providers-label{font-size:.75rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:2rem;}
+.providers-list{display:flex;align-items:center;justify-content:center;gap:3rem;flex-wrap:wrap;}
+.provider-chip{display:flex;align-items:center;gap.5rem;gap:8px;padding:8px 20px;border-radius:100px;background:rgba(255,255,255,.04);border:1px solid var(--border);font-size:.85rem;font-weight:600;color:var(--muted);transition:all .2s;}
+.provider-chip:hover{border-color:var(--border2);color:var(--text);}
+.p-dot{width:8px;height:8px;border-radius:50%;}
+
+/* ── FOOTER ── */
+footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:60px 1.5rem 40px;}
+.footer-inner{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:3rem;}
+@media(max-width:768px){.footer-inner{grid-template-columns:1fr 1fr;gap:2rem;}}
+.footer-brand p{color:var(--muted);font-size:.875rem;line-height:1.7;margin-top:.75rem;}
+.footer-col h4{font-size:.8rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:1rem;}
+.footer-col a{display:block;color:var(--muted);font-size:.875rem;text-decoration:none;margin-bottom:.5rem;transition:color .2s;}
+.footer-col a:hover{color:var(--text);}
+.footer-bottom{max-width:1200px;margin:2rem auto 0;padding-top:1.5rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.footer-bottom p{color:var(--muted2);font-size:.8rem;}
+.live-badge{display:flex;align-items:center;gap:.4rem;font-size:.75rem;color:var(--green);font-weight:600;}
+
+/* ── SCROLL ANIMATIONS ── */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease;}
+.reveal.visible{opacity:1;transform:none;}
+
+/* ── MOBILE ── */
 @media(max-width:768px){
-  .nav-links{display:none;position:fixed;top:64px;left:0;right:0;background:rgba(5,5,15,.98);flex-direction:column;padding:1rem;gap:.5rem;z-index:199;border-bottom:1px solid var(--b);}
-  .nav-links.open{display:flex;}
-  .burger{display:block;}
+  .nav-links{display:none;}
+  .hero h1{letter-spacing:-1px;}
+  .hero-stats{gap:1.5rem;}
+  .code-window{margin:0 -1rem;}
+  .test-request{grid-template-columns:1fr;}
 }
 
-/* ══ HERO ══ */
-.hero{position:relative;z-index:5;text-align:center;padding:140px 2rem 80px;}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 20px;border-radius:24px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);font-size:11px;color:#a78bfa;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:2rem;animation:fadeUp .8s ease both;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-.hero h1{font-size:clamp(2.8rem,7vw,4.8rem);font-weight:900;line-height:1.0;margin-bottom:1.5rem;background:linear-gradient(135deg,#ffffff 0%,#c4b5fd 30%,#22d3ee 65%,#6ee7b7 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:fadeUp .8s .2s ease both;}
-.hero-sub{color:#94a3b8;font-size:1.15rem;max-width:640px;margin:0 auto 2.5rem;line-height:1.75;animation:fadeUp .8s .4s ease both;}
-.hero-btns{display:flex;align-items:center;justify-content:center;gap:1rem;flex-wrap:wrap;margin-bottom:3.5rem;animation:fadeUp .8s .5s ease both;}
-.btn-primary{padding:15px 36px;background:linear-gradient(135deg,var(--p),var(--p2));border:none;border-radius:12px;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer;font-family:var(--font);transition:all .2s;box-shadow:0 4px 30px rgba(124,58,237,.5);}
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 40px rgba(124,58,237,.7);}
-.btn-secondary{padding:15px 36px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;color:var(--t);font-weight:600;font-size:.95rem;cursor:pointer;font-family:var(--font);transition:all .2s;}
-.btn-secondary:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);}
-.hero-stats{display:flex;justify-content:center;gap:4rem;flex-wrap:wrap;animation:fadeUp .8s .6s ease both;}
-.stat{text-align:center;}
-.sn{font-size:2.5rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--p),var(--c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.sl{font-size:10px;color:var(--m);text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;}
-
-/* ══ LIVE DEMO BADGE ══ */
-.live-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:20px;font-size:11px;color:#6ee7b7;font-weight:700;margin-bottom:1.5rem;animation:fadeUp .8s .7s ease both;}
-
-/* ══ SECTIONS ══ */
-section{position:relative;z-index:5;padding:5rem 2rem;}
-.section-hd{text-align:center;margin-bottom:3.5rem;}
-.section-hd h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:900;margin-bottom:.75rem;background:linear-gradient(135deg,#fff 0%,#a78bfa 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.section-hd p{color:var(--m);font-size:1.05rem;max-width:540px;margin:0 auto;}
-.container{max-width:1200px;margin:0 auto;}
-
-/* ══ CHAT BOX ══ */
-.chat-section{position:relative;z-index:5;max-width:920px;margin:0 auto;padding:0 1.5rem 5rem;}
-.chat-card{background:var(--card);border:1px solid var(--b);border-radius:24px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5);position:relative;}
-.chat-card::before{content:'';position:absolute;inset:0;border-radius:24px;background:linear-gradient(135deg,rgba(124,58,237,.05),rgba(6,182,212,.03));pointer-events:none;}
-.chat-hd{padding:20px 24px;border-bottom:1px solid var(--b);background:rgba(255,255,255,.02);display:flex;align-items:center;justify-content:space-between;}
-.chat-title{display:flex;align-items:center;gap:12px;font-weight:700;}
-.chat-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--p),var(--c));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 15px rgba(124,58,237,.4);}
-.chat-msgs{padding:20px;min-height:300px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;}
-.chat-msgs::-webkit-scrollbar{width:4px;}
-.chat-msgs::-webkit-scrollbar-thumb{background:var(--b);border-radius:4px;}
-.msg{display:flex;gap:10px;animation:msgIn .35s ease;}
-@keyframes msgIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-.msg-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;}
-.msg-stew .msg-avatar{background:linear-gradient(135deg,var(--p),var(--c));box-shadow:0 0 10px rgba(124,58,237,.4);}
-.msg-user .msg-avatar{background:rgba(100,116,139,.2);color:var(--m);}
-.msg-user{flex-direction:row-reverse;}
-.msg-bubble{max-width:75%;padding:12px 16px;border-radius:16px;font-size:13.5px;line-height:1.65;}
-.msg-stew .msg-bubble{background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.2);color:var(--t);border-radius:4px 16px 16px 16px;}
-.msg-user .msg-bubble{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;border-radius:16px 4px 16px 16px;}
-.msg-time{font-size:10px;color:var(--m);margin-top:4px;text-align:right;}
-.typing-row{display:flex;gap:10px;align-items:center;}
-.typing-bubble{padding:12px 16px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.2);border-radius:4px 16px 16px 16px;display:none;}
-.typing-bubble.on{display:flex;gap:5px;align-items:center;}
-.td{width:7px;height:7px;border-radius:50%;background:var(--p);animation:bounce 1.4s infinite ease-in-out;}
-.td:nth-child(2){animation-delay:.2s;}.td:nth-child(3){animation-delay:.4s;}
-@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-6px);opacity:1}}
-.chat-footer{padding:16px 20px;border-top:1px solid var(--b);background:rgba(255,255,255,.01);}
-.chat-pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
-.pill{padding:5px 13px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.2);border-radius:20px;font-size:11px;color:#a78bfa;cursor:pointer;transition:all .15s;font-family:var(--font);}
-.pill:hover{background:rgba(124,58,237,.2);border-color:rgba(124,58,237,.4);}
-.chat-input-row{display:flex;gap:10px;align-items:flex-end;}
-.chat-input{flex:1;background:var(--s);border:1px solid var(--b);border-radius:14px;padding:13px 16px;color:var(--t);font-family:var(--font);font-size:13px;resize:none;min-height:48px;max-height:120px;outline:none;transition:border-color .2s;line-height:1.5;}
-.chat-input:focus{border-color:rgba(124,58,237,.5);box-shadow:0 0 0 3px rgba(124,58,237,.08);}
-.chat-input::placeholder{color:var(--m);}
-.chat-send{width:48px;height:48px;background:linear-gradient(135deg,var(--p),var(--p2));border:none;border-radius:14px;color:#fff;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;box-shadow:0 4px 16px rgba(124,58,237,.4);}
-.chat-send:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(124,58,237,.6);}
-.chat-send:disabled{opacity:.4;pointer-events:none;}
-
-/* ══ SKILLS GRID ══ */
-.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem;}
-.skill-card{background:var(--card);border:1px solid var(--b);border-radius:16px;padding:1.5rem;transition:all .25s;cursor:default;position:relative;overflow:hidden;}
-.skill-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(6,182,212,.04));}
-.skill-card:hover{transform:translateY(-4px);border-color:rgba(124,58,237,.35);box-shadow:0 16px 40px rgba(0,0,0,.3);}
-.skill-card:hover::before{opacity:1;}
-.skill-icon{font-size:2rem;margin-bottom:.75rem;}
-.skill-name{font-weight:700;font-size:.95rem;margin-bottom:.4rem;}
-.skill-desc{color:var(--m);font-size:.82rem;line-height:1.6;}
-.skill-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;margin-top:.6rem;background:rgba(124,58,237,.12);color:#a78bfa;border:1px solid rgba(124,58,237,.2);}
-.skill-tag.new{background:rgba(16,185,129,.12);color:#34d399;border-color:rgba(16,185,129,.2);}
-.skill-tag.hot{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.2);}
-
-/* ══ CONNECTORS ══ */
-.connectors-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;}
-.connector-card{background:var(--card);border:1px solid var(--b);border-radius:14px;padding:1.2rem;text-align:center;transition:all .2s;cursor:pointer;}
-.connector-card:hover{transform:translateY(-3px);border-color:rgba(124,58,237,.3);box-shadow:0 8px 24px rgba(0,0,0,.25);}
-.connector-icon{font-size:2rem;margin-bottom:.6rem;}
-.connector-name{font-weight:700;font-size:.85rem;margin-bottom:.25rem;}
-.connector-cat{font-size:10px;color:var(--m);text-transform:uppercase;letter-spacing:1px;}
-.conn-auth-tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;margin-top:.4rem;}
-.conn-auth-tag.oauth{background:rgba(59,130,246,.12);color:#60a5fa;border:1px solid rgba(59,130,246,.2);}
-.conn-auth-tag.apikey{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.2);}
-.conn-auth-tag.mcp{background:rgba(16,185,129,.12);color:#34d399;border:1px solid rgba(16,185,129,.2);}
-
-/* ══ PRICING ══ */
-.pricing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:1.5rem;max-width:1100px;margin:0 auto;}
-.price-card{background:var(--card);border:1px solid var(--b);border-radius:20px;padding:2rem;transition:all .3s;position:relative;overflow:hidden;}
-.price-card.popular{border-color:rgba(124,58,237,.6);box-shadow:0 0 40px rgba(124,58,237,.15);}
-.price-card.popular::before{content:'Most Popular';position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-size:10px;font-weight:800;padding:4px 16px;border-radius:0 0 12px 12px;letter-spacing:1px;}
-.price-card:hover{transform:translateY(-6px);border-color:rgba(124,58,237,.4);box-shadow:0 24px 60px rgba(0,0,0,.3);}
-.plan-name{font-size:.85rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--m);font-weight:700;margin-bottom:.5rem;}
-.plan-price{font-size:2.5rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--p),var(--c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.plan-period{font-size:.85rem;color:var(--m);margin-left:4px;}
-.plan-usd{font-size:.75rem;color:var(--m);margin-bottom:1.25rem;}
-.plan-features{list-style:none;margin-bottom:1.5rem;}
-.plan-features li{font-size:.87rem;color:#94a3b8;padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;gap:.5rem;align-items:flex-start;}
-.plan-features li::before{content:'✓';color:var(--g);font-weight:700;flex-shrink:0;margin-top:1px;}
-.plan-btn{width:100%;padding:12px;border-radius:12px;font-weight:700;font-size:.88rem;cursor:pointer;font-family:var(--font);transition:all .2s;border:none;}
-.plan-btn.free-btn{background:rgba(255,255,255,.07);color:var(--t);border:1px solid var(--b);}
-.plan-btn.free-btn:hover{background:rgba(255,255,255,.12);}
-.plan-btn.pay-btn{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;box-shadow:0 4px 20px rgba(124,58,237,.4);}
-.plan-btn.pay-btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(124,58,237,.6);}
-
-/* ══ AUTH MODAL ══ */
-.auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(12px);z-index:1000;display:none;align-items:center;justify-content:center;padding:1rem;}
-.auth-overlay.show{display:flex;}
-.auth-modal{background:var(--card);border:1px solid rgba(124,58,237,.3);border-radius:24px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 40px 100px rgba(0,0,0,.7),0 0 60px rgba(124,58,237,.15);}
-.auth-modal::-webkit-scrollbar{width:4px;}
-.auth-modal::-webkit-scrollbar-thumb{background:var(--b);}
-.auth-hd{padding:1.5rem 1.5rem 1rem;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between;}
-.auth-hd h3{font-size:1.15rem;font-weight:800;}
-.auth-close{background:none;border:none;color:var(--m);font-size:1.5rem;cursor:pointer;line-height:1;padding:4px;transition:color .2s;}
-.auth-close:hover{color:var(--t);}
-.auth-tabs{display:flex;border-bottom:1px solid var(--b);}
-.auth-tab{flex:1;padding:1rem;text-align:center;font-size:.85rem;font-weight:600;color:var(--m);cursor:pointer;background:none;border:none;font-family:var(--font);transition:all .2s;border-bottom:2px solid transparent;margin-bottom:-1px;}
-.auth-tab.active{color:#a78bfa;border-bottom-color:var(--p);}
-.auth-body{padding:1.5rem;}
-.auth-panel{display:none;}
-.auth-panel.active{display:block;}
-.auth-field{margin-bottom:1rem;}
-.auth-field label{display:block;font-size:.8rem;font-weight:600;color:var(--m);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.8px;}
-.auth-field input,.auth-field select{width:100%;background:var(--s);border:1px solid var(--b);border-radius:10px;padding:11px 14px;color:var(--t);font-family:var(--font);font-size:.9rem;outline:none;transition:border-color .2s;}
-.auth-field input:focus,.auth-field select:focus{border-color:rgba(124,58,237,.5);box-shadow:0 0 0 3px rgba(124,58,237,.08);}
-.auth-field select option{background:var(--card);}
-.auth-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--p),var(--p2));border:none;border-radius:12px;color:#fff;font-weight:700;font-size:.95rem;cursor:pointer;font-family:var(--font);transition:all .2s;box-shadow:0 4px 20px rgba(124,58,237,.35);margin-top:.5rem;}
-.auth-btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(124,58,237,.55);}
-.auth-btn:disabled{opacity:.5;pointer-events:none;}
-.auth-btn.secondary-btn{background:rgba(255,255,255,.06);box-shadow:none;border:1px solid var(--b);}
-.auth-btn.secondary-btn:hover{background:rgba(255,255,255,.1);}
-.auth-result{border-radius:10px;padding:12px 14px;font-size:.87rem;line-height:1.6;margin-top:1rem;display:none;}
-.auth-result.success{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);color:#6ee7b7;}
-.auth-result.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#fca5a5;}
-.auth-result.info{background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.25);color:#67e8f9;}
-.api-key-display{background:var(--s);border:1px solid rgba(124,58,237,.3);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:.8rem;color:#a78bfa;word-break:break-all;margin:.75rem 0;cursor:text;user-select:all;}
-.copy-key-btn{padding:7px 14px;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.3);border-radius:8px;color:#a78bfa;font-size:.8rem;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .15s;margin-right:.4rem;margin-top:.25rem;}
-.copy-key-btn:hover{background:rgba(124,58,237,.3);}
-.plan-option{padding:1rem;border:1px solid var(--b);border-radius:10px;cursor:pointer;transition:all .2s;margin-bottom:.75rem;background:rgba(255,255,255,.02);}
-.plan-option:hover{border-color:rgba(124,58,237,.4);}
-.plan-option.selected{border-color:var(--p);background:rgba(124,58,237,.1);}
-.plan-option-name{font-weight:700;font-size:.9rem;margin-bottom:.2rem;}
-.plan-option-price{font-family:var(--mono);color:#a78bfa;font-size:.95rem;font-weight:700;}
-.plan-option-desc{font-size:.78rem;color:var(--m);margin-top:.25rem;}
-.dash-stat{display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid rgba(255,255,255,.05);}
-.dash-stat:last-child{border:none;}
-.dash-stat-label{font-size:.82rem;color:var(--m);}
-.dash-stat-value{font-size:.88rem;font-weight:700;color:var(--t);}
-.usage-bar{height:6px;background:var(--s);border-radius:4px;overflow:hidden;margin:.5rem 0;}
-.usage-fill{height:100%;background:linear-gradient(90deg,var(--p),var(--c));border-radius:4px;transition:width .5s ease;}
-
-/* ══ MONITORING PANEL ══ */
-.monitor-section{position:relative;z-index:5;background:var(--s);border-top:1px solid var(--b);border-bottom:1px solid var(--b);}
-.monitor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;}
-.monitor-card{background:var(--card);border:1px solid var(--b);border-radius:14px;padding:1.25rem;text-align:center;}
-.monitor-num{font-size:2rem;font-weight:900;font-family:var(--mono);background:linear-gradient(135deg,var(--p),var(--c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.monitor-label{font-size:.78rem;color:var(--m);text-transform:uppercase;letter-spacing:1px;margin-top:.3rem;}
-.monitor-trend{font-size:.75rem;margin-top:.25rem;}
-.trend-up{color:var(--g);}
-.trend-down{color:var(--r);}
-
-/* ══ API DOCS / CODE ══ */
-.code-block{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:1.25rem;font-family:var(--mono);font-size:.82rem;line-height:1.8;overflow-x:auto;margin:1rem 0;position:relative;}
-.code-block pre{white-space:pre-wrap;word-break:break-word;}
-.code-copy{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.06);border:1px solid var(--b);border-radius:7px;padding:4px 10px;font-size:.75rem;color:var(--m);cursor:pointer;font-family:var(--font);transition:all .15s;}
-.code-copy:hover{color:var(--t);background:rgba(255,255,255,.1);}
-.kw{color:#a78bfa;}
-.str{color:#34d399;}
-.cm{color:var(--m);}
-.num{color:#fbbf24;}
-.fn{color:#60a5fa;}
-
-/* ══ STEW WORKING OVERLAY ══ */
-.stew-overlay{position:fixed;inset:0;background:rgba(0,0,0,.9);backdrop-filter:blur(20px);z-index:2000;display:none;flex-direction:column;align-items:center;justify-content:center;}
-.stew-overlay.show{display:flex;}
-.stew-working-box{background:var(--card);border:1px solid rgba(124,58,237,.4);border-radius:24px;padding:2.5rem;max-width:540px;width:90%;text-align:center;box-shadow:0 0 60px rgba(124,58,237,.25);}
-.stew-glow-ring{width:100px;height:100px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--c));display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 1.5rem;box-shadow:0 0 40px rgba(124,58,237,.6),0 0 80px rgba(124,58,237,.3);animation:glowRing 2s ease-in-out infinite;}
-@keyframes glowRing{0%,100%{box-shadow:0 0 40px rgba(124,58,237,.6),0 0 80px rgba(124,58,237,.3)}50%{box-shadow:0 0 60px rgba(124,58,237,1),0 0 120px rgba(6,182,212,.4)}}
-.stew-status{font-size:1.1rem;font-weight:700;color:#a78bfa;margin-bottom:.5rem;}
-.stew-step{font-size:.88rem;color:var(--m);margin-bottom:1.5rem;min-height:2rem;}
-.stew-progress{height:4px;background:var(--s);border-radius:4px;overflow:hidden;margin-bottom:1.5rem;}
-.stew-progress-bar{height:100%;background:linear-gradient(90deg,var(--p),var(--c));border-radius:4px;width:0%;transition:width .5s ease;}
-.stew-log{background:var(--s);border:1px solid var(--b);border-radius:10px;padding:1rem;font-family:var(--mono);font-size:.78rem;text-align:left;max-height:140px;overflow-y:auto;color:#6ee7b7;margin-bottom:1.5rem;}
-.stew-log::-webkit-scrollbar{width:3px;}
-.stew-log::-webkit-scrollbar-thumb{background:var(--b);}
-
-/* ══ TOAST ══ */
-.toast{position:fixed;bottom:2rem;right:2rem;background:var(--card);border:1px solid var(--b);border-radius:12px;padding:12px 18px;font-size:.87rem;font-weight:600;z-index:9999;transform:translateY(100px);opacity:0;transition:all .3s;max-width:340px;box-shadow:0 8px 30px rgba(0,0,0,.4);}
-.toast.show{transform:translateY(0);opacity:1;}
-.toast.ok{border-color:rgba(16,185,129,.4);color:#6ee7b7;}
-.toast.err{border-color:rgba(239,68,68,.4);color:#fca5a5;}
-
-/* ══ FOOTER ══ */
-footer{position:relative;z-index:5;border-top:1px solid var(--b);padding:3rem 2rem;background:var(--s);}
-.footer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2rem;max-width:1200px;margin:0 auto 2rem;}
-.footer-brand p{color:var(--m);font-size:.85rem;line-height:1.7;margin-top:.75rem;}
-.footer-col h4{font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--m);margin-bottom:1rem;}
-.footer-col a,.footer-col span{display:block;font-size:.85rem;color:#64748b;text-decoration:none;margin-bottom:.5rem;cursor:pointer;transition:color .15s;}
-.footer-col a:hover,.footer-col span:hover{color:var(--t);}
-.footer-bottom{text-align:center;font-size:.8rem;color:var(--m);padding-top:1.5rem;border-top:1px solid var(--b);}
-.footer-bottom span{color:#a78bfa;}
-
-/* ══ RESPONSIVE ══ */
-@media(max-width:640px){
-  .hero-stats{gap:2rem;}
-  .sn{font-size:1.8rem;}
-  .pricing-grid{grid-template-columns:1fr;}
-}
-
-.plan-badge{display:inline-block;padding:2px 7px;border-radius:5px;font-size:9px;font-weight:800;margin-top:.4rem;margin-left:.3rem;letter-spacing:.5px;text-transform:uppercase;}
-.plan-badge.free{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);}
-.plan-badge.pro{background:rgba(124,58,237,.15);color:#a78bfa;border:1px solid rgba(124,58,237,.3);}
-.plan-badge.biz{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.25);}
-
-/* ══ IMPROVED 3D CARD TILT & GLOW ══ */
-.skill-card,.monitor-card,.pricing-card,.connector-card{
-  transform-style:preserve-3d;
-  transition:transform .3s cubic-bezier(.23,1,.32,1),box-shadow .3s,border-color .3s;
-}
-.skill-card:hover,.monitor-card:hover{
-  transform:translateY(-6px) rotateX(3deg) rotateY(-2deg) scale(1.01);
-  box-shadow:0 24px 60px rgba(124,58,237,.22),0 0 0 1px rgba(124,58,237,.2);
-}
-.pricing-card:hover{
-  transform:translateY(-8px) rotateX(4deg) scale(1.02);
-  box-shadow:0 32px 80px rgba(124,58,237,.3);
-}
-/* Shimmer sweep on card hover */
-.skill-card::after,.pricing-card::after{
-  content:'';position:absolute;inset:0;border-radius:inherit;
-  background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.04) 50%,transparent 60%);
-  background-size:200% 100%;
-  background-position:200% 0;
-  transition:background-position .5s ease;
-  pointer-events:none;
-}
-.skill-card:hover::after,.pricing-card:hover::after{
-  background-position:-200% 0;
-}
-
-/* ══ IMPROVED HERO 3D ORB RING ══ */
-.hero-orb-ring{
-  position:absolute;
-  top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  width:600px;height:600px;
-  border-radius:50%;
-  background:conic-gradient(from 0deg,rgba(124,58,237,0),rgba(124,58,237,.15),rgba(6,182,212,.1),rgba(16,185,129,.08),rgba(124,58,237,0));
-  animation:orbRing 8s linear infinite;
-  pointer-events:none;
-  filter:blur(1px);
-}
-.hero-orb-ring2{
-  position:absolute;
-  top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  width:400px;height:400px;
-  border-radius:50%;
-  border:1px solid rgba(124,58,237,.12);
-  animation:orbRing 12s linear infinite reverse;
-  pointer-events:none;
-}
-.hero-orb-ring2::before{
-  content:'';position:absolute;
-  top:-3px;left:50%;transform:translateX(-50%);
-  width:6px;height:6px;border-radius:50%;
-  background:#7c3aed;box-shadow:0 0 16px #7c3aed,0 0 32px #7c3aed;
-}
-@keyframes orbRing{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}
-
-/* ══ STEW LOGO 3D ══ */
-.stew-glow-ring{
-  position:relative;
-  z-index:2;
-}
-.stew-glow-ring::before{
-  content:'';
-  position:absolute;
-  inset:-20px;
-  border-radius:50%;
-  background:conic-gradient(from 0deg,#7c3aed,#06b6d4,#10b981,#7c3aed);
-  animation:glowSpin 3s linear infinite;
-  filter:blur(8px);
-  opacity:0.5;
-  z-index:-1;
-}
-@keyframes glowSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-
-/* ══ FLOATING BADGE IMPROVED ══ */
-.eyebrow{
-  backdrop-filter:blur(12px);
-  box-shadow:0 0 30px rgba(124,58,237,.15),inset 0 1px 0 rgba(255,255,255,.05);
-}
-
-/* ══ BUTTON 3D PRESS ══ */
-.btn-primary:active{transform:translateY(1px) scale(0.98);}
-.btn-secondary:active{transform:translateY(1px) scale(0.98);}
-
-/* ══ MONITOR CARDS IMPROVED ══ */
-.monitor-num{
-  background:linear-gradient(135deg,#ffffff,#c4b5fd,#22d3ee);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  filter:drop-shadow(0 0 20px rgba(124,58,237,.4));
-}
-
-/* ══ HERO H1 ANIMATED GRADIENT ══ */
-.hero h1{
-  background-size:200% auto !important;
-  animation:fadeUp .8s .2s ease both,gradShift 4s ease infinite !important;
-}
-@keyframes gradShift{
-  0%,100%{background-position:0% center}
-  50%{background-position:100% center}
-}
-
-/* ══ SECTION DIVIDER GLOW ══ */
-section{position:relative;}
-section::before{
-  content:'';position:absolute;top:0;left:10%;right:10%;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(124,58,237,.2),rgba(6,182,212,.15),transparent);
-}
-
-/* ══ SKILL TAG GLOW ══ */
-.skill-tag.hot{
-  animation:tagPulse 2s ease infinite;
-}
-@keyframes tagPulse{
-  0%,100%{box-shadow:0 0 8px rgba(239,68,68,.3)}
-  50%{box-shadow:0 0 16px rgba(239,68,68,.6)}
-}
-
-/* ══ PLAN BADGE IMPROVED ══ */
-.plan-badge{
-  backdrop-filter:blur(8px);
-}
-
-/* ══ CANVAS BG OVERLAY IMPROVED ══ */
-.bg-overlay{
-  background:
-    radial-gradient(ellipse 80% 60% at 50% -10%,rgba(124,58,237,.12) 0%,transparent 60%),
-    radial-gradient(ellipse 50% 40% at 0% 100%,rgba(6,182,212,.07) 0%,transparent 50%),
-    radial-gradient(ellipse 40% 30% at 100% 50%,rgba(16,185,129,.05) 0%,transparent 50%) !important;
-}
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(139,92,246,.4);border-radius:3px;}
 </style>
 </head>
 <body>
 
-<!-- 3D PARTICLE CANVAS -->
-<canvas id="bg-canvas"></canvas>
-<div class="bg-overlay"></div>
+<!-- BACKGROUND -->
+<div class="bg-canvas"><canvas id="starfield"></canvas></div>
+<div class="noise"></div>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+<div class="grid-overlay"></div>
 
-<!-- NAV -->
-<nav id="main-nav">
-  <div class="nav-logo" onclick="window.scrollTo({top:0,behavior:'smooth'})">
-    <div class="logo-box">S</div>
-    <span>S.T.E.W <span style="color:var(--m);font-weight:400;font-size:.8rem;">by MUTYINT</span></span>
-  </div>
-  <button class="burger" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">☰</button>
+<!-- NAVIGATION -->
+<nav>
+  <a href="/" class="nav-logo">
+    <div class="nav-logo-mark">STEW</div>
+    <div class="nav-logo-text">S.T.E.W <span>Agent</span></div>
+  </a>
   <div class="nav-links">
-    <button class="nav-link" onclick="scrollTo('skills-section')">Skills</button>
-    <button class="nav-link" onclick="scrollTo('connectors-section')">Connectors</button>
-    <button class="nav-link" onclick="scrollTo('pricing-section')">Pricing</button>
-    <button class="nav-link" onclick="scrollTo('docs-section')">Docs</button>
-    <button class="nav-link" onclick="openAuth('dashboard')">Dashboard</button>
-    <button class="nav-cta" onclick="openAuth('register')">🚀 Free API Key</button>
+    <a href="#features">Features</a>
+    <a href="#finetune">Fine-Tune</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#test">Playground</a>
+    <a href="/docs">API Docs</a>
+  </div>
+  <div class="nav-right">
+    <span class="status-dot"></span>
+    <a href="#auth" class="btn btn-ghost">Sign In</a>
+    <a href="#auth" class="btn btn-primary">Get Free API Key →</a>
   </div>
 </nav>
 
 <!-- HERO -->
-<div class="hero">
-  <div class="eyebrow"><span class="sdot"></span> Africa's Most Powerful AI Agent · v5.0 ULTRA</div>
-  <div class="live-badge">🟢 Live & Running · Beat <span id="hero-beat">—</span></div>
-  <h1>The AI Agent That<br>Does Everything</h1>
+<section class="hero">
+  <div class="hero-badge">
+    <span class="dot"></span>
+    Africa's #1 Autonomous AI Agent API — Now with Mistral AI
+  </div>
+  <h1>
+    <span class="line1">The AI that actually</span>
+    <span class="line2">does the work.</span>
+  </h1>
   <p class="hero-sub">
-    S.T.E.W (Secret Task Execution Worker) is a fully autonomous AI agent API — browse the web, write code, research deeply, process documents, connect any API, and run across all your apps.
-    <strong style="color:#a78bfa;"> The most capable AI agent built from Africa. 🇳🇬 Built in Nigeria.</strong>
+    S.T.E.W is a <strong>fully autonomous AI agent API</strong> that browses the web, writes code, generates documents, runs 60+ skills, and fine-tunes to <strong>any industry or persona</strong>. Built in Nigeria. Serving Africa and beyond.
   </p>
-  <div class="hero-btns">
-    <button class="btn-primary" onclick="openAuth('register')">🚀 Get Free API Key</button>
-    <button class="btn-secondary" onclick="scrollTo('chat-demo')">⚡ Live Demo</button>
-    <button class="btn-secondary" onclick="scrollTo('docs-section')">📖 API Docs</button>
+  <div class="hero-ctas">
+    <a href="#auth" class="btn btn-xl btn-accent">Start Free — No Credit Card →</a>
+    <a href="/docs" class="btn btn-xl btn-outline">View API Docs</a>
   </div>
   <div class="hero-stats">
-    <div class="stat"><div class="sn">60+</div><div class="sl">AI Skills</div></div>
-    <div class="stat"><div class="sn">100</div><div class="sl">Agents Swarm</div></div>
-    <div class="stat"><div class="sn">24/7</div><div class="sl">Always Alive</div></div>
-    <div class="stat"><div class="sn">₦0</div><div class="sl">Free Tier</div></div>
-    <div class="stat"><div class="sn" id="stat-devs">0</div><div class="sl">Developers</div></div>
+    <div class="stat-item"><div class="stat-num">60+</div><div class="stat-label">Skills</div></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><div class="stat-num">6</div><div class="stat-label">AI Providers</div></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><div class="stat-num">12</div><div class="stat-label">Personas</div></div>
+    <div class="stat-divider"></div>
+    <div class="stat-item"><div class="stat-num">100%</div><div class="stat-label">African Built</div></div>
   </div>
-</div>
-
-<!-- LIVE CHAT DEMO -->
-<div class="chat-section" id="chat-demo">
-  <div class="section-hd">
-    <h2>Try S.T.E.W Live</h2>
-    <p>Ask STEW anything — it connects to the internet in real-time, no hallucinations</p>
-  </div>
-  <div class="chat-card">
-    <div class="chat-hd">
-      <div class="chat-title">
-        <div class="chat-icon">🤖</div>
-        <div>
-          <div style="font-size:.95rem;">S.T.E.W Agent <span style="font-size:.75rem;color:var(--m);">v5.0 ULTRA</span></div>
-          <div style="font-size:.75rem;color:var(--g);"><span class="sdot" style="width:5px;height:5px;margin-right:3px;"></span>Online · Real-time</div>
-        </div>
+  <!-- Floating code window -->
+  <div class="hero-card">
+    <div class="code-window">
+      <div class="code-bar">
+        <div class="code-dot r"></div><div class="code-dot y"></div><div class="code-dot g"></div>
+        <div class="code-bar-title">S.T.E.W API — Quick Start</div>
       </div>
-      <div style="font-size:.78rem;color:var(--m);">Free demo · No key needed</div>
-    </div>
-    <div class="chat-msgs" id="chat-msgs">
-      <div class="msg msg-stew">
-        <div class="msg-avatar">S</div>
-        <div>
-          <div class="msg-bubble">👋 Hello! I'm <strong>S.T.E.W</strong> — Secret Task Execution Worker.<br><br>I search the <strong>live internet</strong>, write &amp; run code, do deep research, generate PDFs/Word docs, translate to African languages, and deploy 100 AI agents simultaneously.<br><br>💡 <em>Click "Test file upload" below to test document &amp; image reading!</em></div>
-          <div class="msg-time">S.T.E.W · now</div>
-        </div>
-      </div>
-    </div>
-    <div class="chat-footer">
-      <div class="chat-pills">
-        <span class="pill" onclick="sendDemo('What is the latest AI news today?')">📰 AI news now</span>
-        <span class="pill" onclick="sendDemo('What is the current Bitcoin price?')">₿ Bitcoin price</span>
-        <span class="pill" onclick="sendDemo('Write a Python FastAPI hello world server')">💻 Python code</span>
-        <span class="pill" onclick="sendDemo('What is the weather in Lagos right now?')">🌤️ Lagos weather</span>
-        <span class="pill" onclick="sendDemo('Convert 10000 NGN to USD today')">💱 NGN → USD</span>
-        <span class="pill" onclick="sendDemo('Who is the current president of Nigeria?')">🇳🇬 Nigeria news</span>
-        <span class="pill" onclick="switchDemoTab('upload')">📄 Test file upload</span>
-      </div>
-      <div class="chat-input-row">
-        <textarea class="chat-input" id="chat-input" placeholder="Ask STEW anything — it searches the real internet..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
-        <button class="chat-send" id="chat-send" onclick="sendChat()">➤</button>
-      </div>
-    </div>
-
-    <!-- UPLOAD TEST TAB -->
-    <div id="upload-demo-panel" style="display:none;padding:1.25rem;border-top:1px solid var(--b);">
-      <div style="font-size:.85rem;color:var(--m);margin-bottom:1rem;">Test STEW's document & image reading capabilities — drag & drop or click to upload</div>
-      <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
-        <div id="upload-area-doc" onclick="document.getElementById('file-doc').click()" style="flex:1;min-width:180px;border:2px dashed rgba(124,58,237,.4);border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;background:rgba(124,58,237,.04);" onmouseover="this.style.borderColor='rgba(124,58,237,.8)'" onmouseout="this.style.borderColor='rgba(124,58,237,.4)'">
-          <div style="font-size:2rem;margin-bottom:.5rem;">📄</div>
-          <div style="font-size:.85rem;font-weight:700;color:var(--t);">Upload Document</div>
-          <div style="font-size:.75rem;color:var(--m);margin-top:.3rem;">PDF, Word, TXT, CSV, JSON</div>
-          <input type="file" id="file-doc" style="display:none" accept=".pdf,.docx,.doc,.txt,.csv,.json,.md" onchange="uploadDemo('doc')">
-        </div>
-        <div id="upload-area-img" onclick="document.getElementById('file-img').click()" style="flex:1;min-width:180px;border:2px dashed rgba(6,182,212,.4);border-radius:12px;padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;background:rgba(6,182,212,.04);" onmouseover="this.style.borderColor='rgba(6,182,212,.8)'" onmouseout="this.style.borderColor='rgba(6,182,212,.4)'">
-          <div style="font-size:2rem;margin-bottom:.5rem;">🖼️</div>
-          <div style="font-size:.85rem;font-weight:700;color:var(--t);">Upload Image</div>
-          <div style="font-size:.75rem;color:var(--m);margin-top:.3rem;">JPG, PNG, WebP, GIF</div>
-          <input type="file" id="file-img" style="display:none" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp" onchange="uploadDemo('img')">
-        </div>
-      </div>
-      <textarea id="upload-question" placeholder="Ask a question about the file (optional) — e.g. 'Summarize this' or 'What is the main topic?'" style="width:100%;padding:.75rem;background:var(--s);border:1px solid var(--b);border-radius:10px;color:var(--t);font-size:.85rem;font-family:var(--font);resize:none;outline:none;" rows="2"></textarea>
-      <div id="upload-result" style="margin-top:1rem;"></div>
-    </div>
-  </div>
-</div>
-
-<!-- LIVE MONITORING -->
-<section class="monitor-section" id="monitor-section">
-  <div class="container">
-    <div class="section-hd">
-      <h2>Live System Monitor</h2>
-      <p>Real-time API performance & usage metrics</p>
-    </div>
-    <div class="monitor-grid" id="monitor-grid">
-      <div class="monitor-card">
-        <div class="monitor-num" id="m-uptime">99.9%</div>
-        <div class="monitor-label">Uptime</div>
-        <div class="monitor-trend trend-up">↑ All systems nominal</div>
-      </div>
-      <div class="monitor-card">
-        <div class="monitor-num" id="m-devs">—</div>
-        <div class="monitor-label">Registered Developers</div>
-        <div class="monitor-trend trend-up">↑ Growing daily</div>
-      </div>
-      <div class="monitor-card">
-        <div class="monitor-num" id="m-version">5.0</div>
-        <div class="monitor-label">API Version</div>
-        <div class="monitor-trend" style="color:var(--y);">ULTRA Edition</div>
-      </div>
-      <div class="monitor-card">
-        <div class="monitor-num" id="m-skills">60+</div>
-        <div class="monitor-label">Active Skills</div>
-        <div class="monitor-trend trend-up">↑ Self-evolving</div>
-      </div>
-      <div class="monitor-card">
-        <div class="monitor-num" id="m-models">5</div>
-        <div class="monitor-label">AI Models</div>
-        <div class="monitor-trend" style="color:var(--c);">Multi-model routing</div>
-      </div>
-      <div class="monitor-card">
-        <div class="monitor-num" id="m-beat">—</div>
-        <div class="monitor-label">Heartbeats</div>
-        <div class="monitor-trend trend-up">↑ Always alive</div>
+      <div class="code-body">
+        <div class="code-line"><span class="c-gray">// 1. Get your free API key at stew-agent.onrender.com</span></div>
+        <div class="code-line">&nbsp;</div>
+        <div class="code-line"><span class="c-purple">const</span> <span class="c-cyan">response</span> <span class="c-gray">=</span> <span class="c-purple">await</span> <span class="c-green">fetch</span><span class="c-gray">(</span><span class="c-yellow">'https://stew-agent.onrender.com/chat'</span><span class="c-gray">,</span> <span class="c-gray">{</span></div>
+        <div class="code-line">&nbsp;&nbsp;<span class="c-cyan">method</span><span class="c-gray">:</span> <span class="c-yellow">'POST'</span><span class="c-gray">,</span></div>
+        <div class="code-line">&nbsp;&nbsp;<span class="c-cyan">headers</span><span class="c-gray">: {</span><span class="c-yellow">'Content-Type'</span><span class="c-gray">:</span> <span class="c-yellow">'application/json'</span><span class="c-gray">},</span></div>
+        <div class="code-line">&nbsp;&nbsp;<span class="c-cyan">body</span><span class="c-gray">:</span> <span class="c-green">JSON.stringify</span><span class="c-gray">({</span></div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-cyan">message</span><span class="c-gray">:</span> <span class="c-yellow">'Research the top 5 Nigerian fintechs'</span><span class="c-gray">,</span></div>
+        <div class="code-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-cyan">api_key</span><span class="c-gray">:</span> <span class="c-yellow">'stew_your_key_here'</span></div>
+        <div class="code-line">&nbsp;&nbsp;<span class="c-gray">})</span></div>
+        <div class="code-line"><span class="c-gray">});</span></div>
+        <div class="code-response">✓ {"response": "Here are the top 5 Nigerian fintechs...", "web_grounded": true, "success": true}</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- SKILLS -->
-<section id="skills-section">
-  <div class="container">
-    <div class="section-hd">
-      <h2>60+ Built-In Skills</h2>
-      <p>Every skill is production-ready and runs on demand via API</p>
+<!-- PROVIDERS STRIP -->
+<div class="providers-strip">
+  <div class="providers-label">Powered by 6 world-class AI providers</div>
+  <div class="providers-list">
+    <div class="provider-chip"><span class="p-dot" style="background:#f97316"></span> Groq</div>
+    <div class="provider-chip"><span class="p-dot" style="background:#0ea5e9"></span> Mistral AI</div>
+    <div class="provider-chip"><span class="p-dot" style="background:#76a9fa"></span> OpenRouter</div>
+    <div class="provider-chip"><span class="p-dot" style="background:#22c55e"></span> NVIDIA NIM</div>
+    <div class="provider-chip"><span class="p-dot" style="background:#a78bfa"></span> HuggingFace</div>
+    <div class="provider-chip"><span class="p-dot" style="background:#e5e7eb"></span> OpenAI</div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-label">What S.T.E.W Can Do</div>
+      <h2 class="section-title">60+ skills. One <span>powerful API.</span></h2>
+      <p class="section-desc">From web browsing to document generation — S.T.E.W handles the full stack of AI-powered automation.</p>
     </div>
-    <div class="skills-grid">
-      <div class="skill-card"><div class="skill-icon">🌐</div><div class="skill-name">Live Web Browse</div><div class="skill-desc">Navigate any website with real Chromium/Playwright — click, fill, scroll, screenshot. Human-like interaction.</div><span class="skill-tag hot">🔥 Popular</span><span class="plan-badge pro">⭐ Pro</span></div>
-      <div class="skill-card"><div class="skill-icon">🔍</div><div class="skill-name">Deep Web Research</div><div class="skill-desc">Multi-source research with cross-validation. Real-time Serper API search. No hallucinations — always current.</div><span class="skill-tag hot">🔥 Hot</span><span class="plan-badge free">✅ Free</span></div>
-      <div class="skill-card"><div class="skill-icon">💻</div><div class="skill-name">Code Generation</div><div class="skill-desc">Write, execute, and debug code in 60+ languages. Python, JS, TypeScript, Go, Rust, Swift, and more.</div><span class="skill-tag">Dev</span></div>
-      <div class="skill-card"><div class="skill-icon">👁️</div><div class="skill-name">Vision & OCR</div><div class="skill-desc">Analyze any image, extract text with OCR, understand charts, read screenshots, and more.</div><span class="skill-tag new">✨ New</span><span class="plan-badge free">✅ Free</span><span class="plan-badge pro">⭐ Pro</span></div>
-      <div class="skill-card"><div class="skill-icon">📄</div><div class="skill-name">Document Builder</div><div class="skill-desc">Generate Word docs, Excel spreadsheets, PDFs, and HTML reports from data or prompts.</div><span class="skill-tag">Build</span></div>
-      <div class="skill-card"><div class="skill-icon">🌍</div><div class="skill-name">African Languages</div><div class="skill-desc">Native translation for Yoruba, Igbo, Hausa, Pidgin, Swahili, Amharic, and 100+ languages.</div><span class="skill-tag new">✨ Africa</span><span class="plan-badge pro">⭐ Pro</span><span class="plan-badge free">✅ Free</span></div>
-      <div class="skill-card"><div class="skill-icon">💱</div><div class="skill-name">Currency & Finance</div><div class="skill-desc">Real-time Naira ↔ USD ↔ 160+ currencies. Stock prices, crypto, and market data.</div><span class="skill-tag">Finance</span></div>
-      <div class="skill-card"><div class="skill-icon">📧</div><div class="skill-name">Email & Messaging</div><div class="skill-desc">Send emails programmatically, integrate with Gmail, Outlook, Slack, and WhatsApp.</div><span class="skill-tag">Comm</span><span class="plan-badge free">✅ Free</span><span class="plan-badge pro">⭐ Pro</span></div>
-      <div class="skill-card"><div class="skill-icon">🤖</div><div class="skill-name">100-Agent Swarm</div><div class="skill-desc">Deploy up to 100 autonomous sub-agents simultaneously for parallel task execution.</div><span class="skill-tag hot">🔥 Powerful</span></div>
-      <div class="skill-card"><div class="skill-icon">🔗</div><div class="skill-name">API Connector</div><div class="skill-desc">Connect to any REST API — OAuth, API keys, webhooks. STEW works across all your apps.</div><span class="skill-tag new">✨ New</span><span class="plan-badge biz">💎 Business</span><span class="plan-badge free">✅ Free</span></div>
-      <div class="skill-card"><div class="skill-icon">🗄️</div><div class="skill-name">Data Extraction</div><div class="skill-desc">Bulk web scraping, structured data extraction, CSV/JSON/Excel export from any website.</div><span class="skill-tag">Data</span><span class="plan-badge pro">⭐ Pro</span></div>
-      <div class="skill-card"><div class="skill-icon">🛡️</div><div class="skill-name">Self-Evolving Skills</div><div class="skill-desc">STEW can write, execute, and adapt its own Python skills at runtime using the /task endpoint with natural language.</div><span class="skill-tag hot">🔥 Unique</span><span class="plan-badge biz">💎 Business</span></div>
+    <div class="features-grid reveal">
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>Live Web Research</h3>
+        <p>Browse any URL, extract key information, and ground answers in real-time web data using Serper API integration.</p>
+        <span class="feature-tag tag-fast">⚡ Real-time</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💻</div>
+        <h3>Code Generation</h3>
+        <p>Write production-quality code in any language with error handling, security best practices, and full documentation.</p>
+        <span class="feature-tag tag-power">🔥 Full-stack</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <h3>Document Generation</h3>
+        <p>Create real binary PDF, DOCX, XLSX, PPTX, and HTML reports. Download-ready files, not just text output.</p>
+        <span class="feature-tag tag-power">🔥 Binary files</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <h3>Multi-Provider AI</h3>
+        <p>Automatic fallback across Groq, Mistral AI, NVIDIA NIM, OpenRouter, HuggingFace, and OpenAI. Always online.</p>
+        <span class="feature-tag tag-new">✨ New: Mistral</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎭</div>
+        <h3>Fine-Tune Personas</h3>
+        <p>Configure your API key for 12 specialized domains — medical, legal, finance, startup, and more. Custom instructions supported.</p>
+        <span class="feature-tag tag-new">✨ New Feature</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>100-Agent Swarm</h3>
+        <p>Spawn up to 100 specialized AI agents working in parallel on complex multi-step tasks. Orchestrated automatically.</p>
+        <span class="feature-tag tag-power">🔥 Enterprise</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔐</div>
+        <h3>JWT + API Key Auth</h3>
+        <p>Full authentication with JWT tokens, bcrypt passwords, rate limiting per plan, and password reset via email.</p>
+        <span class="feature-tag tag-fast">⚡ Secure</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💳</div>
+        <h3>Paystack Payments</h3>
+        <p>Upgrade plans with Paystack — built for Nigeria and Africa. Naira-native billing, no dollar card required.</p>
+        <span class="feature-tag tag-new">✨ 🇳🇬 Native</span>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <h3>Telegram Bot</h3>
+        <p>Deploy S.T.E.W directly to Telegram. Let users chat with your AI agent without building a frontend.</p>
+        <span class="feature-tag tag-fast">⚡ Instant</span>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- CONNECTORS -->
-<section id="connectors-section" style="background:var(--s);border-top:1px solid var(--b);border-bottom:1px solid var(--b);">
-  <div class="container">
-    <div class="section-hd">
-      <h2>Connect to Any App</h2>
-      <p>STEW works across all your tools — OAuth, API keys, or MCP protocol</p>
+<!-- FINE-TUNE SECTION -->
+<section id="finetune" class="persona-section">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-label">Fine-Tune Your API Key</div>
+      <h2 class="section-title">Make S.T.E.W work <span>exactly how you need.</span></h2>
+      <p class="section-desc">Choose a domain persona, add custom instructions, set your response style, and even plug in your own Mistral AI key. Your API key, your rules.</p>
     </div>
-    <div class="connectors-grid">
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📧</div><div class="connector-name">Gmail</div><div class="connector-cat">Email</div><span class="conn-auth-tag oauth">OAuth</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📅</div><div class="connector-name">Google Calendar</div><div class="connector-cat">Productivity</div><span class="conn-auth-tag oauth">OAuth</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">💬</div><div class="connector-name">Slack</div><div class="connector-cat">Messaging</div><span class="conn-auth-tag oauth">OAuth</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🐙</div><div class="connector-name">GitHub</div><div class="connector-cat">Dev Tools</div><span class="conn-auth-tag oauth">OAuth</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📊</div><div class="connector-name">Google Sheets</div><div class="connector-cat">Data</div><span class="conn-auth-tag oauth">OAuth</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📝</div><div class="connector-name">Notion</div><div class="connector-cat">Productivity</div><span class="conn-auth-tag apikey">API Key</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🛒</div><div class="connector-name">Shopify</div><div class="connector-cat">eCommerce</div><span class="conn-auth-tag apikey">API Key</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">💳</div><div class="connector-name">Paystack</div><div class="connector-cat">Payments</div><span class="conn-auth-tag apikey">API Key</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">📢</div><div class="connector-name">Twitter/X</div><div class="connector-cat">Social</div><span class="conn-auth-tag oauth">OAuth</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🔗</div><div class="connector-name">Zapier MCP</div><div class="connector-cat">Automation</div><span class="conn-auth-tag mcp">MCP</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">🌐</div><div class="connector-name">Any REST API</div><div class="connector-cat">Universal</div><span class="conn-auth-tag apikey">Custom</span></div>
-      <div class="connector-card" onclick="openAuth('register')"><div class="connector-icon">➕</div><div class="connector-name">Add Your App</div><div class="connector-cat">Connect Anything</div><span class="conn-auth-tag mcp">Coming Soon</span></div>
+    <div class="persona-grid reveal" id="personaGrid">
+      <!-- Populated by JS -->
     </div>
-    <div style="text-align:center;margin-top:2rem;">
-      <button class="btn-primary" onclick="openAuth('register')">🔗 Connect Your Apps</button>
-      <p style="color:var(--m);font-size:.82rem;margin-top:.75rem;">Authorize via OAuth, paste your API key, or use MCP server URL</p>
+    <div class="finetune-panel reveal">
+      <h3>⚙️ Configure Your API Key</h3>
+      <p>Enter your S.T.E.W API key and customize how it behaves. These settings travel with your key — every request you make will automatically use them.</p>
+      <div class="finetune-form">
+        <div class="form-group">
+          <label>Your API Key</label>
+          <input type="text" class="form-input" id="ftApiKey" placeholder="stew_xxxxxxxxxxxxxx" />
+        </div>
+        <div class="form-group">
+          <label>Persona / Domain</label>
+          <select class="form-select" id="ftPersona">
+            <option value="general">🤖 General Assistant</option>
+            <option value="doctor">🩺 Medical Doctor</option>
+            <option value="health">💚 Health & Wellness</option>
+            <option value="startup">🚀 Startup Co-founder</option>
+            <option value="legal">⚖️ Legal Assistant</option>
+            <option value="finance">📈 Finance Advisor</option>
+            <option value="education">🎓 AI Tutor</option>
+            <option value="ecommerce">🛒 E-Commerce Expert</option>
+            <option value="developer">💻 Software Engineer</option>
+            <option value="marketing">📣 Growth Marketer</option>
+            <option value="hr">👥 HR & People Ops</option>
+            <option value="customer_support">💬 Customer Support</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Response Style</label>
+          <select class="form-select" id="ftStyle">
+            <option value="balanced">Balanced (default)</option>
+            <option value="concise">Concise — short & direct</option>
+            <option value="detailed">Detailed — comprehensive</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Your Mistral AI Key (optional)</label>
+          <input type="password" class="form-input" id="ftMistralKey" placeholder="sk-..." />
+        </div>
+        <div class="form-group full-width">
+          <label>Custom Instructions (optional)</label>
+          <textarea class="form-input" id="ftInstructions" placeholder="Example: Always respond in Nigerian Pidgin English. Focus on Nigerian market data. Use Naira for currency. Be concise."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Persona Name (optional)</label>
+          <input type="text" class="form-input" id="ftName" placeholder="e.g. Lagos HealthBot, StartupMentor AI" />
+        </div>
+        <div class="form-group">
+          <label>Preferred Language</label>
+          <select class="form-select" id="ftLang">
+            <option value="en">English</option>
+            <option value="yo">Yoruba</option>
+            <option value="ig">Igbo</option>
+            <option value="ha">Hausa</option>
+            <option value="pcm">Nigerian Pidgin</option>
+            <option value="fr">French</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;">
+        <button class="test-run-btn" onclick="saveFinetuneSettings()">💾 Save Fine-Tune Settings</button>
+        <button class="btn btn-ghost" onclick="loadFinetuneSettings()">📥 Load Current Settings</button>
+        <button class="btn btn-ghost" onclick="testMistralKey()">🔑 Test Mistral Key</button>
+      </div>
+      <div class="finetune-result" id="finetuneResult"></div>
     </div>
   </div>
 </section>
 
 <!-- PRICING -->
-<section id="pricing-section">
-  <div class="container">
-    <div class="section-hd">
-      <h2>Simple Naira Pricing</h2>
-      <p>No USD barriers. Pay with Paystack in Naira. Cancel anytime.</p>
+<section id="pricing">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Start free. <span>Scale as you grow.</span></h2>
+      <p class="section-desc">No credit card needed. Nigerian Naira billing. Paystack-powered.</p>
     </div>
-    <div class="pricing-grid">
-      <!-- FREE -->
+    <div class="pricing-grid reveal">
       <div class="price-card">
-        <div class="plan-name">Starter</div>
-        <div><span class="plan-price">₦0</span><span class="plan-period">/month</span></div>
-        <div class="plan-usd">Always free · No card needed</div>
-        <ul class="plan-features">
+        <div class="price-plan">Free</div>
+        <div class="price-amount">₦0<span>/mo</span></div>
+        <div class="price-period">Forever free tier</div>
+        <ul class="price-features">
           <li>3,000 API calls/month</li>
-          <li>10 core skills</li>
-          <li>Web search & research</li>
-          <li>Code generation</li>
-          <li>Community support</li>
-        </ul>
-        <button class="plan-btn free-btn" onclick="openAuth('register')">🚀 Get Free Key</button>
-      </div>
-      <!-- PRO -->
-      <div class="price-card popular">
-        <div class="plan-name">Pro</div>
-        <div><span class="plan-price">₦9,900</span><span class="plan-period">/month</span></div>
-        <div class="plan-usd">~$6 USD · Billed monthly</div>
-        <ul class="plan-features">
-          <li>50,000 API calls/month</li>
           <li>All 60+ skills</li>
-          <li>Browser automation</li>
-          <li>Vision & OCR</li>
-          <li>App connectors (5 apps)</li>
+          <li>Web research</li>
+          <li>Document generation</li>
+          <li>Fine-tune personas</li>
+          <li class="na">Priority support</li>
+          <li class="na">Custom Mistral key</li>
+          <li class="na">100-agent swarm</li>
+        </ul>
+        <a href="#auth" class="btn btn-outline" style="width:100%;justify-content:center;">Start Free</a>
+      </div>
+      <div class="price-card popular">
+        <div class="popular-badge">Most Popular</div>
+        <div class="price-plan">Pro</div>
+        <div class="price-amount">₦9,900<span>/mo</span></div>
+        <div class="price-period">~$6 USD/month</div>
+        <ul class="price-features">
+          <li>10,000 API calls/month</li>
+          <li>All 60+ skills</li>
+          <li>Priority AI routing</li>
+          <li>Custom Mistral key ✓</li>
+          <li>Fine-tune personas</li>
+          <li>Email support</li>
+          <li>Conversation memory</li>
+          <li class="na">100-agent swarm</li>
+        </ul>
+        <a href="#auth" class="btn btn-accent" style="width:100%;justify-content:center;">Upgrade to Pro</a>
+      </div>
+      <div class="price-card">
+        <div class="price-plan">Business</div>
+        <div class="price-amount">₦29,000<span>/mo</span></div>
+        <div class="price-period">~$18 USD/month</div>
+        <ul class="price-features">
+          <li>100,000 API calls/month</li>
+          <li>All skills + priority</li>
+          <li>100-agent swarm ✓</li>
+          <li>Custom Mistral key ✓</li>
+          <li>All 12 personas</li>
           <li>Priority support</li>
+          <li>Telegram bot setup</li>
+          <li>Custom system prompts</li>
         </ul>
-        <button class="plan-btn pay-btn" onclick="openPaystack('pro')">💳 Pay with Paystack</button>
+        <a href="#auth" class="btn btn-outline" style="width:100%;justify-content:center;">Get Business</a>
       </div>
-      <!-- BUSINESS -->
       <div class="price-card">
-        <div class="plan-name">Business</div>
-        <div><span class="plan-price">₦29,000</span><span class="plan-period">/month</span></div>
-        <div class="plan-usd">~$18 USD · Best for teams</div>
-        <ul class="plan-features">
-          <li>200,000 API calls/month</li>
-          <li>All skills + swarm agents</li>
-          <li>Unlimited connectors</li>
-          <li>Custom skill creation</li>
-          <li>Webhook automation</li>
-          <li>Priority support + SLA</li>
-        </ul>
-        <button class="plan-btn pay-btn" onclick="openPaystack('business')">💳 Pay with Paystack</button>
-      </div>
-      <!-- ENTERPRISE -->
-      <div class="price-card">
-        <div class="plan-name">Enterprise</div>
-        <div><span class="plan-price">₦49,000</span><span class="plan-period">/month</span></div>
-        <div class="plan-usd">~$30 USD · Full power</div>
-        <ul class="plan-features">
+        <div class="price-plan">Enterprise</div>
+        <div class="price-amount">₦49,000<span>/mo</span></div>
+        <div class="price-period">~$30 USD/month</div>
+        <ul class="price-features">
           <li>Unlimited API calls</li>
-          <li>100-agent swarm</li>
-          <li>Dedicated infrastructure</li>
-          <li>Custom AI fine-tuning</li>
+          <li>All features</li>
+          <li>Dedicated AI instances</li>
           <li>White-label option</li>
-          <li>24/7 dedicated support</li>
+          <li>SLA guaranteed</li>
+          <li>Phone + email support</li>
+          <li>Custom integrations</li>
+          <li>On-premise deployment</li>
         </ul>
-        <button class="plan-btn pay-btn" onclick="openPaystack('enterprise')">💳 Pay with Paystack</button>
+        <a href="#auth" class="btn btn-outline" style="width:100%;justify-content:center;">Contact Sales</a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- API DOCS -->
-<section id="docs-section" style="background:var(--s);border-top:1px solid var(--b);">
-  <div class="container">
-    <div class="section-hd">
-      <h2>Quick Start API Docs</h2>
-      <p>One endpoint. Any language. Anywhere in the world.</p>
+<!-- AUTH SECTION -->
+<section id="auth" class="auth-section">
+  <div class="section-inner">
+    <div class="auth-container">
+      <div class="reveal">
+        <div class="auth-panel">
+          <div class="auth-tabs">
+            <div class="auth-tab active" onclick="switchTab('register')">Create Account</div>
+            <div class="auth-tab" onclick="switchTab('login')">Sign In</div>
+          </div>
+          <!-- Register -->
+          <form id="registerForm" class="auth-form" onsubmit="handleRegister(event)">
+            <div class="form-group">
+              <label>Full Name</label>
+              <input type="text" class="form-input" id="regName" placeholder="Your name" required />
+            </div>
+            <div class="form-group">
+              <label>Email Address</label>
+              <input type="email" class="form-input" id="regEmail" placeholder="you@example.com" required />
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input type="password" class="form-input" id="regPass" placeholder="Min 8 characters" required />
+            </div>
+            <button type="submit" class="auth-submit" id="regBtn">Create Account & Get API Key →</button>
+          </form>
+          <!-- Login -->
+          <form id="loginForm" class="auth-form" style="display:none;" onsubmit="handleLogin(event)">
+            <div class="form-group">
+              <label>Email Address</label>
+              <input type="email" class="form-input" id="loginEmail" placeholder="you@example.com" required />
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input type="password" class="form-input" id="loginPass" placeholder="Your password" required />
+            </div>
+            <button type="submit" class="auth-submit" id="loginBtn">Sign In →</button>
+            <p style="text-align:center;margin-top:.5rem;font-size:.8rem;color:var(--muted)">
+              <a href="#" style="color:var(--accent2);text-decoration:none;" onclick="handleForgotPassword()">Forgot password?</a>
+            </p>
+          </form>
+          <div id="authResult"></div>
+          <div id="apiKeySection" style="display:none;">
+            <div class="api-key-display">
+              <div class="api-key-label">Your S.T.E.W API Key</div>
+              <div class="api-key-value" id="apiKeyValue"></div>
+              <button class="copy-btn" onclick="copyKey()">Copy Key</button>
+            </div>
+            <p style="margin-top:.75rem;font-size:.8rem;color:var(--muted);">Keep this key safe. Use it in every API request. <a href="#finetune" style="color:var(--accent2);">Fine-tune it →</a></p>
+          </div>
+        </div>
+      </div>
+      <div class="auth-info reveal">
+        <h3>Your key to Africa's most powerful AI.</h3>
+        <p>Get instant access to 60+ AI skills, Mistral AI integration, and persona fine-tuning — all from a single API key. Free forever for the base tier.</p>
+        <div class="auth-features-list">
+          <div class="auth-feature">
+            <div class="auth-feature-icon">⚡</div>
+            <div class="auth-feature-text"><h4>Instant Access</h4><p>Your API key is ready the moment you register. No approval waiting.</p></div>
+          </div>
+          <div class="auth-feature">
+            <div class="auth-feature-icon">🎭</div>
+            <div class="auth-feature-text"><h4>12 Domain Personas</h4><p>Fine-tune for medical, legal, finance, startup, and 8 more specialized domains.</p></div>
+          </div>
+          <div class="auth-feature">
+            <div class="auth-feature-icon">🔑</div>
+            <div class="auth-feature-text"><h4>Bring Your Mistral Key</h4><p>Pro users can plug in their own Mistral AI key for unlimited power.</p></div>
+          </div>
+          <div class="auth-feature">
+            <div class="auth-feature-icon">🇳🇬</div>
+            <div class="auth-feature-text"><h4>Naira Billing</h4><p>Upgrade with Paystack — no dollar card, no international fees.</p></div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div style="max-width:800px;margin:0 auto;">
-      <h3 style="font-size:1rem;font-weight:700;margin-bottom:.75rem;color:#a78bfa;">1. Register for a Free Key</h3>
-      <div class="code-block">
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> /auth/register
+  </div>
+</section>
 
-{
-  <span class="str">"name"</span>: <span class="str">"Your Name"</span>,
-  <span class="str">"email"</span>: <span class="str">"you@example.com"</span>,
-  <span class="str">"plan"</span>: <span class="str">"free"</span>
-}
-
-<span class="cm">// Response:</span>
-{
-  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>,
-  <span class="str">"plan"</span>: <span class="str">"free"</span>,
-  <span class="str">"calls_limit"</span>: <span class="num">3000</span>
-}</pre>
+<!-- TEST PLAYGROUND -->
+<section id="test" class="test-section">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-label">Live Playground</div>
+      <h2 class="section-title">Test the API <span>right here.</span></h2>
+      <p class="section-desc">Try any endpoint with your real API key. No extra setup needed.</p>
+    </div>
+    <div class="test-container reveal">
+      <div class="test-sidebar" id="testSidebar">
+        <!-- Populated by JS -->
       </div>
-
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2. Ask STEW Anything (Real-Time Chat)</h3>
-      <div class="code-block">
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> /chat
-
-{
-  <span class="str">"message"</span>: <span class="str">"What is the latest AI news today?"</span>
-}
-
-<span class="cm">// Response — web-grounded with Serper search:</span>
-{
-  <span class="str">"response"</span>: <span class="str">"Here are the latest AI developments..."</span>,
-  <span class="str">"web_grounded"</span>: <span class="kw">true</span>,
-  <span class="str">"success"</span>: <span class="kw">true</span>
-}</pre>
-      </div>
-
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">2b. Execute Any Task (Full Agent Power)</h3>
-      <div class="code-block">
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> /task
-
-{
-  <span class="str">"task"</span>: <span class="str">"Research the top 5 AI startups in Africa and write a report"</span>
-}
-
-<span class="cm">// Response:</span>
-{
-  <span class="str">"output"</span>: <span class="str">"Comprehensive report..."</span>,
-  <span class="str">"success"</span>: <span class="kw">true</span>
-}</pre>
-      </div>
-
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">3. Browse the Web</h3>
-      <div class="code-block">
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> /browse/navigate
-
-{
-  <span class="str">"url"</span>: <span class="str">"https://techcrunch.com"</span>,
-  <span class="str">"question"</span>: <span class="str">"What are today's top stories?"</span>,
-  <span class="str">"api_key"</span>: <span class="str">"stew_xxxxxxxxxxxx"</span>
-}</pre>
-      </div>
-
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">4. Upload & Read a Document or Image</h3>
-      <div class="code-block">
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="cm">// Upload a PDF, Word, TXT, CSV, or JSON file:</span>
-<span class="kw">POST</span> /upload/document
-Content-Type: multipart/form-data
-
-file: <span class="str">[your file]</span>
-question: <span class="str">"Summarize this document"</span>  <span class="cm">// optional</span>
-
-<span class="cm">// Response:</span>
-{
-  <span class="str">"characters_read"</span>: <span class="num">4820</span>,
-  <span class="str">"preview"</span>: <span class="str">"Introduction: This report covers..."</span>,
-  <span class="str">"answer"</span>: <span class="str">"This document discusses..."</span>  <span class="cm">// AI answer</span>
-}
-
-<span class="cm">// Upload an image (JPG, PNG, WebP):</span>
-<span class="kw">POST</span> /upload/image
-Content-Type: multipart/form-data
-
-file: <span class="str">[your image]</span>
-question: <span class="str">"What text is in this image?"</span>
-
-<span class="cm">// Response:</span>
-{
-  <span class="str">"analysis"</span>: <span class="str">"The image shows a receipt with..."</span>,
-  <span class="str">"ocr_text"</span>: <span class="str">"TOTAL: ₦12,500"</span>
-}</pre>
-      </div>
-
-      <h3 style="font-size:1rem;font-weight:700;margin:.75rem 0;color:#a78bfa;">5. Connect Any API</h3>
-      <div class="code-block">
-        <button class="code-copy" onclick="copyCode(this)">Copy</button>
-        <pre><span class="kw">POST</span> /api/call
-
-{
-  <span class="str">"url"</span>: <span class="str">"https://api.openweathermap.org/data/2.5/weather"</span>,
-  <span class="str">"method"</span>: <span class="str">"GET"</span>,
-  <span class="str">"params"</span>: { <span class="str">"q"</span>: <span class="str">"Lagos"</span>, <span class="str">"appid"</span>: <span class="str">"YOUR_KEY"</span> }
-}</pre>
-      </div>
-
-      <div style="text-align:center;margin-top:2rem;">
-        <button class="btn-primary" onclick="openAuth('register')">🚀 Get Your Free Key Now</button>
-        <a href="https://stew-agent.onrender.com/docs" target="_blank" style="display:inline-block;margin-left:1rem;padding:13px 28px;background:rgba(255,255,255,.06);border:1px solid var(--b);border-radius:12px;color:var(--t);font-weight:600;font-size:.92rem;text-decoration:none;transition:all .2s;" onmouseover="this.style.background='rgba(255,255,255,.1)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">📚 Full API Reference</a>
+      <div class="test-panel">
+        <div class="test-panel-header">
+          <span class="test-panel-title" id="testPanelTitle">POST /chat</span>
+          <span class="test-url" id="testUrl">https://stew-agent.onrender.com/chat</span>
+        </div>
+        <div class="test-body">
+          <div class="test-request">
+            <div>
+              <div class="test-label">Request Body (JSON)</div>
+              <textarea class="test-textarea" id="testReqBody">{"message": "What are the top 5 Nigerian AI startups in 2026?", "api_key": "", "web_search": true}</textarea>
+            </div>
+            <div>
+              <div class="test-label">Response</div>
+              <div id="testResponseArea">
+                <div class="test-response-code res-loading" style="display:none;" id="testStatusCode">● 200 OK</div>
+                <pre id="testResponsePre" style="color:var(--muted);background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:8px;padding:1rem;font-family:var(--mono);font-size:.8rem;min-height:200px;">// Response will appear here</pre>
+              </div>
+            </div>
+          </div>
+          <div class="test-actions">
+            <button class="test-run-btn" onclick="runTest()" id="testRunBtn">▶ Run Request</button>
+            <span class="test-status" id="testStatusMsg"></span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -848,956 +712,359 @@ question: <span class="str">"What text is in this image?"</span>
 
 <!-- FOOTER -->
 <footer>
-  <div class="footer-grid">
+  <div class="footer-inner">
     <div class="footer-brand">
-      <div class="nav-logo" style="margin-bottom:.75rem;">
-        <div class="logo-box">S</div>
-        <span>S.T.E.W</span>
+      <div class="nav-logo" style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem;">
+        <div class="nav-logo-mark">STEW</div>
+        <div class="nav-logo-text">S.T.E.W <span>Agent</span></div>
       </div>
-      <p>Africa's most powerful AI agent API. Built in Nigeria 🇳🇬 by MUTYINT. Free tier available — no card needed.</p>
+      <p>Africa's most powerful AI agent API. Built by MUTYINT Nigeria. Solving real problems for African developers and businesses.</p>
     </div>
     <div class="footer-col">
       <h4>Product</h4>
-      <span onclick="scrollTo('skills-section')">Skills (60+)</span>
-      <span onclick="scrollTo('connectors-section')">Connectors</span>
-      <span onclick="scrollTo('pricing-section')">Pricing</span>
-      <span onclick="scrollTo('docs-section')">API Docs</span>
+      <a href="#features">Features</a>
+      <a href="#finetune">Fine-Tune</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/playground">Playground</a>
     </div>
     <div class="footer-col">
       <h4>Developers</h4>
-      <span onclick="openAuth('register')">Get API Key</span>
-      <a href="https://stew-agent.onrender.com/playground" target="_blank">Playground</a>
-      <a href="https://stew-agent.onrender.com/docs" target="_blank">Full Docs</a>
-      <span onclick="openAuth('dashboard')">Dashboard</span>
+      <a href="/docs">API Docs</a>
+      <a href="/openapi.json">OpenAPI Spec</a>
+      <a href="/heartbeat">Status</a>
+      <a href="/skills">60+ Skills</a>
     </div>
     <div class="footer-col">
       <h4>Company</h4>
-      <span>MUTYINT Nigeria</span>
-      <span>Emmanuel Ene R. Gideon</span>
-      <a href="mailto:support@mutyint.com">Support</a>
+      <a href="#">MUTYINT Nigeria</a>
+      <a href="#">About</a>
+      <a href="#">Blog</a>
+      <a href="#">Contact</a>
     </div>
   </div>
   <div class="footer-bottom">
-    <span>© 2026 S.T.E.W by MUTYINT · All rights reserved · Built in Nigeria 🇳🇬 for the World</span>
+    <p>© 2026 MUTYINT Nigeria. S.T.E.W — Smart Task Execution Worker. All rights reserved.</p>
+    <div class="live-badge"><span class="status-dot"></span> All systems operational</div>
   </div>
 </footer>
 
-<!-- AUTH MODAL -->
-<div class="auth-overlay" id="auth-overlay" onclick="if(event.target===this)closeAuth()">
-  <div class="auth-modal">
-    <div class="auth-hd">
-      <div>
-        <h3>🔑 Developer Access</h3>
-        <p style="font-size:.8rem;color:var(--m);margin-top:.2rem;">Free API key in seconds — no card needed</p>
-      </div>
-      <button class="auth-close" onclick="closeAuth()">✕</button>
-    </div>
-    <div class="auth-tabs">
-      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">🚀 Register</button>
-      <button class="auth-tab" id="tab-login" onclick="switchAuthTab('login')">🔐 Login</button>
-      <button class="auth-tab" id="tab-dashboard" onclick="switchAuthTab('dashboard')">📊 Dashboard</button>
-      <button class="auth-tab" id="tab-upgrade" onclick="switchAuthTab('upgrade')">⚡ Upgrade</button>
-    </div>
-    <div class="auth-body">
-
-      <!-- REGISTER PANEL -->
-      <div class="auth-panel" id="panel-register">
-        <div style="margin-bottom:1rem;">
-          <div style="font-size:.85rem;color:var(--m);margin-bottom:1rem;">Choose your plan:</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;">
-            <div class="plan-option selected" id="plan-free" onclick="selectPlan('free',this)">
-              <div class="plan-option-name">⚡ Starter</div>
-              <div class="plan-option-price">₦0/mo</div>
-              <div class="plan-option-desc">3,000 calls · No card</div>
-            </div>
-            <div class="plan-option" id="plan-pro" onclick="selectPlan('pro',this)">
-              <div class="plan-option-name">🚀 Pro</div>
-              <div class="plan-option-price">₦9,900/mo</div>
-              <div class="plan-option-desc">50,000 calls · All skills</div>
-            </div>
-          </div>
-        </div>
-        <div class="auth-field"><label>Full Name *</label><input type="text" id="reg-name" placeholder="Your full name"></div>
-        <div class="auth-field"><label>Email Address *</label><input type="email" id="reg-email" placeholder="you@example.com"></div>
-        <div class="auth-field"><label>Company (optional)</label><input type="text" id="reg-company" placeholder="Your company or project"></div>
-        <div class="auth-field"><label>Password (optional)</label><input type="password" id="reg-password" placeholder="Min 8 chars (leave blank for auto-generated)"></div>
-        <button class="auth-btn" id="reg-btn" onclick="doRegister()">🚀 Create Free Account</button>
-        <div class="auth-result" id="reg-result"></div>
-        <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">By registering you agree to our fair use policy. Your API key is created instantly.</p>
-      </div>
-
-      <!-- LOGIN PANEL -->
-      <div class="auth-panel" id="panel-login">
-        <div class="auth-field"><label>Email Address</label><input type="email" id="login-email" placeholder="you@example.com"></div>
-        <div class="auth-field">
-          <label>Password</label>
-          <input type="password" id="login-password" placeholder="Your password">
-        </div>
-        <button class="auth-btn" id="login-btn" onclick="doLogin()">🔐 Log In</button>
-        <div class="auth-result" id="login-result"></div>
-        <p style="text-align:center;margin-top:.75rem;font-size:.8rem;color:var(--m);">
-          Forgot your password? <a onclick="switchAuthTab('forgot')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Reset it here →</a>
-        </p>
-        <p style="text-align:center;margin-top:.5rem;font-size:.8rem;color:var(--m);">
-          No account? <a onclick="switchAuthTab('register')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Register free</a>
-        </p>
-      </div>
-
-      <!-- FORGOT PASSWORD PANEL -->
-      <div class="auth-panel" id="panel-forgot">
-        <p style="color:var(--m);font-size:.85rem;margin-bottom:1rem;">Enter your email address and we'll send you a link to reset your password.</p>
-        <div class="auth-field"><label>Email Address</label><input type="email" id="forgot-email" placeholder="you@example.com"></div>
-        <button class="auth-btn" id="forgot-btn" onclick="doForgotPassword()">📧 Send Reset Link</button>
-        <div class="auth-result" id="forgot-result"></div>
-        <p style="text-align:center;margin-top:.75rem;font-size:.8rem;color:var(--m);">
-          Remembered it? <a onclick="switchAuthTab('login')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Back to Login</a>
-        </p>
-      </div>
-
-      <!-- RESET PASSWORD PANEL (shown when reset token in URL) -->
-      <div class="auth-panel" id="panel-reset">
-        <p style="color:#3fb950;font-size:.85rem;margin-bottom:1rem;">✅ Enter your new password below.</p>
-        <div class="auth-field"><label>New Password</label><input type="password" id="reset-password" placeholder="Min 8 characters"></div>
-        <div class="auth-field"><label>Confirm Password</label><input type="password" id="reset-confirm" placeholder="Repeat password"></div>
-        <button class="auth-btn" id="reset-btn" onclick="doResetPassword()">🔐 Set New Password</button>
-        <div class="auth-result" id="reset-result"></div>
-      </div>
-
-      <!-- DASHBOARD PANEL -->
-      <div class="auth-panel" id="panel-dashboard">
-        <div class="auth-field"><label>Your API Key</label><input type="text" id="dash-key" placeholder="stew_xxxxxxxxxxxx" autocomplete="off"></div>
-        <button class="auth-btn secondary-btn" onclick="loadDashboard()">📊 Load Dashboard</button>
-        <div class="auth-result" id="dash-result"></div>
-        <div id="dash-data" style="display:none;margin-top:1rem;">
-          <div class="dash-stat"><span class="dash-stat-label">Name</span><span class="dash-stat-value" id="d-name">—</span></div>
-          <div class="dash-stat"><span class="dash-stat-label">Email</span><span class="dash-stat-value" id="d-email">—</span></div>
-          <div class="dash-stat"><span class="dash-stat-label">Plan</span><span class="dash-stat-value" id="d-plan">—</span></div>
-          <div class="dash-stat"><span class="dash-stat-label">Status</span><span class="dash-stat-value" id="d-status">—</span></div>
-          <div class="dash-stat"><span class="dash-stat-label">Expires</span><span class="dash-stat-value" id="d-expires">—</span></div>
-          <div style="margin-top:1rem;">
-            <div style="display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:.4rem;"><span style="color:var(--m);">API Usage</span><span id="d-usage" style="font-weight:700;">—</span></div>
-            <div class="usage-bar"><div class="usage-fill" id="d-bar" style="width:0%"></div></div>
-          </div>
-          <div style="margin-top:1rem;">
-            <div style="font-size:.82rem;color:var(--m);margin-bottom:.5rem;">Your API Key:</div>
-            <div class="api-key-display" id="d-key-display">—</div>
-            <button class="copy-key-btn" onclick="copyDashKey()">📋 Copy</button>
-            <button class="copy-key-btn" onclick="switchAuthTab('upgrade')">⚡ Upgrade</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- UPGRADE / BILLING PANEL -->
-      <div class="auth-panel" id="panel-upgrade">
-        <div class="auth-field"><label>Your API Key</label><input type="text" id="up-key" placeholder="stew_xxxxxxxxxxxx" autocomplete="off"></div>
-        <div style="margin-bottom:1rem;">
-          <div style="font-size:.82rem;color:var(--m);margin-bottom:.75rem;">Select upgrade plan:</div>
-          <div class="plan-option" id="plan-opt-pro" onclick="selectUpgradePlan('pro',this)">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div><div class="plan-option-name">🚀 Pro</div><div class="plan-option-desc">50,000 calls/mo · All 60+ skills · Browser automation</div></div>
-              <div class="plan-option-price">₦9,900/mo</div>
-            </div>
-          </div>
-          <div class="plan-option" id="plan-opt-business" onclick="selectUpgradePlan('business',this)">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div><div class="plan-option-name">💼 Business</div><div class="plan-option-desc">200,000 calls/mo · Swarm agents · Unlimited connectors</div></div>
-              <div class="plan-option-price">₦29,000/mo</div>
-            </div>
-          </div>
-          <div class="plan-option" id="plan-opt-enterprise" onclick="selectUpgradePlan('enterprise',this)">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div><div class="plan-option-name">🏢 Enterprise</div><div class="plan-option-desc">Unlimited calls · Dedicated infra · White-label</div></div>
-              <div class="plan-option-price">₦49,000/mo</div>
-            </div>
-          </div>
-        </div>
-        <button class="auth-btn" id="up-btn" onclick="doUpgrade()">💳 Pay with Paystack</button>
-        <div class="auth-result" id="up-result"></div>
-        <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">Secure payment via Paystack · Naira only · Cancel anytime</p>
-      </div>
-
-    </div>
-  </div>
-</div>
-
-<!-- STEW WORKING OVERLAY -->
-<div class="stew-overlay" id="stew-overlay">
-  <div class="stew-working-box">
-    <div class="stew-glow-ring">🤖</div>
-    <div class="stew-status" id="stew-status">S.T.E.W is working...</div>
-    <div class="stew-step" id="stew-step">Initializing task execution...</div>
-    <div class="stew-progress"><div class="stew-progress-bar" id="stew-bar"></div></div>
-    <div class="stew-log" id="stew-log">S.T.E.W v5.0 ULTRA activated...</div>
-    <button onclick="hideStewOverlay()" style="background:rgba(255,255,255,.07);border:1px solid var(--b);border-radius:10px;padding:9px 20px;color:var(--m);font-size:.85rem;cursor:pointer;font-family:var(--font);">Hide (task continues in background)</button>
-  </div>
-</div>
-
-<!-- TOAST -->
-<div class="toast" id="toast"></div>
-
 <script>
-// ══════════════════════════════════════
-// CONSTANTS
-// ══════════════════════════════════════
-const STEW_URL = (function(){
-  // Auto-detect API base URL from where this page is served
-  const origin = window.location.origin;
-  if(origin.includes('localhost') || origin.includes('127.0.0.1')) return 'http://localhost:8000';
-  return origin; // Same server serves the API
-})();
-const PAY_FN = 'https://superagent-55bc0d3a.base44.app/functions/stewPayment';
-const FREE_KEY = '';
+const BASE = 'https://stew-agent.onrender.com';
 
-let _selectedPlan = 'free';
-let _upgradePlan = '';
-let _myKey = localStorage.getItem('stew_api_key') || '';
-let _chatBusy = false;
-
-// ══════════════════════════════════════════════════════════════
-// S.T.E.W 5.0 — ULTRA 3D SCENE (WebGL + Canvas2D hybrid)
-// Features: 3D Orbs, Neural Mesh, Aurora Waves, Mouse Parallax
-// ══════════════════════════════════════════════════════════════
-(function initUltraScene(){
-  const canvas = document.getElementById('bg-canvas');
-  const ctx2d  = canvas.getContext('2d');
-  if(!ctx2d){ canvas.style.display='none'; return; }
-
-  let W, H, t=0;
-  let mouse={x:0.5,y:0.5,vx:0,vy:0};
-  let lastMX=0.5, lastMY=0.5;
-
-  function resize(){
-    W = canvas.width  = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  }
-  window.addEventListener('resize', resize);
-  window.addEventListener('mousemove', e=>{
-    const nx=e.clientX/W, ny=e.clientY/H;
-    mouse.vx=(nx-lastMX)*0.1; mouse.vy=(ny-lastMY)*0.1;
-    lastMX=mouse.x; lastMY=mouse.y;
-    mouse.x+=(nx-mouse.x)*0.08;
-    mouse.y+=(ny-mouse.y)*0.08;
-  });
-  window.addEventListener('touchmove', e=>{
-    mouse.x=e.touches[0].clientX/W;
-    mouse.y=e.touches[0].clientY/H;
-  },{passive:true});
-  resize();
-
-  // ── PARTICLES ─────────────────────────────────────────────
-  const PARTICLE_COUNT = window.innerWidth < 768 ? 80 : 180;
-  const particles = [];
-  const COLORS = ['#7c3aed','#5b21b6','#06b6d4','#0891b2','#10b981','#a78bfa','#c4b5fd'];
-
-  for(let i=0;i<PARTICLE_COUNT;i++){
-    const r = Math.random();
-    particles.push({
-      x: Math.random()*W, y: Math.random()*H,
-      vx:(Math.random()-.5)*0.4, vy:(Math.random()-.5)*0.4,
-      size: Math.random()*2.2+0.5,
-      color: COLORS[Math.floor(Math.random()*COLORS.length)],
-      alpha: Math.random()*0.6+0.2,
-      phase: Math.random()*Math.PI*2,
-      speed: Math.random()*0.008+0.003,
-      depth: Math.random()  // parallax depth 0..1
-    });
-  }
-
-  // ── AURORA BANDS ──────────────────────────────────────────
-  const auroras = [
-    {oy:0.25, amp:120, freq:0.0008, speed:0.0006, col:'rgba(124,58,237,', base:0.06},
-    {oy:0.45, amp:90,  freq:0.001,  speed:0.0009, col:'rgba(6,182,212,',   base:0.04},
-    {oy:0.65, amp:100, freq:0.0009, speed:0.0007, col:'rgba(16,185,129,',  base:0.03},
-  ];
-
-  // ── 3D FLOATING ORBS ──────────────────────────────────────
-  const ORB_COUNT = window.innerWidth < 768 ? 3 : 5;
-  const orbs = [];
-  for(let i=0;i<ORB_COUNT;i++){
-    orbs.push({
-      x: W*(0.15+i*0.18+Math.random()*0.1),
-      y: H*(0.2+Math.random()*0.6),
-      baseX: 0, baseY: 0,
-      radius: 60+Math.random()*80,
-      vx:(Math.random()-.5)*0.3,
-      vy:(Math.random()-.5)*0.3,
-      phase: Math.random()*Math.PI*2,
-      color1: ['#7c3aed','#06b6d4','#10b981','#5b21b6','#a78bfa'][i%5],
-      color2: ['#5b21b6','#0891b2','#059669','#7c3aed','#8b5cf6'][i%5],
-      depth: 0.3+Math.random()*0.5,
-      glowSize: 2.5+Math.random()*1.5
-    });
-    orbs[i].baseX=orbs[i].x; orbs[i].baseY=orbs[i].y;
-  }
-
-  // ── NEURAL NODES ──────────────────────────────────────────
-  const NODE_COUNT = window.innerWidth < 768 ? 18 : 32;
-  const nodes = [];
-  for(let i=0;i<NODE_COUNT;i++){
-    nodes.push({
-      x: Math.random()*W, y: Math.random()*H,
-      vx:(Math.random()-.5)*0.35, vy:(Math.random()-.5)*0.35,
-      size: Math.random()*3+1.5,
-      pulse: Math.random()*Math.PI*2,
-      active: Math.random()>0.6
-    });
-  }
-
-  const CONN_DIST = window.innerWidth < 768 ? 160 : 220;
-
-  // ── RENDER LOOP ────────────────────────────────────────────
-  function draw(){
-    requestAnimationFrame(draw);
-    t+=0.012;
-
-    ctx2d.clearRect(0,0,W,H);
-
-    // === AURORA WAVES ===
-    for(const a of auroras){
-      const grad = ctx2d.createLinearGradient(0,0,0,H);
-      const cy = a.oy*H + Math.sin(t*a.speed*1000)*30;
-      for(let step=0;step<=10;step++){
-        const y2 = cy + Math.sin(step*0.4+t)*a.amp;
-        const alpha = a.base*(1-Math.abs(step-5)/5);
-        grad.addColorStop(Math.min(1,Math.max(0,(y2/H))),a.col+alpha+')');
-      }
-      ctx2d.save();
-      ctx2d.beginPath();
-      ctx2d.moveTo(0,0);
-      for(let x=0;x<=W;x+=8){
-        const y2 = cy + Math.sin(x*a.freq+t)*a.amp;
-        ctx2d.lineTo(x,y2);
-      }
-      ctx2d.lineTo(W,H); ctx2d.lineTo(0,H); ctx2d.closePath();
-      ctx2d.fillStyle=a.col+a.base*0.8+')';
-      ctx2d.fill();
-      ctx2d.restore();
-    }
-
-    // === 3D ORBS ===
-    for(const orb of orbs){
-      // Parallax: deeper orbs move less with mouse
-      const px = (mouse.x-0.5)*(1-orb.depth)*80;
-      const py = (mouse.y-0.5)*(1-orb.depth)*60;
-      orb.x = orb.baseX + px + Math.sin(t*0.4+orb.phase)*12;
-      orb.y = orb.baseY + py + Math.cos(t*0.35+orb.phase)*10;
-
-      // Drift
-      orb.baseX += orb.vx; orb.baseY += orb.vy;
-      if(orb.baseX<-orb.radius||orb.baseX>W+orb.radius){ orb.vx*=-1; orb.baseX=Math.max(-orb.radius,Math.min(W+orb.radius,orb.baseX)); }
-      if(orb.baseY<-orb.radius||orb.baseY>H+orb.radius){ orb.vy*=-1; orb.baseY=Math.max(-orb.radius,Math.min(H+orb.radius,orb.baseY)); }
-
-      const pulse = 1 + 0.08*Math.sin(t*1.2+orb.phase);
-      const r = orb.radius*pulse;
-
-      // Outer glow
-      const glow = ctx2d.createRadialGradient(orb.x,orb.y,0,orb.x,orb.y,r*orb.glowSize);
-      glow.addColorStop(0, orb.color1+'33');
-      glow.addColorStop(0.5, orb.color2+'11');
-      glow.addColorStop(1,'transparent');
-      ctx2d.beginPath();
-      ctx2d.arc(orb.x,orb.y,r*orb.glowSize,0,Math.PI*2);
-      ctx2d.fillStyle=glow;
-      ctx2d.fill();
-
-      // Core orb — 3D sphere illusion
-      const sphere = ctx2d.createRadialGradient(
-        orb.x-r*0.25, orb.y-r*0.25, r*0.05,
-        orb.x, orb.y, r
-      );
-      sphere.addColorStop(0,  orb.color1+'ee');
-      sphere.addColorStop(0.3,orb.color1+'88');
-      sphere.addColorStop(0.7,orb.color2+'44');
-      sphere.addColorStop(1,  orb.color2+'00');
-      ctx2d.beginPath();
-      ctx2d.arc(orb.x,orb.y,r,0,Math.PI*2);
-      ctx2d.fillStyle=sphere;
-      ctx2d.fill();
-
-      // Highlight (specular)
-      const hl = ctx2d.createRadialGradient(
-        orb.x-r*0.3, orb.y-r*0.35, 0,
-        orb.x-r*0.1, orb.y-r*0.15, r*0.5
-      );
-      hl.addColorStop(0,'rgba(255,255,255,0.18)');
-      hl.addColorStop(1,'rgba(255,255,255,0)');
-      ctx2d.beginPath();
-      ctx2d.arc(orb.x,orb.y,r,0,Math.PI*2);
-      ctx2d.fillStyle=hl;
-      ctx2d.fill();
-    }
-
-    // === NEURAL MESH ===
-    for(const n of nodes){
-      n.x+=n.vx; n.y+=n.vy;
-      if(n.x<0||n.x>W) n.vx*=-1;
-      if(n.y<0||n.y>H) n.vy*=-1;
-      n.pulse+=0.04;
-    }
-    // Draw connections
-    ctx2d.save();
-    for(let i=0;i<nodes.length;i++){
-      for(let j=i+1;j<nodes.length;j++){
-        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y;
-        const d=Math.sqrt(dx*dx+dy*dy);
-        if(d<CONN_DIST){
-          const alpha=(1-d/CONN_DIST)*0.18;
-          const grad=ctx2d.createLinearGradient(nodes[i].x,nodes[i].y,nodes[j].x,nodes[j].y);
-          grad.addColorStop(0,'rgba(124,58,237,'+alpha+')');
-          grad.addColorStop(1,'rgba(6,182,212,'+alpha+')');
-          ctx2d.beginPath();
-          ctx2d.moveTo(nodes[i].x,nodes[i].y);
-          ctx2d.lineTo(nodes[j].x,nodes[j].y);
-          ctx2d.strokeStyle=grad;
-          ctx2d.lineWidth=0.8;
-          ctx2d.stroke();
-        }
-      }
-    }
-    // Draw nodes
-    for(const n of nodes){
-      const ps = n.size*(1+0.3*Math.sin(n.pulse));
-      // Node glow
-      const ng=ctx2d.createRadialGradient(n.x,n.y,0,n.x,n.y,ps*4);
-      ng.addColorStop(0,n.active?'rgba(124,58,237,0.3)':'rgba(6,182,212,0.2)');
-      ng.addColorStop(1,'transparent');
-      ctx2d.beginPath(); ctx2d.arc(n.x,n.y,ps*4,0,Math.PI*2);
-      ctx2d.fillStyle=ng; ctx2d.fill();
-      // Node core
-      ctx2d.beginPath(); ctx2d.arc(n.x,n.y,ps,0,Math.PI*2);
-      ctx2d.fillStyle=n.active?'rgba(167,139,250,0.9)':'rgba(6,182,212,0.7)';
-      ctx2d.fill();
-    }
-    ctx2d.restore();
-
-    // === PARTICLES ===
-    const mx=(mouse.x-.5), my=(mouse.y-.5);
-    for(const p of particles){
-      // Parallax drift
-      p.x += p.vx + mx*p.depth*0.4;
-      p.y += p.vy + my*p.depth*0.3;
-      if(p.x<-10) p.x=W+10; if(p.x>W+10) p.x=-10;
-      if(p.y<-10) p.y=H+10; if(p.y>H+10) p.y=-10;
-
-      // Twinkle
-      const alpha = p.alpha*(0.7+0.3*Math.sin(t*p.speed*100+p.phase));
-      // Glow
-      const pg=ctx2d.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size*3);
-      pg.addColorStop(0,p.color.replace('#','rgba(')+','+alpha+')');
-      pg.addColorStop(1,'transparent');
-
-      // Parse hex to rgba properly
-      const hex=p.color.replace('#','');
-      const pr=parseInt(hex.substring(0,2),16);
-      const pg2=parseInt(hex.substring(2,4),16);
-      const pb=parseInt(hex.substring(4,6),16);
-      const ga=ctx2d.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size*3);
-      ga.addColorStop(0,`rgba(${pr},${pg2},${pb},${alpha})`);
-      ga.addColorStop(1,`rgba(${pr},${pg2},${pb},0)`);
-      ctx2d.beginPath(); ctx2d.arc(p.x,p.y,p.size*3,0,Math.PI*2);
-      ctx2d.fillStyle=ga; ctx2d.fill();
-      ctx2d.beginPath(); ctx2d.arc(p.x,p.y,p.size,0,Math.PI*2);
-      ctx2d.fillStyle=`rgba(${pr},${pg2},${pb},${Math.min(1,alpha*1.5)})`;
-      ctx2d.fill();
-    }
-
-    // === MOUSE CURSOR EFFECT ===
-    const cx=mouse.x*W, cy=mouse.y*H;
-    const cr=ctx2d.createRadialGradient(cx,cy,0,cx,cy,120);
-    cr.addColorStop(0,'rgba(124,58,237,0.06)');
-    cr.addColorStop(0.5,'rgba(6,182,212,0.02)');
-    cr.addColorStop(1,'transparent');
-    ctx2d.beginPath(); ctx2d.arc(cx,cy,120,0,Math.PI*2);
-    ctx2d.fillStyle=cr; ctx2d.fill();
-  }
-
-  draw();
-})();
-
-// NAV SCROLL EFFECT
-// ══════════════════════════════════════
-window.addEventListener('scroll',()=>{
-  const nav = document.getElementById('main-nav');
-  if(window.scrollY>80) nav.classList.add('scrolled');
-  else nav.classList.remove('scrolled');
-});
-
-function scrollTo(id){
-  const el = document.getElementById(id);
-  if(el) el.scrollIntoView({behavior:'smooth'});
-  document.querySelector('.nav-links').classList.remove('open');
-}
-
-// ══════════════════════════════════════
-// TOAST
-// ══════════════════════════════════════
-let _toastT;
-function showToast(msg, type='ok'){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast show ' + type;
-  clearTimeout(_toastT);
-  _toastT = setTimeout(()=>t.className='toast',3200);
-}
-
-// ══════════════════════════════════════
-// LIVE STATS
-// ══════════════════════════════════════
-async function fetchStats(){
-  try{
-    const [hb, st] = await Promise.all([
-      fetch(STEW_URL+'/heartbeat',{signal:AbortSignal.timeout(8000)}).then(r=>r.json()).catch(()=>null),
-      fetch(STEW_URL+'/auth/stats',{signal:AbortSignal.timeout(8000)}).then(r=>r.json()).catch(()=>null)
-    ]);
-    if(hb?.beat){ 
-      document.getElementById('hero-beat').textContent = hb.beat; 
-      document.getElementById('m-beat').textContent = hb.beat;
-    }
-    if(st?.registered_developers !== undefined){
-      document.getElementById('stat-devs').textContent = st.registered_developers;
-      document.getElementById('m-devs').textContent = st.registered_developers;
-    }
-  } catch(e){}
-}
-fetchStats(); setInterval(fetchStats, 30000);
-
-// ══════════════════════════════════════
-// CHAT DEMO
-// ══════════════════════════════════════
-function addMsg(type, html){
-  const msgs = document.getElementById('chat-msgs');
-  const div = document.createElement('div');
-  div.className = 'msg msg-'+type;
-  const avatar = type==='stew' ? 'S' : '👤';
-  const now = new Date().toLocaleTimeString('en-NG',{hour:'2-digit',minute:'2-digit'});
-  div.innerHTML = `<div class="msg-avatar">${avatar}</div><div><div class="msg-bubble">${html}</div><div class="msg-time">${now}</div></div>`;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
-  return div;
-}
-
-function showTyping(){
-  const msgs = document.getElementById('chat-msgs');
-  const row = document.createElement('div');
-  row.className = 'typing-row'; row.id = 'typing-row';
-  const avDiv = document.createElement('div'); avDiv.className='msg-avatar msg-stew'.split(' ')[0]+' msg-stew'; avDiv.style='background:linear-gradient(135deg,#7c3aed,#06b6d4);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;'; avDiv.textContent='S';
-  const bub = document.createElement('div');
-  bub.className='typing-bubble on'; bub.innerHTML='<div class="td"></div><div class="td"></div><div class="td"></div>';
-  row.appendChild(avDiv); row.appendChild(bub);
-  msgs.appendChild(row); msgs.scrollTop=msgs.scrollHeight;
-}
-function hideTyping(){ const r=document.getElementById('typing-row'); if(r) r.remove(); }
-
-async function sendChat(){
-  if(_chatBusy) return;
-  const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
-  if(!msg) return;
-  input.value = '';
-  addMsg('user', escHtml(msg));
-  _chatBusy = true;
-  document.getElementById('chat-send').disabled = true;
-  showTyping();
-  showStewWorking('Researching your question...', msg);
-  try{
-    const resp = await fetch(STEW_URL+'/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message: msg, api_key: _myKey || undefined}),
-      signal: AbortSignal.timeout(45000)
-    });
-    const data = await resp.json();
-    hideTyping();
-    hideStewOverlay();
-    const reply = data.response || data.result || data.answer || 'STEW processed your request.';
-    const grounded = data.web_grounded ? '<div style="font-size:.72rem;color:#34d399;margin-top:.4rem;">🌐 Web-grounded · real-time data</div>' : '';
-    addMsg('stew', reply.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>') + grounded);
-  } catch(e){
-    hideTyping(); hideStewOverlay();
-    if(e.name==='TimeoutError')
-      addMsg('stew','⏳ STEW is warming up on Render (free tier). Try again in 15 seconds!');
-    else
-      addMsg('stew','⚠️ Connection error: '+escHtml(e.message)+'. STEW may be waking up.');
-  }
-  _chatBusy = false;
-  document.getElementById('chat-send').disabled = false;
-}
-
-function sendDemo(msg){ document.getElementById('chat-input').value=msg; sendChat(); }
-function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// ══════════════════════════════════════
-// STEW WORKING OVERLAY
-// ══════════════════════════════════════
-let _stewProg = 0, _stewT;
-function showStewWorking(status, task){
-  const ov = document.getElementById('stew-overlay');
-  ov.classList.add('show');
-  document.getElementById('stew-status').textContent = 'S.T.E.W is working...';
-  document.getElementById('stew-step').textContent = status;
-  document.getElementById('stew-log').textContent = `[${new Date().toISOString()}] Task: ${task}\n[init] Routing to best model...\n[search] Querying real-time sources...\n[process] Synthesizing results...`;
-  _stewProg = 0;
-  const bar = document.getElementById('stew-bar');
-  bar.style.width='0%';
-  clearInterval(_stewT);
-  _stewT = setInterval(()=>{
-    _stewProg = Math.min(_stewProg+2, 92);
-    bar.style.width = _stewProg+'%';
-    const steps = ['Routing to best AI model...','Searching real-time web...','Processing results...','Synthesizing answer...','Delivering response...'];
-    if(_stewProg<20) document.getElementById('stew-step').textContent=steps[0];
-    else if(_stewProg<45) document.getElementById('stew-step').textContent=steps[1];
-    else if(_stewProg<65) document.getElementById('stew-step').textContent=steps[2];
-    else if(_stewProg<82) document.getElementById('stew-step').textContent=steps[3];
-    else document.getElementById('stew-step').textContent=steps[4];
-  }, 200);
-}
-function hideStewOverlay(){
-  clearInterval(_stewT);
-  document.getElementById('stew-bar').style.width='100%';
-  setTimeout(()=>{
-    document.getElementById('stew-overlay').classList.remove('show');
-    document.getElementById('stew-bar').style.width='0%';
-  }, 400);
-}
-
-// ══════════════════════════════════════
-// AUTH MODAL
-// ══════════════════════════════════════
-function openAuth(tab='register'){
-  const ov = document.getElementById('auth-overlay');
-  ov.classList.add('show');
-  switchAuthTab(tab);
-  // pre-fill saved key
-  const saved = localStorage.getItem('stew_api_key');
-  if(saved && saved !== ''){
-    if(document.getElementById('dash-key')) document.getElementById('dash-key').value = saved;
-    if(document.getElementById('up-key')) document.getElementById('up-key').value = saved;
-  }
-}
-function closeAuth(){
-  document.getElementById('auth-overlay').classList.remove('show');
-}
-function switchAuthTab(tab){
-  const allTabs = ['register','login','forgot','reset','dashboard','upgrade'];
-  allTabs.forEach(t=>{
-    const tabEl = document.getElementById('tab-'+t);
-    const panelEl = document.getElementById('panel-'+t);
-    if(tabEl) tabEl.classList.toggle('active',t===tab);
-    if(panelEl) panelEl.classList.toggle('active',t===tab);
-  });
-}
-function selectPlan(plan, el){
-  _selectedPlan = plan;
-  document.querySelectorAll('#panel-register .plan-option').forEach(o=>o.classList.remove('selected'));
-  el.classList.add('selected');
-  const btn = document.getElementById('reg-btn');
-  btn.textContent = plan==='free'?'🚀 Create Free Account':'💳 Create Account';
-}
-function selectUpgradePlan(plan, el){
-  _upgradePlan = plan;
-  document.querySelectorAll('#panel-upgrade .plan-option').forEach(o=>o.classList.remove('selected'));
-  el.classList.add('selected');
-}
-function showAuthResult(id,type,html){
-  const el = document.getElementById(id);
-  if(!el) return;
-  el.className='auth-result '+type;
-  el.innerHTML=html;
-  el.style.display='block';
-}
-
-// ══════════════════════════════════════
-// REGISTER — FIXED & WORKING
-// ══════════════════════════════════════
-async function doRegister(){
-  const name  = document.getElementById('reg-name').value.trim();
-  const email = document.getElementById('reg-email').value.trim();
-  const company = document.getElementById('reg-company').value.trim();
-  if(!name){ showAuthResult('reg-result','error','⚠️ Please enter your name.'); return; }
-  if(!email||!email.includes('@')){ showAuthResult('reg-result','error','⚠️ Please enter a valid email.'); return; }
-  const btn = document.getElementById('reg-btn');
-  btn.disabled=true; btn.textContent='⏳ Creating account...';
-  showAuthResult('reg-result','info','🔄 Connecting to STEW server...');
-  try{
-    const resp = await fetch(STEW_URL+'/auth/register',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, email, company:company||'', plan:_selectedPlan, password: document.getElementById('reg-password')?.value?.trim()||undefined}),
-      signal: AbortSignal.timeout(30000)
-    });
-    if(!resp.ok){ const err=await resp.json().catch(()=>({})); throw new Error(err.detail||'Server error '+resp.status); }
-    const data = await resp.json();
-    if(data.api_key){
-      _myKey = data.api_key;
-      localStorage.setItem('stew_api_key', _myKey);
-      showAuthResult('reg-result','success',`
-        <div style="font-weight:800;margin-bottom:.5rem;font-size:1rem;">✅ Account Created!</div>
-        <div style="font-size:.82rem;color:#94a3b8;margin-bottom:.3rem;">Your API Key (save this!):</div>
-        <div class="api-key-display">${_myKey}</div>
-        <button class="copy-key-btn" onclick="navigator.clipboard.writeText('${_myKey}').then(()=>showToast('API Key copied! 🎉','ok'))">📋 Copy Key</button>
-        ${_selectedPlan!=='free'?`<button class="copy-key-btn" onclick="switchAuthTab('upgrade')">⚡ Upgrade Now</button>`:''}
-        <div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>${data.plan||_selectedPlan}</b> · ${data.calls_limit||3000} calls/month</div>
-      `);
-      if(_selectedPlan!=='free') setTimeout(()=>{ switchAuthTab('upgrade'); document.getElementById('up-key').value=_myKey; },2000);
-    } else {
-      showAuthResult('reg-result','error','❌ '+(data.error||data.detail||'Registration failed.'));
-    }
-  } catch(e){
-    if(e.name==='TimeoutError')
-      showAuthResult('reg-result','error','⏳ STEW is waking up (Render free tier). Try again in 20 seconds!');
-    else
-      showAuthResult('reg-result','error','❌ '+e.message);
-  }
-  btn.disabled=false; btn.textContent=_selectedPlan==='free'?'🚀 Create Free Account':'💳 Create Account';
-}
-
-// ══════════════════════════════════════
-// LOGIN
-// ══════════════════════════════════════
-async function doLogin(){
-  const email = document.getElementById('login-email').value.trim();
-  const pass  = document.getElementById('login-password').value;
-  if(!email){ showAuthResult('login-result','error','⚠️ Enter your email.'); return; }
-  if(!pass){ showAuthResult('login-result','error','⚠️ Enter your password.'); return; }
-  const btn = document.getElementById('login-btn');
-  btn.disabled=true; btn.textContent='⏳ Logging in...';
-  showAuthResult('login-result','info','🔄 Connecting...');
-  try{
-    const resp = await fetch(STEW_URL+'/auth/login',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({email, password:pass}),
-      signal: AbortSignal.timeout(20000)
-    });
-    const data = await resp.json();
-    if(resp.ok && data.access_token){
-      localStorage.setItem('stew_jwt', data.access_token);
-      if(data.api_key) localStorage.setItem('stew_api_key', data.api_key);
-      showAuthResult('login-result','success',`✅ Welcome back! <a onclick="switchAuthTab('dashboard')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">View Dashboard →</a>`);
-      if(data.api_key){ document.getElementById('dash-key').value=data.api_key; }
-    } else {
-      showAuthResult('login-result','error','❌ '+(data.detail||'Invalid email or password.'));
-    }
-  }catch(e){
-    showAuthResult('login-result','error','⏳ '+(e.name==='TimeoutError'?'Server waking up, try again.':e.message));
-  }
-  btn.disabled=false; btn.textContent='🔐 Log In';
-}
-
-// ══════════════════════════════════════
-// FORGOT PASSWORD
-// ══════════════════════════════════════
-async function doForgotPassword(){
-  const email = document.getElementById('forgot-email').value.trim();
-  if(!email||!email.includes('@')){ showAuthResult('forgot-result','error','⚠️ Enter a valid email.'); return; }
-  const btn = document.getElementById('forgot-btn');
-  btn.disabled=true; btn.textContent='⏳ Sending...';
-  showAuthResult('forgot-result','info','🔄 Sending reset link...');
-  try{
-    await fetch(STEW_URL+'/auth/forgot-password',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email}),
-      signal: AbortSignal.timeout(20000)
-    });
-    showAuthResult('forgot-result','success',
-      '📧 If that email is registered, a reset link has been sent. Check your inbox (and spam folder).');
-  }catch(e){
-    showAuthResult('forgot-result','error','❌ Could not connect. Try again.');
-  }
-  btn.disabled=false; btn.textContent='📧 Send Reset Link';
-}
-
-// ══════════════════════════════════════
-// RESET PASSWORD (from email link)
-// ══════════════════════════════════════
-async function doResetPassword(){
-  const pass    = document.getElementById('reset-password').value;
-  const confirm = document.getElementById('reset-confirm').value;
-  const token   = new URLSearchParams(window.location.search).get('token');
-  if(!token){ showAuthResult('reset-result','error','❌ Invalid reset link.'); return; }
-  if(pass.length < 8){ showAuthResult('reset-result','error','⚠️ Password must be at least 8 characters.'); return; }
-  if(pass !== confirm){ showAuthResult('reset-result','error','⚠️ Passwords do not match.'); return; }
-  const btn = document.getElementById('reset-btn');
-  btn.disabled=true; btn.textContent='⏳ Saving...';
-  try{
-    const resp = await fetch(STEW_URL+'/auth/reset-password',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token, new_password:pass}),
-      signal: AbortSignal.timeout(20000)
-    });
-    const data = await resp.json();
-    if(resp.ok && data.success){
-      showAuthResult('reset-result','success',`✅ Password changed! <a onclick="switchAuthTab('login')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Log in now →</a>`);
-    } else {
-      showAuthResult('reset-result','error','❌ '+(data.detail||'Reset failed. Link may have expired.'));
-    }
-  }catch(e){
-    showAuthResult('reset-result','error','❌ Connection error.');
-  }
-  btn.disabled=false; btn.textContent='🔐 Set New Password';
-}
-
-// Auto-open reset panel if token is in URL
+// ── Starfield canvas ─────────────────────────────────────────────────────────
 (function(){
-  const token = new URLSearchParams(window.location.search).get('token');
-  if(token){
-    // Verify token is valid before showing form
-    fetch(STEW_URL+'/auth/verify-reset-token?token='+token)
-      .then(r=>r.json())
-      .then(d=>{
-        if(d.valid){ openAuth('reset'); }
-        else { openAuth('login'); showAuthResult('login-result','error','❌ Reset link has expired. Request a new one.'); }
-      }).catch(()=>{});
+  const canvas = document.getElementById('starfield');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+  function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+  function initStars(){
+    stars=[];
+    for(let i=0;i<180;i++){
+      stars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*1.5+.3,o:Math.random()*.8+.2,s:Math.random()*.3+.05});
+    }
   }
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    stars.forEach(s=>{
+      s.o+=s.s*(s.o>1||s.o<.2?-1:1);
+      if(s.o>1)s.s=-Math.abs(s.s); if(s.o<.2)s.s=Math.abs(s.s);
+      ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(167,139,250,${Math.min(1,s.o)})`;ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  resize();initStars();draw();
+  window.addEventListener('resize',()=>{resize();initStars();});
 })();
 
-// ══════════════════════════════════════
-// DASHBOARD
-// ══════════════════════════════════════
-async function loadDashboard(){
-  const key = document.getElementById('dash-key').value.trim()||localStorage.getItem('stew_api_key')||'';
-  if(!key){ showAuthResult('dash-result','error','⚠️ Enter your API key first.'); return; }
-  if(document.getElementById('dash-key').value==='') document.getElementById('dash-key').value=key;
-  _myKey=key;
-  showAuthResult('dash-result','info','🔄 Validating key...');
+// ── Scroll reveal ────────────────────────────────────────────────────────────
+const observer = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('visible');}});
+},{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+
+// ── Auth tabs ────────────────────────────────────────────────────────────────
+function switchTab(tab){
+  document.querySelectorAll('.auth-tab').forEach((t,i)=>{t.classList.toggle('active',i===(tab==='register'?0:1));});
+  document.getElementById('registerForm').style.display = tab==='register'?'flex':'none';
+  document.getElementById('loginForm').style.display = tab==='login'?'flex':'none';
+  document.getElementById('authResult').innerHTML='';
+  document.getElementById('authResult').className='';
+  document.getElementById('apiKeySection').style.display='none';
+}
+
+function showAuthResult(msg, type){
+  const el = document.getElementById('authResult');
+  el.className = 'auth-result ' + type;
+  el.innerHTML = msg;
+}
+
+// ── Register ─────────────────────────────────────────────────────────────────
+async function handleRegister(e){
+  e.preventDefault();
+  const btn = document.getElementById('regBtn');
+  btn.disabled=true; btn.textContent='Creating account...';
+  const name=document.getElementById('regName').value.trim();
+  const email=document.getElementById('regEmail').value.trim();
+  const password=document.getElementById('regPass').value;
   try{
-    const resp = await fetch(STEW_URL+'/auth/validate',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({api_key:key}),
-      signal:AbortSignal.timeout(20000)
+    const r = await fetch(BASE+'/auth/register',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,email,password})
     });
-    const data = await resp.json();
-    if(data.valid){
-      const pct=Math.min(Math.round(((data.calls_used||0)/(data.calls_limit||1))*100),100);
-      document.getElementById('d-name').textContent=data.name||'—';
-      document.getElementById('d-email').textContent=data.email||key.slice(0,20)+'...';
-      document.getElementById('d-plan').textContent=(data.plan||'free').toUpperCase();
-      document.getElementById('d-usage').textContent=`${data.calls_used||0} / ${data.calls_limit||3000} (${pct}%)`;
-      document.getElementById('d-bar').style.width=pct+'%';
-      document.getElementById('d-status').textContent=data.active===false?'🔴 Inactive':'🟢 Active';
-      document.getElementById('d-expires').textContent=data.plan==='free'?'Never (Free)':'30 days';
-      document.getElementById('d-key-display').textContent=key;
-      document.getElementById('dash-data').style.display='block';
-      document.getElementById('dash-result').style.display='none';
+    const data = await r.json();
+    if(r.ok && data.api_key){
+      localStorage.setItem('stew_api_key', data.api_key);
+      localStorage.setItem('stew_token', data.token||'');
+      showAuthResult('Account created successfully!', 'success');
+      document.getElementById('apiKeySection').style.display='block';
+      document.getElementById('apiKeyValue').textContent = data.api_key;
+      document.getElementById('ftApiKey').value = data.api_key;
     } else {
-      document.getElementById('dash-data').style.display='none';
-      showAuthResult('dash-result','error','❌ Invalid API key. <a onclick="switchAuthTab(\'register\')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Register here</a>.');
+      showAuthResult('Error: '+(data.detail||data.message||'Registration failed'), 'error');
     }
-  } catch(e){
-    showAuthResult('dash-result','error','⏳ STEW is waking up. Try again in 20s.');
+  } catch(err){
+    showAuthResult('Connection error — S.T.E.W may be waking up (free tier). Retry in 15s.', 'error');
   }
-}
-function copyDashKey(){
-  const k=document.getElementById('d-key-display').textContent;
-  if(k&&k!=='—') navigator.clipboard.writeText(k).then(()=>showToast('API Key copied! 🎉','ok'));
+  btn.disabled=false; btn.textContent='Create Account & Get API Key →';
 }
 
-// ══════════════════════════════════════
-// BILLING — PAYSTACK — FIXED & WORKING
-// ══════════════════════════════════════
-const PLAN_PRICES = {
-  pro:       {amount:990000,  name:'S.T.E.W Pro Plan',      desc:'50,000 API calls/month'},
-  business:  {amount:2900000, name:'S.T.E.W Business Plan',  desc:'200,000 API calls/month'},
-  enterprise:{amount:4900000, name:'S.T.E.W Enterprise Plan',desc:'Unlimited API calls'}
-};
-
-function openPaystack(plan){
-  openAuth('upgrade');
-  document.getElementById('plan-opt-'+plan)?.click();
-}
-
-async function doUpgrade(){
-  const key = document.getElementById('up-key').value.trim()||localStorage.getItem('stew_api_key')||'';
-  if(!key){ showAuthResult('up-result','error','⚠️ Enter your API key first.'); return; }
-  if(!_upgradePlan){ showAuthResult('up-result','error','⚠️ Select a plan first.'); return; }
-  const btn=document.getElementById('up-btn');
-  btn.disabled=true; btn.textContent='⏳ Initialising...';
-  showAuthResult('up-result','info','🔄 Connecting to Paystack...');
+// ── Login ─────────────────────────────────────────────────────────────────────
+async function handleLogin(e){
+  e.preventDefault();
+  const btn = document.getElementById('loginBtn');
+  btn.disabled=true; btn.textContent='Signing in...';
+  const email=document.getElementById('loginEmail').value.trim();
+  const password=document.getElementById('loginPass').value;
   try{
-    // get email from key validation
-    let email='developer@stew.api', fullName='';
-    try{
-      const vr = await fetch(STEW_URL+'/auth/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:key}),signal:AbortSignal.timeout(15000)});
-      const vd = await vr.json();
-      if(vd.email) email=vd.email;
-      if(vd.name) fullName=vd.name;
-    } catch(e){}
-
-    const payResp = await fetch(PAY_FN,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'initialize', email, plan:_upgradePlan, full_name:fullName}),
-      signal:AbortSignal.timeout(25000)
+    const r = await fetch(BASE+'/auth/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password})
     });
-    const payData = await payResp.json();
-
-    if(payData.authorization_url && !payData.mock){
-      showAuthResult('up-result','success',
-        `✅ Paystack ready! <a href="${payData.authorization_url}" target="_blank" style="color:#34d399;text-decoration:underline;">Click here to complete payment →</a>`
-      );
-      setTimeout(()=>window.open(payData.authorization_url,'_blank'),600);
-    } else if(payData.mock || payData.test_mode){
-      showAuthResult('up-result','info',
-        `ℹ️ Paystack is in test mode. Plan: <b>${_upgradePlan}</b> · Amount: ₦${(PLAN_PRICES[_upgradePlan]?.amount/100).toLocaleString()}<br><small style="color:var(--m)">Add PAYSTACK_SECRET_KEY on Render to enable live payments.</small>`
-      );
+    const data = await r.json();
+    if(r.ok && (data.token||data.access_token)){
+      const token = data.token||data.access_token;
+      const apiKey = data.user?.api_key || data.api_key;
+      localStorage.setItem('stew_token', token);
+      if(apiKey) localStorage.setItem('stew_api_key', apiKey);
+      showAuthResult('Signed in successfully! Welcome back, '+(data.user?.name||email)+'.', 'success');
+      if(apiKey){
+        document.getElementById('apiKeySection').style.display='block';
+        document.getElementById('apiKeyValue').textContent = apiKey;
+        document.getElementById('ftApiKey').value = apiKey;
+      }
     } else {
-      showAuthResult('up-result','error','❌ '+(payData.error||payData.detail||'Payment init failed.'));
+      showAuthResult('Error: '+(data.detail||data.message||'Invalid credentials'), 'error');
     }
-  } catch(e){
-    showAuthResult('up-result','error','❌ '+e.message);
+  } catch(err){
+    showAuthResult('Connection error — please retry.', 'error');
   }
-  btn.disabled=false; btn.textContent='💳 Pay with Paystack';
+  btn.disabled=false; btn.textContent='Sign In →';
 }
 
-// ══════════════════════════════════════
-// CODE COPY
-// ══════════════════════════════════════
-function copyCode(btn){
-  const pre=btn.parentElement.querySelector('pre');
-  if(!pre) return;
-  navigator.clipboard.writeText(pre.innerText).then(()=>{ btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent='Copy',2000); });
+// ── Forgot password ──────────────────────────────────────────────────────────
+async function handleForgotPassword(){
+  const email = document.getElementById('loginEmail').value.trim();
+  if(!email){showAuthResult('Enter your email first.','error');return;}
+  const r = await fetch(BASE+'/auth/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  const data = await r.json();
+  showAuthResult(r.ok?'Password reset link sent to '+email+'.':'Error: '+(data.detail||'Failed'), r.ok?'success':'error');
 }
 
-// ══════════════════════════════════════
-// KEYBOARD SHORTCUT
-// ══════════════════════════════════════
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeAuth(); });
+function copyKey(){
+  const k = document.getElementById('apiKeyValue').textContent;
+  navigator.clipboard.writeText(k).then(()=>{
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy Key',2000);
+  });
+}
 
-// ══════════════════════════════════════
-// AUTO-LOAD SAVED KEY
-// ══════════════════════════════════════
-window.addEventListener('DOMContentLoaded',()=>{
-  const saved = localStorage.getItem('stew_api_key');
-  if(saved && saved!==FREE_KEY){
-    if(document.getElementById('dash-key')) document.getElementById('dash-key').value=saved;
-    if(document.getElementById('up-key')) document.getElementById('up-key').value=saved;
-  }
+// ── Persona grid ─────────────────────────────────────────────────────────────
+const PERSONAS = [
+  {id:'general',icon:'🤖',label:'General Assistant',desc:'All-purpose AI for any task'},
+  {id:'doctor',icon:'🩺',label:'Medical Doctor',desc:'Healthcare & clinical AI'},
+  {id:'health',icon:'💚',label:'Health & Wellness',desc:'Nutrition, fitness & wellness'},
+  {id:'startup',icon:'🚀',label:'Startup Co-founder',desc:'Strategy, product & fundraising'},
+  {id:'legal',icon:'⚖️',label:'Legal Assistant',desc:'Contracts & legal research'},
+  {id:'finance',icon:'📈',label:'Finance Advisor',desc:'Modeling & investment analysis'},
+  {id:'education',icon:'🎓',label:'AI Tutor',desc:'Learning plans & explanations'},
+  {id:'ecommerce',icon:'🛒',label:'E-Commerce',desc:'Product & store optimization'},
+  {id:'developer',icon:'💻',label:'Software Engineer',desc:'Code, review & architecture'},
+  {id:'marketing',icon:'📣',label:'Growth Marketer',desc:'Copy, SEO & campaigns'},
+  {id:'hr',icon:'👥',label:'HR & People Ops',desc:'Hiring, onboarding & culture'},
+  {id:'customer_support',icon:'💬',label:'Customer Support',desc:'Empathetic query resolution'},
+];
+
+const grid = document.getElementById('personaGrid');
+PERSONAS.forEach(p=>{
+  const card = document.createElement('div');
+  card.className='persona-card'; card.dataset.id=p.id;
+  card.innerHTML=`<div class="pi">${p.icon}</div><h4>${p.label}</h4><p>${p.desc}</p>`;
+  card.addEventListener('click',()=>{
+    document.querySelectorAll('.persona-card').forEach(c=>c.classList.remove('active'));
+    card.classList.add('active');
+    document.getElementById('ftPersona').value=p.id;
+  });
+  grid.appendChild(card);
 });
 
-// ══════════════════════════════════════
-// 3D CARD TILT (Mouse-reactive)
-// ══════════════════════════════════════
-(function initCardTilt(){
-  const cards = document.querySelectorAll('.skill-card,.pricing-card,.monitor-card');
-  cards.forEach(card=>{
-    card.addEventListener('mousemove',e=>{
-      const rect=card.getBoundingClientRect();
-      const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
-      const dx=(e.clientX-cx)/rect.width*2;
-      const dy=(e.clientY-cy)/rect.height*2;
-      card.style.transform=`translateY(-6px) rotateX(${-dy*5}deg) rotateY(${dx*5}deg) scale(1.01)`;
-    });
-    card.addEventListener('mouseleave',()=>{
-      card.style.transform='';
-    });
+// ── Fine-tune ─────────────────────────────────────────────────────────────────
+async function saveFinetuneSettings(){
+  const apiKey = document.getElementById('ftApiKey').value.trim();
+  if(!apiKey){showFtResult('Enter your API key first.','error');return;}
+  const body = {
+    api_key: apiKey,
+    persona: document.getElementById('ftPersona').value,
+    response_style: document.getElementById('ftStyle').value,
+    language: document.getElementById('ftLang').value,
+    custom_instructions: document.getElementById('ftInstructions').value.trim()||null,
+    persona_name: document.getElementById('ftName').value.trim()||null,
+    mistral_api_key: document.getElementById('ftMistralKey').value.trim()||null,
+  };
+  try{
+    const r=await fetch(BASE+'/finetune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(r.ok&&data.success){
+      showFtResult('Settings saved! Your API key is now fine-tuned for <strong>'+data.settings.persona_label+'</strong>.','success');
+    } else {
+      showFtResult('Error: '+(data.detail||'Failed to save'),'error');
+    }
+  } catch(e){showFtResult('Connection error — retry in a moment.','error');}
+}
+
+async function loadFinetuneSettings(){
+  const apiKey = document.getElementById('ftApiKey').value.trim();
+  if(!apiKey){showFtResult('Enter your API key first.','error');return;}
+  try{
+    const r=await fetch(BASE+'/finetune/'+encodeURIComponent(apiKey));
+    const data=await r.json();
+    if(r.ok&&data.success){
+      document.getElementById('ftPersona').value=data.persona||'general';
+      document.getElementById('ftStyle').value=data.response_style||'balanced';
+      document.getElementById('ftLang').value=data.language||'en';
+      if(data.custom_instructions) document.getElementById('ftInstructions').value=data.custom_instructions;
+      if(data.persona_name) document.getElementById('ftName').value=data.persona_name;
+      document.querySelectorAll('.persona-card').forEach(c=>{c.classList.toggle('active',c.dataset.id===data.persona);});
+      showFtResult('Settings loaded! Persona: <strong>'+data.persona_label+'</strong>. Has Mistral key: '+(data.has_mistral_key?'Yes':'No')+'.','success');
+    } else {
+      showFtResult('Error: '+(data.detail||'Could not load'),'error');
+    }
+  } catch(e){showFtResult('Connection error.','error');}
+}
+
+async function testMistralKey(){
+  const apiKey = document.getElementById('ftApiKey').value.trim();
+  const mistralKey = document.getElementById('ftMistralKey').value.trim();
+  if(!apiKey){showFtResult('Enter your API key first.','error');return;}
+  if(!mistralKey){showFtResult('Enter your Mistral AI key first.','error');return;}
+  showFtResult('Testing Mistral key...','info');
+  try{
+    const r=await fetch(BASE+'/test-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey,mistral_api_key:mistralKey})});
+    const data=await r.json();
+    if(r.ok&&data.mistral_key_valid===true){
+      showFtResult('Mistral key is valid! Response: "'+data.mistral_test_response+'"','success');
+    } else if(r.ok&&data.mistral_key_valid===false){
+      showFtResult('Mistral key invalid: '+data.mistral_key_error,'error');
+    } else {
+      showFtResult('API key test result — valid: '+(data.valid?'Yes':'No')+', Plan: '+data.plan,'success');
+    }
+  } catch(e){showFtResult('Connection error.','error');}
+}
+
+function showFtResult(msg,type){
+  const el=document.getElementById('finetuneResult');
+  el.className='finetune-result show';
+  const colors={success:'var(--green)',error:'#f87171',info:'var(--cyan)'};
+  el.innerHTML=`<div style="color:${colors[type]||'var(--text)'};">${msg}</div>`;
+}
+
+// ── Test Playground ───────────────────────────────────────────────────────────
+const TEST_ENDPOINTS = [
+  {method:'POST',path:'/chat',desc:'Chat with STEW',body:{message:'Hello! What can you do?',api_key:'',web_search:false}},
+  {method:'POST',path:'/task',desc:'Execute any task',body:{task:'List top 5 fintech startups in Nigeria 2026',api_key:''}},
+  {method:'GET',path:'/heartbeat',desc:'API health check',body:null},
+  {method:'GET',path:'/personas',desc:'List all personas',body:null},
+  {method:'POST',path:'/finetune',desc:'Fine-tune API key',body:{api_key:'',persona:'startup',response_style:'concise'}},
+  {method:'POST',path:'/test-key',desc:'Validate your API key',body:{api_key:''}},
+  {method:'POST',path:'/search',desc:'Web search',body:{query:'Nigeria tech news 2026',api_key:''}},
+  {method:'POST',path:'/generate/pdf',desc:'Generate PDF',body:{content:'Report on AI in Africa',title:'AI Africa Report 2026',api_key:''}},
+  {method:'GET',path:'/skills',desc:'List 60+ skills',body:null},
+  {method:'POST',path:'/skills/run',desc:'Run a skill',body:{skill:'web_search',params:{query:'Nigerian AI 2026'},api_key:''}},
+];
+
+let activeEp = 0;
+const sidebar = document.getElementById('testSidebar');
+TEST_ENDPOINTS.forEach((ep,i)=>{
+  const el = document.createElement('div');
+  el.className='test-ep'+(i===0?' active':'');
+  el.innerHTML=`<div><span class="test-ep-method ${ep.method==='GET'?'ep-get':'ep-post'}">${ep.method}</span></div><div class="test-ep-path">${ep.path}</div><div class="test-ep-desc">${ep.desc}</div>`;
+  el.addEventListener('click',()=>{
+    activeEp=i;
+    document.querySelectorAll('.test-ep').forEach((e,j)=>e.classList.toggle('active',j===i));
+    document.getElementById('testPanelTitle').textContent=ep.method+' '+ep.path;
+    document.getElementById('testUrl').textContent=BASE+ep.path;
+    const savedKey = localStorage.getItem('stew_api_key')||'';
+    let body = ep.body ? JSON.parse(JSON.stringify(ep.body)) : null;
+    if(body&&'api_key' in body) body.api_key=savedKey;
+    document.getElementById('testReqBody').value = body ? JSON.stringify(body,null,2) : '// GET request — no body needed';
+    document.getElementById('testReqBody').disabled = ep.method==='GET';
+    document.getElementById('testResponsePre').textContent='// Response will appear here';
+    document.getElementById('testStatusCode').style.display='none';
   });
-})();
+  sidebar.appendChild(el);
+});
 
+async function runTest(){
+  const ep = TEST_ENDPOINTS[activeEp];
+  const btn = document.getElementById('testRunBtn');
+  btn.disabled=true; btn.textContent='Running...';
+  document.getElementById('testStatusMsg').textContent='Sending request...';
+  document.getElementById('testStatusCode').style.display='none';
+  try{
+    const opts = {method:ep.method,headers:{'Content-Type':'application/json'}};
+    if(ep.method!=='GET'){
+      try{opts.body=document.getElementById('testReqBody').value;}catch(e){}
+    }
+    const start=Date.now();
+    const r = await fetch(BASE+ep.path, opts);
+    const elapsed = Date.now()-start;
+    let text='';
+    try{const j=await r.json();text=JSON.stringify(j,null,2);}catch{text=await r.text();}
+    const codeEl = document.getElementById('testStatusCode');
+    codeEl.style.display='inline-flex';
+    codeEl.className='test-response-code '+(r.ok?'res-200':'res-error');
+    codeEl.textContent='● '+r.status+' '+(r.ok?'OK':'Error')+' ('+elapsed+'ms)';
+    document.getElementById('testResponsePre').textContent=text;
+    document.getElementById('testStatusMsg').textContent='Completed in '+elapsed+'ms';
+  } catch(err){
+    document.getElementById('testResponsePre').textContent='Error: '+err.message+'\n\nNote: If STEW is on Render free tier, it may be waking up. Wait 15s and retry.';
+    document.getElementById('testStatusMsg').textContent='Request failed';
+  }
+  btn.disabled=false; btn.textContent='▶ Run Request';
+}
+
+// Load saved key into test forms
+const savedKey = localStorage.getItem('stew_api_key');
+if(savedKey){
+  document.getElementById('ftApiKey').value = savedKey;
+  // Update default test body
+  try{const b=JSON.parse(document.getElementById('testReqBody').value);if('api_key' in b){b.api_key=savedKey;document.getElementById('testReqBody').value=JSON.stringify(b,null,2);}}catch{}
+}
+
+// ── Smooth chat scroll ───────────────────────────────────────────────────────
+const STEW_URL = BASE;
+let _myKey = localStorage.getItem('stew_api_key') || '';
+const chatMsgs = [];
+
+function addMsg(role, text){
+  chatMsgs.push({role, text});
+}
+
+// Navbar scroll effect
+window.addEventListener('scroll',()=>{
+  const nav = document.querySelector('nav');
+  nav.style.background = window.scrollY>50 ? 'rgba(6,0,15,.95)' : 'rgba(6,0,15,.8)';
+});
 </script>
-
 </body>
 </html>
-
