@@ -9,6 +9,11 @@ from typing import Optional
 from fastapi import HTTPException
 from groq import Groq
 from openai import OpenAI
+try:
+    from mistralai import Mistral as MistralClient
+    HAS_MISTRAL = True
+except ImportError:
+    HAS_MISTRAL = False
 
 from server.config import get_settings
 
@@ -23,6 +28,8 @@ PROVIDER_MODELS = {
     "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
     "openai":       "gpt-4o-mini",
     "huggingface":  "Qwen/Qwen3-235B-A22B",  # best free on HF Router
+    "mistral":      "mistral-large-latest",       # Mistral AI flagship
+    "mistral_fast": "mistral-small-latest",       # Mistral AI fast/cheap
 }
 
 # Fallback chain for Groq if primary fails
@@ -31,6 +38,15 @@ GROQ_FALLBACKS = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-3.1-8b-instant",
     "qwen/qwen3-32b",
+]
+
+
+MISTRAL_FALLBACKS = [
+    "mistral-large-latest",
+    "mistral-medium-latest",
+    "mistral-small-latest",
+    "open-mixtral-8x22b",
+    "open-mistral-7b",
 ]
 
 # Fallback chain for NVIDIA NIM if primary fails (all free-tier models)
@@ -97,12 +113,20 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"OpenAI init failed: {e}")
 
+
+        if settings.MISTRAL_API_KEY and HAS_MISTRAL:
+            try:
+                self.providers["mistral"] = MistralClient(api_key=settings.MISTRAL_API_KEY)
+                logger.info("Mistral AI provider initialized")
+            except Exception as e:
+                logger.warning(f"Mistral init failed: {e}")
+
         if not self.providers:
             logger.error("No LLM providers available — set GROQ_API_KEY at minimum")
 
     @property
     def fallback_order(self) -> list[str]:
-        return [p for p in ["groq", "nvidia", "openrouter", "huggingface", "openai"] if p in self.providers]
+        return [p for p in ["groq", "nvidia", "mistral", "openrouter", "huggingface", "openai"] if p in self.providers]
 
     def _call_groq_with_fallback(self, messages: list[dict], temperature: float) -> dict:
         """Try each Groq model in fallback order."""
@@ -209,6 +233,36 @@ class LLMClient:
                 }
             except Exception:
                 return self._call_nvidia_with_fallback(messages, temperature)
+
+
+        if provider_name == "mistral":
+            client = self.providers["mistral"]
+            chosen_model = model or PROVIDER_MODELS.get("mistral", "mistral-large-latest")
+            last_err = None
+            for m in MISTRAL_FALLBACKS:
+                try:
+                    if model:
+                        m = model
+                    resp = client.chat.complete(
+                        model=m,
+                        messages=messages,
+                        temperature=temperature,
+                    )
+                    content_text = resp.choices[0].message.content
+                    return {
+                        "content": content_text, "provider": "mistral", "model": m,
+                        "tokens": {
+                            "prompt": resp.usage.prompt_tokens if resp.usage else 0,
+                            "completion": resp.usage.completion_tokens if resp.usage else 0,
+                            "total": resp.usage.total_tokens if resp.usage else 0,
+                        },
+                    }
+                except Exception as e:
+                    last_err = e
+                    if "model" in str(e).lower() or "404" in str(e):
+                        continue
+                    raise
+            raise last_err
 
         client = self.providers[provider_name]
         chosen_model = model or PROVIDER_MODELS.get(provider_name, "gpt-4o-mini")
