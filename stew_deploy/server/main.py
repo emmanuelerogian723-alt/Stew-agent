@@ -264,6 +264,24 @@ p{color:#aaa;font-size:1.2em}.btn{display:inline-block;margin:10px;padding:14px 
 </body></html>""")
 
 
+
+@app.get("/playground", response_class=HTMLResponse, include_in_schema=False)
+async def playground_page():
+    """Serve the S.T.E.W Playground."""
+    import os
+    candidates = [
+        "/app/stew_playground.html",
+        os.path.join(os.path.dirname(__file__), "..", "stew_playground.html"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stew_playground.html"),
+        "stew_playground.html",
+    ]
+    for path in candidates:
+        path = os.path.normpath(path)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Playground not found</h1><p>stew_playground.html missing</p>")
+
 @app.post("/auth/register", status_code=201)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
@@ -391,7 +409,7 @@ async def chat(
         await append_message(db, conv, "assistant", response_text)
 
     if user:
-        background_tasks.add_task(_log_call, db, user.id, "/chat", "POST", tokens, 200)
+        background_tasks.add_task(_log_call, db, user.id if user else None, "/chat", "POST", tokens, 200)
 
     return {
         "response": response_text,
@@ -456,7 +474,7 @@ async def task(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     llm = get_llm_client()
     searcher = get_searcher()
 
@@ -490,7 +508,7 @@ async def task(
     ])
 
     background_tasks.add_task(
-        _log_call, db, user.id, "/task", "POST", result["tokens"].get("total", 0), 200
+        _log_call, db, user.id if user else None, "/task", "POST", result["tokens"].get("total", 0), 200
     )
 
     return {
@@ -502,6 +520,27 @@ async def task(
     }
 
 
+
+
+@app.post("/search")
+async def search_web(body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Web search endpoint."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    searcher = get_searcher()
+    query = body.get("query", "")
+    if not query:
+        raise HTTPException(400, "Query required")
+    if not searcher._is_available():
+        raise HTTPException(503, "Search not configured (SERPER_API_KEY required)")
+    try:
+        results = await asyncio.to_thread(searcher.search, query, 5)
+        if user:
+            background_tasks.add_task(_log_call, db, user.id if user else None, "/search", "POST", 0, 200)
+        return {"results": results, "success": True}
+    except Exception as e:
+        raise HTTPException(500, f"Search failed: {e}")
+
+
 # ── Browse ─────────────────────────────────────────────────────────────────────
 
 @app.post("/browse/navigate")
@@ -510,7 +549,7 @@ async def browse_navigate(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     llm = get_llm_client()
 
     try:
@@ -544,7 +583,7 @@ async def browse_navigate(
             )
             visual_analysis = result
 
-        background_tasks.add_task(_log_call, db, user.id, "/browse/navigate", "POST", 0, 200)
+        background_tasks.add_task(_log_call, db, user.id if user else None, "/browse/navigate", "POST", 0, 200)
 
         return {
             "url": body.url,
@@ -568,9 +607,9 @@ async def gen_pdf(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     result = generate_pdf(body.content, body.title)
-    background_tasks.add_task(_log_call, db, user.id, "/generate/pdf", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/pdf", "POST", 0, 200)
     return result
 
 
@@ -580,9 +619,9 @@ async def gen_docx(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     result = generate_docx(body.content, body.title)
-    background_tasks.add_task(_log_call, db, user.id, "/generate/docx", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/docx", "POST", 0, 200)
     return result
 
 
@@ -592,9 +631,9 @@ async def gen_xlsx(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     result = generate_xlsx(body.data, body.sheet_name, body.title)
-    background_tasks.add_task(_log_call, db, user.id, "/generate/xlsx", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/xlsx", "POST", 0, 200)
     return result
 
 
@@ -604,9 +643,9 @@ async def gen_pptx(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     result = generate_pptx(body.slides, body.title)
-    background_tasks.add_task(_log_call, db, user.id, "/generate/pptx", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/pptx", "POST", 0, 200)
     return result
 
 
@@ -616,9 +655,9 @@ async def gen_html(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     result = generate_html(body.content, body.title)
-    background_tasks.add_task(_log_call, db, user.id, "/generate/html", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/html", "POST", 0, 200)
     return result
 
 
@@ -632,7 +671,7 @@ async def upload_document(
     api_key: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(api_key, db)
+    user = await _safe_get_user(api_key, db)
     llm = get_llm_client()
 
     extracted = await extract_text(file)
@@ -656,7 +695,7 @@ async def upload_document(
     db.add(doc)
     await db.flush()
 
-    background_tasks.add_task(_log_call, db, user.id, "/upload/document", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id if user else None, "/upload/document", "POST", 0, 200)
 
     return {
         "filename": extracted["filename"],
@@ -676,7 +715,7 @@ async def api_proxy_call(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
 
     # Block calls to internal/private IPs
     blocked_prefixes = ("localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0")
@@ -697,7 +736,7 @@ async def api_proxy_call(
             json=body.body if body.body else None,
             timeout=30,
         )
-        background_tasks.add_task(_log_call, db, user.id, "/api/call", "POST", 0, resp.status_code)
+        background_tasks.add_task(_log_call, db, user.id if user else None, "/api/call", "POST", 0, resp.status_code)
         return {
             "status_code": resp.status_code,
             "body": resp.text,
@@ -717,7 +756,7 @@ async def init_payment(
     body: InitPaymentRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     if body.plan not in settings.PLAN_PRICES:
         raise HTTPException(400, "Invalid plan")
     if body.plan == "free":
@@ -738,7 +777,7 @@ async def verify_payment_endpoint(
     body: VerifyPaymentRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     tx_data = verify_payment(body.reference)
 
     if tx_data["status"] == "success":
@@ -853,10 +892,31 @@ async def list_available_skills(category: str = ""):
 @app.post("/skills/run")
 async def run_skill_endpoint(body: SkillRequest, db: AsyncSession = Depends(get_db)):
     """Execute any S.T.E.W skill by name."""
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     from server.skills_engine import run_skill
     result = await run_skill(body.skill, **body.params)
     return {"skill": body.skill, "result": result, "success": "error" not in result}
+
+
+
+
+@app.post("/search")
+async def search_web(body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Web search endpoint."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    searcher = get_searcher()
+    query = body.get("query", "")
+    if not query:
+        raise HTTPException(400, "Query required")
+    if not searcher._is_available():
+        raise HTTPException(503, "Search not configured (SERPER_API_KEY required)")
+    try:
+        results = await asyncio.to_thread(searcher.search, query, 5)
+        if user:
+            background_tasks.add_task(_log_call, db, user.id if user else None, "/search", "POST", 0, 200)
+        return {"results": results, "success": True}
+    except Exception as e:
+        raise HTTPException(500, f"Search failed: {e}")
 
 
 # ── Browse ─────────────────────────────────────────────────────────────────────
@@ -864,7 +924,7 @@ async def run_skill_endpoint(body: SkillRequest, db: AsyncSession = Depends(get_
 @app.post("/browse")
 async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
     """Browse any URL and extract content. Falls back to DuckDuckGo if Serper is down."""
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     from server.browser import StewBrowser
     browser = StewBrowser()
     if body.url.startswith("http"):
@@ -1094,7 +1154,7 @@ async def integration_call(body: IntegrationRequest, db: AsyncSession = Depends(
     Proxy any external API call through S.T.E.W.
     Useful for integrating Stripe, SendGrid, Twilio, etc.
     """
-    user = await get_user_by_api_key(body.api_key, db)
+    user = await _safe_get_user(body.api_key, db)
     import httpx
     try:
         async with httpx.AsyncClient(timeout=30) as client:
