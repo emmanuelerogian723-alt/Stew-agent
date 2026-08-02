@@ -26,6 +26,7 @@ RUN playwright install chromium
 
 COPY stew_deploy/ .
 COPY landing.html /app/landing.html
+COPY stew_playground.html /app/stew_playground.html
 
 RUN mkdir -p memory/data output logs workspace screenshots uploads
 
