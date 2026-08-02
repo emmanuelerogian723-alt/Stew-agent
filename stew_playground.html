@@ -267,16 +267,15 @@ textarea.code-in{width:100%;min-height:110px;background:transparent;border:none;
 const BASE = 'https://stew-agent.onrender.com';
 const EPS = [
   {method:'POST',path:'/chat',name:'/chat',desc:'AI conversation',tag:'fast',body:'{\n  "message": "What is the capital of Nigeria?"\n}',msg:'STEW is thinking...'},
-  {method:'POST',path:'/task',name:'/task',desc:'Execute any task (translation, weather, etc.)',tag:'power',body:'{\n  "task": "Analyze the Nigerian tech ecosystem in 2026",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Deploying 100 agents...'},
-  {method:'POST',path:'/search',name:'/search',desc:'Web search via skills engine',tag:'fast',body:'{\n  "query": "MUTYINT Nigeria AI 2026",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Searching the web...'},
-  {method:'POST',path:'/browse/navigate',name:'/browse/navigate',desc:'Browse any URL',tag:'power',body:'{\n  "url": "https://techcrunch.com",\n  "question": "What are today\'s top stories?",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Browsing the web...'},
+  {method:'POST',path:'/task',name:'/task',desc:'Execute any task (translation, weather, etc.)',tag:'power',body:'{\n  "task": "Analyze the Nigerian tech ecosystem in 2026",\n  "api_key": ""\n}',msg:'Deploying 100 agents...'},
+  {method:'POST',path:'/search',name:'/search',desc:'Web search via skills engine',tag:'fast',body:'{\n  "query": "MUTYINT Nigeria AI 2026",\n  "api_key": ""\n}',msg:'Searching the web...'},
+  {method:'POST',path:'/browse/navigate',name:'/browse/navigate',desc:'Browse any URL',tag:'power',body:'{\n  "url": "https://techcrunch.com",\n  "question": "What are today\'s top stories?",\n  "api_key": ""\n}',msg:'Browsing the web...'},
   {method:'GET',path:'/skills',name:'/skills',desc:'List all 60+ skills',tag:'fast',body:null,msg:'Loading skills catalog...'},
-  {method:'POST',path:'/skills/run',name:'/skills/run',desc:'Run any skill by name',tag:'power',body:'{\n  "skill": "web_search",\n  "params": {"query": "AI in Africa 2026"},\n  "api_key": "stew_free_playground_2026"\n}',msg:'Running skill...'},
-  {method:'POST',path:'/generate/pdf',name:'/generate/pdf',desc:'Generate PDF document',tag:'fast',body:'{\n  "content": "Report on AI in Africa",\n  "title": "AI Africa Report",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Generating PDF...'},
-  {method:'POST',path:'/api/call',name:'/api/call',desc:'Proxy any API call',tag:'fast',body:'{\n  "url": "https://api.github.com/users/github",\n  "method": "GET",\n  "api_key": "stew_free_playground_2026"\n}',msg:'Proxying API call...'},
+  {method:'POST',path:'/skills/run',name:'/skills/run',desc:'Run any skill by name',tag:'power',body:'{\n  "skill": "web_search",\n  "params": {"query": "AI in Africa 2026"},\n  "api_key": ""\n}',msg:'Running skill...'},
+  {method:'POST',path:'/generate/pdf',name:'/generate/pdf',desc:'Generate PDF document',tag:'fast',body:'{\n  "content": "Report on AI in Africa",\n  "title": "AI Africa Report",\n  "api_key": ""\n}',msg:'Generating PDF...'},
+  {method:'POST',path:'/api/call',name:'/api/call',desc:'Proxy any API call',tag:'fast',body:'{\n  "url": "https://api.github.com/users/github",\n  "method": "GET",\n  "api_key": ""\n}',msg:'Proxying API call...'},
   {method:'GET',path:'/heartbeat',name:'/heartbeat',desc:'API health check',tag:'fast',body:null,msg:'Checking status...'},
-  {method:'GET',path:'/security/health',name:'/security/health',desc:'Security status',tag:'fast',body:null,msg:'Checking shield...'},
-];
+  {method:'GET',path:'/security/health',name:'/security/health',desc:'Security status',tag:'fast',body:null,msg:'Checking shield...'}];
 
 let selIdx=0, totalReq=0, okCount=0, times=[], curLang='js';
 
@@ -307,11 +306,11 @@ function selEp(i){
 function quickTest(type,val){
   if(type !== 'chat' && type !== 'search'){
     selEp(1); // Select /task endpoint
-    const body = {task: val, api_key: "stew_free_playground_2026"};
+    const body = {task: val};
     document.getElementById('reqBody').value = JSON.stringify(body, null, 2);
   } else if(type === 'search'){
     selEp(2); // Select /search endpoint
-    const body = {query: val, api_key: "stew_free_playground_2026"};
+    const body = {query: val};
     document.getElementById('reqBody').value = JSON.stringify(body, null, 2);
   } else {
     selEp(0); // Select /chat endpoint
@@ -469,11 +468,9 @@ curl_setopt_array(<span class="kw">$ch</span>, [
   CURLOPT_RETURNTRANSFER =&gt; true,
   CURLOPT_CUSTOMREQUEST =&gt; <span class="str">"${e.method}"</span>,${e.body&&e.method!=='GET'?`
   CURLOPT_POSTFIELDS =&gt; '${e.body.replace(/\n/g,' ')}',`:''}
-  CURLOPT_HTTPHEADER =&gt; [<span class="str">"Content-Type: application/json"</span>],
-]);
+  CURLOPT_HTTPHEADER =&gt; [<span class="str">"Content-Type: application/json"</span>]]);
 <span class="kw">$data</span> = json_decode(curl_exec(<span class="kw">$ch</span>), true);
-print_r(<span class="kw">$data</span>);</pre>`,
-};
+print_r(<span class="kw">$data</span>);</pre>`};
 
 function showSnip(lang){
   curLang=lang;
