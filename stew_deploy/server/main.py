@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="S.T.E.W Agent API",
     description="Structured Task Execution Workflow — AI Agent Backend v5.0",
-    version="5.0.0",
+    version="6.0.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -346,6 +346,38 @@ async def get_me(current_user: User = Depends(get_current_user_jwt)):
 
 # ── Chat ───────────────────────────────────────────────────────────────────────
 
+
+@app.get("/auth/usage")
+async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Return the user's current plan, calls used, and remaining quota."""
+    user = await get_user_by_api_key(api_key, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    # Count calls this month
+    from datetime import timedelta
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(func.count(APICall.id)).where(
+            APICall.user_id == user.id,
+            APICall.timestamp >= month_start
+        )
+    )
+    calls_used = result.scalar() or 0
+
+    plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 500)
+    calls_remaining = max(0, plan_limit - calls_used)
+
+    return {
+        "success": True,
+        "plan": user.plan,
+        "calls_used": calls_used,
+        "calls_limit": plan_limit,
+        "calls_remaining": calls_remaining,
+        "reset_date": (month_start.replace(month=month_start.month + 1) if month_start.month < 12 else month_start.replace(year=month_start.year + 1, month=1)).isoformat(),
+    }
+
+
 @app.post("/chat")
 async def chat(
     body: ChatRequest,
@@ -369,12 +401,21 @@ async def chat(
     web_grounded = False
 
     if body.web_search and searcher._is_available():
-        # Decide if query needs fresh data
+        # Decide if query needs fresh data — broadened keyword set
         needs_search_keywords = [
             "latest", "current", "today", "news", "score", "price",
             "weather", "stock", "who won", "when is", "what is the",
+            "now", "recent", "update", "happened", "2024", "2025", "2026",
+            "bitcoin", "crypto", "naira", "dollar", "exchange", "rate",
+            "result", "match", "game", "election", "release", "launch",
+            "announce", "dead", "born", "happen", "live",
         ]
-        if any(kw in body.message.lower() for kw in needs_search_keywords):
+        msg_lower = body.message.lower()
+        should_search = any(kw in msg_lower for kw in needs_search_keywords)
+        # Also search if the message looks like a question about real-world facts
+        if not should_search and any(q in msg_lower for q in ["who is", "where is", "how much", "how many"]):
+            should_search = True
+        if should_search:
             try:
                 search_results = await asyncio.to_thread(searcher.search, body.message, 5)
                 if search_results.get("grounded"):
@@ -485,6 +526,73 @@ async def orchestrate_image_endpoint(body: OrchestrateImageRequest):
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+
+
+
+# ── 100-Agent Swarm ────────────────────────────────────────────────────────────
+
+class AgentRunRequest(BaseModel):
+    task: str
+    api_key: Optional[str] = None
+    num_agents: int = 5
+    synthesize: bool = True
+
+
+@app.post("/agents/run")
+async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Dispatch a task to S.T.E.W's 100-agent pool.
+    Selects num_agents specialists, runs them in parallel, and optionally
+    synthesizes their outputs into a single best-of-all-worlds response.
+    """
+    from agents.agent_pool import AgentPool
+
+    pool = AgentPool()
+
+    class BrainAdapter:
+        async def call_llm(self, prompt: str, system: str = "", max_tokens: int = 2048) -> str:
+            llm = get_llm_client()
+            messages = [
+                {"role": "system", "content": system or "You are a helpful AI agent."},
+                {"role": "user", "content": prompt},
+            ]
+            try:
+                result = llm.chat(messages)
+                return result.get("content", "")
+            except Exception as e:
+                logger.warning(f"Agent brain call failed: {e}")
+                return f"Agent could not complete: {e}"
+
+    brain = BrainAdapter()
+
+    try:
+        result = await pool.execute_task(
+            task=body.task,
+            brain=brain,
+            num_agents=min(body.num_agents, 10),
+            synthesize=body.synthesize,
+        )
+        return {
+            "success": True,
+            "task": body.task,
+            "agents_used": result.get("agents_used", body.num_agents),
+            "results": result.get("agent_results", []),
+            "synthesis": result.get("synthesis", ""),
+            "execution_time": result.get("execution_time", 0),
+        }
+    except Exception as e:
+        logger.error(f"Agent pool execution failed: {e}")
+        raise HTTPException(status_code=503, detail=f"Agent execution failed: {e}")
+
+
+
+
+@app.get("/agents/status")
+async def agents_status():
+    """Get the status of the 100-agent pool."""
+    from agents.agent_pool import AgentPool
+    pool = AgentPool()
+    return {"success": True, **pool.get_pool_status()}
 
 # ── Task ───────────────────────────────────────────────────────────────────────
 
@@ -1063,26 +1171,6 @@ async def run_skill_endpoint(body: SkillRequest, db: AsyncSession = Depends(get_
 
 
 
-@app.post("/search")
-async def search_web(body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    """Web search endpoint."""
-    user = await _safe_get_user(body.get("api_key", ""), db)
-    searcher = get_searcher()
-    query = body.get("query", "")
-    if not query:
-        raise HTTPException(400, "Query required")
-    if not searcher._is_available():
-        raise HTTPException(503, "Search not configured (SERPER_API_KEY required)")
-    try:
-        results = await asyncio.to_thread(searcher.search, query, 5)
-        if user:
-            background_tasks.add_task(_log_call, db, user.id if user else None, "/search", "POST", 0, 200)
-        return {"results": results, "success": True}
-    except Exception as e:
-        raise HTTPException(500, f"Search failed: {e}")
-
-
-# ── Browse ─────────────────────────────────────────────────────────────────────
 
 @app.post("/browse")
 async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):

@@ -328,6 +328,39 @@ Return ONLY 5 lines, each starting with TASK_N: (where N is 1-5)""",
         results = await asyncio.gather(*coroutines, return_exceptions=True)
         return [r for r in results if isinstance(r, dict)]
 
+
+    async def execute_task(self, task: str, brain=None, num_agents: int = 5, synthesize: bool = True) -> dict:
+        """
+        Execute a task using the agent pool with AI decomposition.
+        Returns individual agent results and optional synthesis.
+        """
+        import time as _time
+        start = _time.time()
+        
+        sub_tasks = await self._decompose_task(task, brain=brain)
+        results = await self._run_with_best_agents(sub_tasks, brain=brain)
+        
+        synthesis = ""
+        if synthesize and brain and results:
+            try:
+                agent_summaries = "\n\n".join(
+                    f"Agent {r.get('agent', 'Unknown')} ({r.get('specialty', '')}): {r.get('output', '')[:500]}"
+                    for r in results if isinstance(r, dict)
+                )
+                synthesis = await brain.call_llm(
+                    f"Synthesize these agent outputs into one coherent, comprehensive answer.\n\nTask: {task}\n\nAgent Outputs:\n{agent_summaries}",
+                    system="You are a master synthesizer. Combine multiple agent outputs into one excellent response."
+                )
+            except Exception as e:
+                synthesis = f"Synthesis failed: {e}"
+        
+        return {
+            "agent_results": results,
+            "synthesis": synthesis,
+            "agents_used": len(results),
+            "execution_time": round(_time.time() - start, 2),
+        }
+
     def get_pool_status(self) -> Dict:
         idle = sum(1 for a in self.agents.values() if a.status == AgentStatus.IDLE)
         working = sum(1 for a in self.agents.values() if a.status == AgentStatus.WORKING)

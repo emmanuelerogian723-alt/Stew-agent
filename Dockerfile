@@ -32,4 +32,4 @@ RUN mkdir -p memory/data output logs workspace screenshots uploads
 
 EXPOSE 8000
 
-CMD alembic upgrade head; uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --log-level info
+CMD alembic upgrade head 2>&1 || true; uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --log-level info
