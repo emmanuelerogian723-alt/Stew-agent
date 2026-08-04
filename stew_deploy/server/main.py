@@ -282,6 +282,24 @@ async def playground_page():
                 return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>Playground not found</h1><p>stew_playground.html missing</p>")
 
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard_page():
+    """Serve the S.T.E.W user dashboard."""
+    for path in [
+        "/app/dashboard.html",
+        "/app/stew_deploy/dashboard.html",
+        os.path.join(os.path.dirname(__file__), "..", "dashboard.html"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dashboard.html"),
+        "dashboard.html",
+    ]:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Dashboard not found</h1>", status_code=404)
+
+
+
 @app.post("/auth/register", status_code=201)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
@@ -375,6 +393,27 @@ async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
         "calls_remaining": calls_remaining,
         "reset_date": (month_start.replace(month=month_start.month + 1) if month_start.month < 12 else month_start.replace(year=month_start.year + 1, month=1)).isoformat(),
     }
+
+
+
+
+@app.post("/auth/regenerate-key")
+async def regenerate_api_key(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Regenerate the user's API key. The old key stops working immediately."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    
+    import secrets
+    new_key = "stew_" + secrets.token_urlsafe(32)
+    user.api_key = new_key
+    await db.flush()
+    
+    return {"api_key": new_key, "success": True, "message": "API key regenerated. Update your applications with the new key."}
+
 
 
 @app.post("/chat")
