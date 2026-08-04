@@ -78,14 +78,14 @@ class WebSearch:
             }
 
         except requests.Timeout:
-            logger.error("Serper API timeout")
-            raise HTTPException(status_code=504, detail="Web search timed out")
+            logger.error("Serper API timeout, falling back to DuckDuckGo")
+            return self._duckduckgo_fallback(query, num_results)
         except requests.HTTPError as e:
-            logger.error(f"Serper API HTTP error: {e}")
-            raise HTTPException(status_code=502, detail=f"Web search API error: {e}")
+            logger.warning(f"Serper API HTTP error: {e}, falling back to DuckDuckGo")
+            return self._duckduckgo_fallback(query, num_results)
         except Exception as e:
-            logger.error(f"Serper API unexpected error: {e}")
-            raise HTTPException(status_code=502, detail="Web search failed")
+            logger.warning(f"Serper API error: {e}, falling back to DuckDuckGo")
+            return self._duckduckgo_fallback(query, num_results)
 
     def news_search(self, query: str, num_results: int = 5) -> dict:
         """Search for recent news articles."""
@@ -137,6 +137,59 @@ class WebSearch:
                 "query": query,
                 "grounded": False,
                 "error": str(e),
+            }
+
+
+    def _duckduckgo_fallback(self, query: str, num_results: int = 5) -> dict:
+        """Fallback search using DuckDuckGo HTML (no API key needed)."""
+        try:
+            import urllib.parse
+            resp = requests.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(resp.text, "html.parser")
+            results = []
+            for r in soup.select(".result__body")[:num_results]:
+                title_tag = r.select_one(".result__title a")
+                snippet_tag = r.select_one(".result__snippet")
+                if title_tag:
+                    link = title_tag.get("href", "")
+                    # DuckDuckGo wraps links in a redirect
+                    if "uddg=" in link:
+                        link = urllib.parse.unquote(link.split("uddg=")[-1].split("&")[0])
+                    results.append({
+                        "title": title_tag.get_text(strip=True),
+                        "link": link,
+                        "snippet": snippet_tag.get_text(strip=True) if snippet_tag else "",
+                        "position": len(results) + 1,
+                    })
+            
+            logger.info(f"DuckDuckGo fallback returned {len(results)} results for: {query}")
+            return {
+                "organic": results,
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": len(results) > 0,
+                "source": "duckduckgo_fallback",
+            }
+        except Exception as e:
+            logger.error(f"DuckDuckGo fallback also failed: {e}")
+            return {
+                "organic": [],
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": False,
+                "error": f"Both Serper and DuckDuckGo failed: {e}",
             }
 
     def format_results_for_llm(self, results: dict) -> str:

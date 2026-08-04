@@ -651,20 +651,21 @@ async def task(
 
 @app.post("/search")
 async def search_web(body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    """Web search endpoint."""
+    """Web search endpoint with DuckDuckGo fallback."""
     user = await _safe_get_user(body.get("api_key", ""), db)
     searcher = get_searcher()
     query = body.get("query", "")
     if not query:
         raise HTTPException(400, "Query required")
-    if not searcher._is_available():
-        raise HTTPException(503, "Search not configured (SERPER_API_KEY required)")
     try:
         results = await asyncio.to_thread(searcher.search, query, 5)
         if user:
             background_tasks.add_task(_log_call, db, user.id if user else None, "/search", "POST", 0, 200)
         return {"results": results, "success": True}
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Search endpoint error: {e}")
         raise HTTPException(500, f"Search failed: {e}")
 
 
