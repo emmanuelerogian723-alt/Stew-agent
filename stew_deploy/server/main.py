@@ -25,7 +25,6 @@ from server.auth import (
     get_user_by_api_key, hash_password, verify_password,
 )
 from server.config import get_settings
-from server.system_prompt import STEW_SYSTEM_PROMPT as _BASE_SYSTEM_PROMPT
 from server.database import get_db, init_db
 from server.document_generator import (
     generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx,
