@@ -279,6 +279,22 @@ p{color:#aaa;font-size:1.2em}.btn{display:inline-block;margin:10px;padding:14px 
 
 
 
+@app.get("/robots.txt", include_in_schema=False)
+async def robots():
+    import os
+    p = os.path.join(os.path.dirname(__file__), "..", "robots.txt")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="text/plain")
+    return PlainTextResponse("User-agent: *\nAllow: /\nSitemap: https://stew-agent.onrender.com/sitemap.xml")
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap():
+    import os
+    p = os.path.join(os.path.dirname(__file__), "..", "sitemap.xml")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="application/xml")
+    return PlainTextResponse("<?xml version=\"1.0\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"><url><loc>https://stew-agent.onrender.com/</loc></url></urlset>")
+
 @app.get("/playground", response_class=HTMLResponse, include_in_schema=False)
 async def playground_page():
     """Serve the S.T.E.W Playground."""

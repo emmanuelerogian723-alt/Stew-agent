@@ -32,6 +32,8 @@ COPY dashboard.html .
 COPY landing.html .
 COPY playground.html .
 COPY plugins.html .
+COPY robots.txt .
+COPY sitemap.xml .
 COPY migrations/ ./migrations/
 COPY alembic.ini .
 

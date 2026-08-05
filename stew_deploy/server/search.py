@@ -31,16 +31,8 @@ class WebSearch:
         NEVER fabricates results.
         """
         if not self._is_available():
-            logger.warning("SERPER_API_KEY not set — web search disabled")
-            return {
-                "organic": [],
-                "answer_box": {},
-                "knowledge_graph": {},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "query": query,
-                "grounded": False,
-                "error": "Web search not available (SERPER_API_KEY not configured)",
-            }
+            logger.warning("SERPER_API_KEY not set — trying SearXNG")
+            return self._searxng_fallback(query, num_results)
 
         headers = {
             "X-API-KEY": self.api_key,
@@ -78,14 +70,14 @@ class WebSearch:
             }
 
         except requests.Timeout:
-            logger.error("Serper API timeout, falling back to DuckDuckGo")
-            return self._duckduckgo_fallback(query, num_results)
+            logger.error("Serper API timeout, falling back to SearXNG")
+            return self._searxng_fallback(query, num_results)
         except requests.HTTPError as e:
-            logger.warning(f"Serper API HTTP error: {e}, falling back to DuckDuckGo")
-            return self._duckduckgo_fallback(query, num_results)
+            logger.warning(f"Serper API HTTP error: {e}, falling back to SearXNG")
+            return self._searxng_fallback(query, num_results)
         except Exception as e:
-            logger.warning(f"Serper API error: {e}, falling back to DuckDuckGo")
-            return self._duckduckgo_fallback(query, num_results)
+            logger.warning(f"Serper API error: {e}, falling back to SearXNG")
+            return self._searxng_fallback(query, num_results)
 
     def news_search(self, query: str, num_results: int = 5) -> dict:
         """Search for recent news articles."""
@@ -139,6 +131,55 @@ class WebSearch:
                 "error": str(e),
             }
 
+
+
+    def _searxng_fallback(self, query: str, num_results: int = 5) -> dict:
+        """Fallback search via SearXNG public instances (no API key needed)."""
+        searxng_instances = [
+            "https://searx.be/search",
+            "https://search.mdosch.de/search",
+            "https://searx.tiekoetter.com/search",
+        ]
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+        for base_url in searxng_instances:
+            try:
+                resp = requests.get(
+                    base_url,
+                    params={"q": query, "format": "json", "categories": "general", "pageno": 1},
+                    headers=headers,
+                    timeout=12,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                organic = []
+                for idx, r in enumerate(data.get("results", [])[:num_results]):
+                    organic.append({
+                        "title": r.get("title", ""),
+                        "link": r.get("url", r.get("link", "")),
+                        "snippet": r.get("content", r.get("snippet", "")),
+                        "position": idx + 1,
+                    })
+                if organic:
+                    logger.info(f"SearXNG ({base_url}) returned {len(organic)} results for: {query}")
+                    return {
+                        "organic": organic,
+                        "answer_box": {},
+                        "knowledge_graph": {},
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "query": query,
+                        "grounded": True,
+                        "source": f"searxng:{base_url.split('//')[1].split('/')[0]}",
+                    }
+            except Exception as e:
+                logger.warning(f"SearXNG instance {base_url} failed: {e}")
+                continue
+
+        # All SearXNG instances failed, try DuckDuckGo
+        logger.warning("All SearXNG instances failed, falling back to DuckDuckGo")
+        return self._duckduckgo_fallback(query, num_results)
 
     def _duckduckgo_fallback(self, query: str, num_results: int = 5) -> dict:
         """Fallback search using DuckDuckGo HTML (no API key needed)."""
