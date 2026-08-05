@@ -204,6 +204,20 @@ class VerifyPaymentRequest(BaseModel):
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 
+async def _safe_get_user(api_key: str, db: AsyncSession) -> Optional[User]:
+    """Safely look up a user by API key. Returns None if not found or inactive."""
+    if not api_key:
+        return None
+    try:
+        result = await db.execute(select(User).where(User.api_key == api_key))
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            return None
+        return user
+    except Exception:
+        return None
+
+
 @app.get("/heartbeat")
 async def heartbeat():
     return {
