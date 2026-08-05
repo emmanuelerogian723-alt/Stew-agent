@@ -376,6 +376,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         "user_id": user.id,
         "plan": user.plan,
         "api_key": user.api_key,
+        "name": user.name,
         "success": True,
     }
 

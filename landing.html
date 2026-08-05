@@ -765,8 +765,10 @@ async function doLogin(e){
       const token=d.token||d.access_token,key=d.user?.api_key||d.api_key;
       localStorage.setItem('stew_token',token);
       if(key){localStorage.setItem('stew_api_key',key);document.getElementById('ftKey').value=key;injectKey(key);}
-      showMsg('Welcome back, '+(d.user?.name||'')+'!','auth-msg ok');
+      showMsg('Welcome back, '+(d.name||d.user?.name||'there')+'!','auth-msg ok');
       if(key){document.getElementById('keyBox').style.display='block';document.getElementById('keyVal').textContent=key;}
+      // Redirect to dashboard after successful login
+      setTimeout(function(){window.location.href='/dashboard';},1500);
     }else{showMsg('Error: '+(d.detail||d.message||'Invalid credentials'),'auth-msg err');}
   }catch{showMsg('Connection error — please retry.','auth-msg err');}
   btn.disabled=false;btn.textContent='Sign In →';
