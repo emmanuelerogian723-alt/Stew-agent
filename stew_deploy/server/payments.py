@@ -57,7 +57,7 @@ def initialize_payment(email: str, amount_kobo: int, plan: str, metadata: dict =
         }
     except requests.RequestException as e:
         logger.error(f"Paystack init error: {e}")
-        raise HTTPException(502, "Payment initialization failed")
+        raise HTTPException(502, f"Payment initialization failed: {str(e)[:200]}")
 
 
 def verify_payment(reference: str) -> dict:

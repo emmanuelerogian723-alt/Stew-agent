@@ -938,6 +938,8 @@ async def init_payment(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
     if body.plan not in settings.PLAN_PRICES:
         raise HTTPException(400, "Invalid plan")
     if body.plan == "free":
