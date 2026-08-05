@@ -96,11 +96,11 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"OpenRouter init failed: {e}")
 
-        if settings.HF_TOKEN:
+        if settings.HF_TOKEN or settings.HUGGINGFACE_API_KEY:
             try:
                 self.providers["huggingface"] = OpenAI(
                     base_url="https://router.huggingface.co/v1",
-                    api_key=settings.HF_TOKEN,
+                    api_key=settings.HF_TOKEN or settings.HUGGINGFACE_API_KEY,
                 )
                 logger.info("HuggingFace provider initialized")
             except Exception as e:

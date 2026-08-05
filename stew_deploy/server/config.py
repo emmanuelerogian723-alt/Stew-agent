@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     HF_TOKEN: str = ""
+    HUGGINGFACE_API_KEY: str = ""
     NVIDIA_API_KEY: str = ""
     MISTRAL_API_KEY: str = ""          # NEW: Mistral AI
 

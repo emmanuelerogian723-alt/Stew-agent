@@ -230,6 +230,7 @@ async def heartbeat():
             "groq": bool(settings.GROQ_API_KEY),
             "openrouter": bool(settings.OPENROUTER_API_KEY),
             "openai": bool(settings.OPENAI_API_KEY),
+            "huggingface": bool(settings.HF_TOKEN or settings.HUGGINGFACE_API_KEY),
             "search": bool(settings.SERPER_API_KEY),
             "payments": bool(settings.PAYSTACK_SECRET_KEY),
         },
