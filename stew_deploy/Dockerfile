@@ -29,6 +29,9 @@ RUN pip install --no-cache-dir playwright==1.44.0 && \
 # Copy application code
 COPY server/ ./server/
 COPY dashboard.html .
+COPY landing.html .
+COPY playground.html .
+COPY plugins.html .
 COPY migrations/ ./migrations/
 COPY alembic.ini .
 

@@ -1283,6 +1283,9 @@ async function doRegister(){
     if(data.api_key){
       _myKey = data.api_key;
       localStorage.setItem('stew_api_key', _myKey);
+      localStorage.setItem('stew_apikey', _myKey);
+      localStorage.setItem('stew_token', data.access_token || '');
+      localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:_myKey}));
       showAuthResult('reg-result','success',`
         <div style="font-weight:800;margin-bottom:.5rem;font-size:1rem;">✅ Account Created!</div>
         <div style="font-size:.82rem;color:#94a3b8;margin-bottom:.3rem;">Your API Key (save this!):</div>
@@ -1292,6 +1295,7 @@ async function doRegister(){
         <div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>${data.plan||_selectedPlan}</b> · ${data.calls_limit||3000} calls/month</div>
       `);
       if(_selectedPlan!=='free') setTimeout(()=>{ switchAuthTab('upgrade'); document.getElementById('up-key').value=_myKey; },2000);
+      setTimeout(()=>{ window.location.href='/dashboard'; },3000);
     } else {
       showAuthResult('reg-result','error','❌ '+(data.error||data.detail||'Registration failed.'));
     }
@@ -1325,9 +1329,13 @@ async function doLogin(){
     const data = await resp.json();
     if(resp.ok && data.access_token){
       localStorage.setItem('stew_jwt', data.access_token);
+      localStorage.setItem('stew_token', data.access_token);
       if(data.api_key) localStorage.setItem('stew_api_key', data.api_key);
-      showAuthResult('login-result','success',`✅ Welcome back! <a onclick="switchAuthTab('dashboard')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">View Dashboard →</a>`);
+      if(data.api_key) localStorage.setItem('stew_apikey', data.api_key);
+      localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:data.api_key}));
+      showAuthResult('login-result','success',`✅ Welcome back! Redirecting to dashboard...`);
       if(data.api_key){ document.getElementById('dash-key').value=data.api_key; }
+      setTimeout(()=>{ window.location.href='/dashboard'; },1500);
     } else {
       showAuthResult('login-result','error','❌ '+(data.detail||'Invalid email or password.'));
     }
