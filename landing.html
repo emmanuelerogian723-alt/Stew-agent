@@ -744,6 +744,8 @@ async function doReg(e){
     const d=await r.json();
     if(r.ok&&d.api_key){
       localStorage.setItem('stew_api_key',d.api_key);
+      localStorage.setItem('stew_apikey',d.api_key);
+      localStorage.setItem('stew_user',JSON.stringify({name:document.getElementById('rName').value.trim(),email:document.getElementById('rEmail').value.trim(),plan:d.plan||'free',api_key:d.api_key}));
       if(d.token)localStorage.setItem('stew_token',d.token);
       showMsg('Account created!','auth-msg ok');
       document.getElementById('keyBox').style.display='block';
@@ -764,7 +766,8 @@ async function doLogin(e){
     if(r.ok&&(d.token||d.access_token)){
       const token=d.token||d.access_token,key=d.user?.api_key||d.api_key;
       localStorage.setItem('stew_token',token);
-      if(key){localStorage.setItem('stew_api_key',key);document.getElementById('ftKey').value=key;injectKey(key);}
+      if(key){localStorage.setItem('stew_api_key',key);localStorage.setItem('stew_apikey',key);document.getElementById('ftKey').value=key;injectKey(key);}
+      localStorage.setItem('stew_user',JSON.stringify({name:d.name||d.user?.name||'User',email:document.getElementById('lEmail').value.trim(),plan:d.plan||'free',api_key:key||''}));
       showMsg('Welcome back, '+(d.name||d.user?.name||'there')+'!','auth-msg ok');
       if(key){document.getElementById('keyBox').style.display='block';document.getElementById('keyVal').textContent=key;}
       // Redirect to dashboard after successful login
