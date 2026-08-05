@@ -410,7 +410,7 @@ async def regenerate_api_key(
     import secrets
     new_key = "stew_" + secrets.token_urlsafe(32)
     user.api_key = new_key
-    await db.flush()
+    await db.commit()
     
     return {"api_key": new_key, "success": True, "message": "API key regenerated. Update your applications with the new key."}
 
