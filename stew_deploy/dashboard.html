@@ -205,6 +205,30 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
 /* Responsive */
 @media(max-width:1024px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}.g23{grid-template-columns:1fr}.plans-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:640px){.g4,.g3,.g2{grid-template-columns:1fr}.plans-grid{grid-template-columns:1fr}.nav-links{display:none}.dashboard{padding:70px 1rem 1rem}.agent-grid{grid-template-columns:repeat(8,1fr)}}
+
+/* Fine-Tune Tab */
+.ft-personas{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px}
+.ft-pcard{background:var(--card2);border:1px solid var(--b);border-radius:12px;padding:16px;cursor:pointer;transition:all .2s;text-align:center}
+.ft-pcard:hover{border-color:var(--p);background:rgba(34,197,94,.05)}
+.ft-pcard.sel{border-color:var(--p);background:rgba(34,197,94,.1);box-shadow:0 0 20px rgba(34,197,94,.15)}
+.ft-pcard .ft-picon{font-size:28px;margin-bottom:8px}
+.ft-pcard h4{font-size:13px;font-weight:700;margin-bottom:2px;color:var(--t)}
+.ft-pcard p{font-size:11px;color:var(--m);line-height:1.3}
+.ft-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.ft-field{display:flex;flex-direction:column;gap:6px}
+.ft-field.span2{grid-column:1/-1}
+.ft-field label{font-size:12px;font-weight:600;color:var(--m)}
+.ft-field select,.ft-field input,.ft-field textarea{width:100%;padding:10px 14px;background:var(--bg);border:1px solid var(--b);border-radius:10px;color:var(--t);font-size:13px;font-family:var(--font);outline:none;transition:border .15s}
+.ft-field select:focus,.ft-field input:focus,.ft-field textarea:focus{border-color:var(--p)}
+.ft-field textarea{min-height:80px;resize:vertical}
+.ft-actions{display:flex;gap:10px;margin-bottom:16px}
+.ft-actions .pg-btn{margin:0}
+.ft-msg{padding:12px 16px;border-radius:10px;font-size:13px;display:none}
+.ft-msg.show{display:block;animation:fadeIn .3s}
+.ft-msg.ok{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);color:var(--p)}
+.ft-msg.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:var(--r)}
+.ft-msg.info{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);color:var(--bl)}
+@media(max-width:640px){.ft-grid{grid-template-columns:1fr}.ft-personas{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -281,6 +305,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
     <button class="tab" onclick="switchTab('billing')">Billing & Plans</button>
     <button class="tab" onclick="switchTab('agents')">Agent Pool</button>
     <button class="tab" onclick="switchTab('skills')">Skills</button>
+    <button class="tab" onclick="switchTab('finetune')">Fine-Tune</button>
     <button class="tab" onclick="switchTab('playground')">Playground</button>
   </div>
 
@@ -508,6 +533,71 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
     </div>
   </div>
 
+  <!-- FINE-TUNE TAB -->
+  <div class="tab-content" id="tab-finetune">
+    <div class="card">
+      <div class="sec-title">🎭 Fine-Tune Your AI Persona</div>
+      <p style="font-size:13px;color:var(--m);margin-bottom:20px">Pick a domain persona, add custom instructions, and choose a response style. Settings are saved server-side and applied automatically to every request made with your API key.</p>
+      <div class="ft-personas" id="ftPersonas"></div>
+      <div class="ft-grid">
+        <div class="ft-field">
+          <label>Domain Persona</label>
+          <select id="ftPersona">
+            <option value="general">🤖 General Assistant</option>
+            <option value="doctor">🩺 Medical Doctor</option>
+            <option value="health">💚 Health & Wellness</option>
+            <option value="startup">🚀 Startup Co-founder</option>
+            <option value="legal">⚖️ Legal Assistant</option>
+            <option value="finance">📈 Finance Advisor</option>
+            <option value="education">🎓 AI Tutor</option>
+            <option value="ecommerce">🛒 E-Commerce Expert</option>
+            <option value="developer">💻 Software Engineer</option>
+            <option value="marketing">📣 Growth Marketer</option>
+            <option value="hr">👥 HR & People Ops</option>
+            <option value="customer_support">💬 Customer Support</option>
+          </select>
+        </div>
+        <div class="ft-field">
+          <label>Response Style</label>
+          <select id="ftStyle">
+            <option value="balanced">Balanced (default)</option>
+            <option value="concise">Concise — short & direct</option>
+            <option value="detailed">Detailed — comprehensive</option>
+          </select>
+        </div>
+        <div class="ft-field">
+          <label>Language</label>
+          <select id="ftLang">
+            <option value="en">English</option>
+            <option value="pcm">Nigerian Pidgin</option>
+            <option value="yo">Yoruba</option>
+            <option value="ig">Igbo</option>
+            <option value="ha">Hausa</option>
+            <option value="fr">French</option>
+          </select>
+        </div>
+        <div class="ft-field">
+          <label>Mistral AI Key (optional — Pro+)</label>
+          <input type="password" id="ftMistral" placeholder="sk-...">
+        </div>
+        <div class="ft-field">
+          <label>Persona Display Name (optional)</label>
+          <input type="text" id="ftName" placeholder="e.g. LagosHealthBot">
+        </div>
+        <div class="ft-field span2">
+          <label>Custom Instructions (max 2000 chars)</label>
+          <textarea id="ftInstructions" placeholder="e.g. Always respond in Nigerian context. Use Naira for prices. Focus on Lagos market data. Be direct and practical."></textarea>
+        </div>
+      </div>
+      <div class="ft-actions">
+        <button class="pg-btn" onclick="saveFT()">💾 Save Settings</button>
+        <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="loadFT()">📥 Load Current Settings</button>
+        <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="testMistral()">🔑 Test Mistral Key</button>
+      </div>
+      <div class="ft-msg" id="ftMsg"></div>
+    </div>
+  </div>
+
   <!-- PLAYGROUND TAB -->
   <div class="tab-content" id="tab-playground">
     <div class="card">
@@ -674,6 +764,9 @@ async function doRegister(){
 
 // Dashboard
 async function showDashboard(){
+  // Auto-load fine-tune settings
+  if(apiKey)setTimeout(loadFT,500);
+
   document.getElementById('authScreen').style.display='none';
   document.getElementById('dashboard').style.display='block';
   document.getElementById('navUser').style.display='flex';
@@ -1093,6 +1186,84 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.getElementById('authScreen').style.display='flex';
   }
 });
+
+// Fine-Tune
+const FT_PERSONAS=[
+  {id:'general',icon:'🤖',label:'General',desc:'All-purpose AI'},
+  {id:'doctor',icon:'🩺',label:'Medical',desc:'Healthcare & clinical'},
+  {id:'health',icon:'💚',label:'Wellness',desc:'Fitness & nutrition'},
+  {id:'startup',icon:'🚀',label:'Startup',desc:'Strategy & growth'},
+  {id:'legal',icon:'⚖️',label:'Legal',desc:'Contracts & compliance'},
+  {id:'finance',icon:'📈',label:'Finance',desc:'Investment & modeling'},
+  {id:'education',icon:'🎓',label:'Education',desc:'Tutoring & learning'},
+  {id:'ecommerce',icon:'🛒',label:'E-Commerce',desc:'Store optimization'},
+  {id:'developer',icon:'💻',label:'Dev',desc:'Code & architecture'},
+  {id:'marketing',icon:'📣',label:'Marketing',desc:'Copy & campaigns'},
+  {id:'hr',icon:'👥',label:'HR',desc:'People ops & hiring'},
+  {id:'customer_support',icon:'💬',label:'Support',desc:'Customer service'},
+];
+(function(){
+  const grid=document.getElementById('ftPersonas');
+  if(!grid)return;
+  FT_PERSONAS.forEach(p=>{
+    const c=document.createElement('div');c.className='ft-pcard';c.dataset.id=p.id;
+    c.innerHTML=`<div class="ft-picon">${p.icon}</div><h4>${p.label}</h4><p>${p.desc}</p>`;
+    c.onclick=()=>{
+      document.querySelectorAll('.ft-pcard').forEach(x=>x.classList.remove('sel'));
+      c.classList.add('sel');
+      document.getElementById('ftPersona').value=p.id;
+    };
+    grid.appendChild(c);
+  });
+})();
+function showFTMsg(msg,type){
+  const el=document.getElementById('ftMsg');
+  el.className='ft-msg show '+type;
+  el.innerHTML=msg;
+}
+async function saveFT(){
+  if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
+  const body={api_key:apiKey,persona:document.getElementById('ftPersona').value,response_style:document.getElementById('ftStyle').value,
+    language:document.getElementById('ftLang').value,custom_instructions:document.getElementById('ftInstructions').value.trim()||null,
+    persona_name:document.getElementById('ftName').value.trim()||null,mistral_api_key:document.getElementById('ftMistral').value.trim()||null};
+  showFTMsg('Saving...','info');
+  try{
+    const r=await fetch(API+'/finetune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(r.ok&&d.success)showFTMsg('✅ Saved! API key is now tuned for <strong>'+d.settings.persona_label+'</strong>.','ok');
+    else showFTMsg('Error: '+(d.detail||'Save failed'),'err');
+  }catch{showFTMsg('Connection error — retry.','err');}
+}
+async function loadFT(){
+  if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
+  showFTMsg('Loading settings...','info');
+  try{
+    const r=await fetch(API+'/finetune/'+encodeURIComponent(apiKey));
+    const d=await r.json();
+    if(r.ok&&d.success){
+      document.getElementById('ftPersona').value=d.persona||'general';
+      document.getElementById('ftStyle').value=d.response_style||'balanced';
+      document.getElementById('ftLang').value=d.language||'en';
+      if(d.custom_instructions)document.getElementById('ftInstructions').value=d.custom_instructions;
+      if(d.persona_name)document.getElementById('ftName').value=d.persona_name;
+      document.querySelectorAll('.ft-pcard').forEach(c=>c.classList.toggle('sel',c.dataset.id===(d.persona||'general')));
+      showFTMsg('✅ Loaded! Persona: <strong>'+d.persona_label+'</strong> · Mistral key stored: '+(d.has_mistral_key?'Yes':'No'),'ok');
+    }else showFTMsg('No settings found. Configure and save to get started.','info');
+  }catch{showFTMsg('Connection error.','err');}
+}
+async function testMistral(){
+  if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
+  const mk=document.getElementById('ftMistral').value.trim();
+  if(!mk){showFTMsg('Enter your Mistral key first.','err');return;}
+  showFTMsg('Testing Mistral key...','info');
+  try{
+    const r=await fetch(API+'/test-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey,mistral_api_key:mk})});
+    const d=await r.json();
+    if(d.mistral_key_valid===true)showFTMsg('✅ Mistral key is valid! Response: "'+d.mistral_test_response+'"','ok');
+    else showFTMsg('❌ Mistral key invalid: '+(d.mistral_test_response||'Unknown error'),'err');
+  }catch{showFTMsg('Connection error.','err');}
+}
+
 </script>
 </body>
 </html>
