@@ -375,11 +375,15 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     import asyncio
     asyncio.create_task(send_welcome_email(user.email, user.name, user.api_key, user.plan))
 
+    token = create_access_token(user.id, user.email)
     return {
         "api_key": user.api_key,
         "user_id": user.id,
         "plan": user.plan,
         "calls_limit": settings.PLAN_CALL_LIMITS[user.plan],
+        "access_token": token,
+        "token_type": "bearer",
+        "name": user.name,
         "success": True,
     }
 
