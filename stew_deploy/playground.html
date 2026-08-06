@@ -255,7 +255,7 @@ textarea.code-in{width:100%;min-height:110px;background:transparent;border:none;
 <script>
 const BASE = 'https://stew-agent.onrender.com';
 const EPS = [
-  {method:'POST',path:'/chat',name:'/chat',desc:'AI conversation',tag:'fast',body:'{\n  "message": "What is the capital of Nigeria?"\n}',msg:'STEW is thinking...'},
+  {method:'POST',path:'/chat',name:'/chat',desc:'AI conversation (supports multi-model fusion)',tag:'fast',body:'{\n  "message": "What is the capital of Nigeria?",\n  "fusion_mode": false\n}',msg:'STEW is thinking...'},
   {method:'POST',path:'/task',name:'/task',desc:'Execute any task',tag:'power',body:'{\n  "task": "Analyze the Nigerian tech ecosystem in 2026"\n}',msg:'Deploying 100 agents...'},
   {method:'POST',path:'/search',name:'/search',desc:'Web search',tag:'fast',body:'{\n  "query": "MUTYINT Nigeria AI 2026"\n}',msg:'Searching the web...'},
   {method:'POST',path:'/research',name:'/research',desc:'Deep research',tag:'power',body:'{\n  "topic": "Future of AI in Africa"\n}',msg:'Doing deep research...'},

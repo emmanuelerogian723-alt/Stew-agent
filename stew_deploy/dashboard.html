@@ -230,6 +230,79 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
 .ft-msg.info{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);color:var(--bl)}
 @media(max-width:640px){.ft-grid{grid-template-columns:1fr}.ft-personas{grid-template-columns:repeat(2,1fr)}}
 </style>
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDLSQudDbSSAEeKa-BKgLESmNAztlwjJH0",
+  authDomain: "stew-agent-9ca8c.firebaseapp.com",
+  projectId: "stew-agent-9ca8c",
+  storageBucket: "stew-agent-9ca8c.firebasestorage.app",
+  messagingSenderId: "389447033478",
+  appId: "1:389447033478:web:c812436d040712b1d26707",
+  measurementId: "G-Z7EVT93JCN"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const fbAuth = getAuth(fbApp);
+window._fb = { fbAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut };
+
+// Check existing Firebase session on load
+onAuthStateChanged(fbAuth, async (fbUser) => {
+  if (fbUser && !localStorage.getItem('stew_token')) {
+    // Firebase user exists but no STEW token — auto-register/login
+    try {
+      const email = fbUser.email || '';
+      const name = fbUser.displayName || email.split('@')[0];
+      const regResp = await fetch(API + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'firebase_' + fbUser.uid.slice(0, 12), name })
+      });
+      const regData = await regResp.json();
+      if (regData.success && regData.api_key) {
+        // Auto-login to get JWT
+        const loginResp = await fetch(API + '/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: 'firebase_' + fbUser.uid.slice(0, 12) })
+        });
+        const loginData = await loginResp.json();
+        if (loginData.success) {
+          user = { id: loginData.user_id, email, name, plan: loginData.plan, api_key: loginData.api_key };
+          apiKey = loginData.api_key;
+          saveSession(loginData.access_token, user, loginData.api_key);
+          showDashboard();
+          toast('Welcome to S.T.E.W! 🎉');
+          return;
+        }
+      }
+      // If register fails (already exists), try login
+      const loginResp = await fetch(API + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'firebase_' + fbUser.uid.slice(0, 12) })
+      });
+      const loginData = await loginResp.json();
+      if (loginData.success) {
+        user = { id: loginData.user_id, email, name, plan: loginData.plan, api_key: loginData.api_key };
+        apiKey = loginData.api_key;
+        saveSession(loginData.access_token, user, loginData.api_key);
+        showDashboard();
+      }
+    } catch (e) {
+      console.log('Firebase auto-login fallback:', e.message);
+    }
+  } else if (fbUser && localStorage.getItem('stew_token')) {
+    // Already have STEW session — just show dashboard
+    if (typeof loadSession === 'function' && !loadSession()) {
+      // session expired, will be handled below
+    }
+  }
+});
+</script>
 </head>
 <body>
 <div class="bg-overlay"></div>
@@ -695,6 +768,9 @@ function logout(){
   localStorage.removeItem('stew_user');
   localStorage.removeItem('stew_apikey');
   user = null; apiKey = null;
+  if(window._fb && window._fb.signOut){
+    window._fb.signOut(window._fb.fbAuth).catch(()=>{});
+  }
   document.getElementById('dashboard').style.display='none';
   document.getElementById('authScreen').style.display='flex';
   document.getElementById('navUser').style.display='none';
@@ -708,6 +784,15 @@ async function doLogin(){
   if(!email || !password){ errEl.textContent='Please fill in all fields'; return; }
   btn.disabled=true; btn.textContent='Signing in...'; errEl.textContent='';
   try{
+    // Firebase sign-in (for session persistence)
+    if(window._fb && window._fb.signInWithEmailAndPassword){
+      try {
+        await window._fb.signInWithEmailAndPassword(window._fb.fbAuth, email, password);
+      } catch(fbErr){
+        console.log('Firebase login:', fbErr.code || fbErr.message);
+      }
+    }
+    // STEW backend login
     const resp = await fetch(API+'/auth/login',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password})
@@ -715,7 +800,7 @@ async function doLogin(){
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Login failed');
     apiKey = data.api_key;
-    user = {id:data.user_id,email,plan:data.plan,api_key:data.api_key};
+    user = {id:data.user_id,email:email,plan:data.plan,api_key:data.api_key,name:data.name||email.split('@')[0]};
     saveSession(data.access_token,user,data.api_key);
     showDashboard();
     toast('Welcome back!');
@@ -736,13 +821,24 @@ async function doRegister(){
   if(password.length<8){ errEl.textContent='Password must be at least 8 characters'; return; }
   btn.disabled=true; btn.textContent='Creating account...'; errEl.textContent='';
   try{
+    // Step 1: Create Firebase auth account
+    if(window._fb && window._fb.createUserWithEmailAndPassword){
+      try {
+        const fbCred = await window._fb.createUserWithEmailAndPassword(window._fb.fbAuth, email, password);
+        if(fbCred.user) await fbCred.user.updateProfile({displayName: name});
+      } catch(fbErr){
+        // If Firebase fails (email exists), continue with STEW registration
+        console.log('Firebase signup:', fbErr.code || fbErr.message);
+      }
+    }
+    // Step 2: Register with STEW backend
     const resp = await fetch(API+'/auth/register',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password,name})
     });
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Registration failed');
-    // Auto-login
+    // Step 3: Auto-login immediately
     const loginResp = await fetch(API+'/auth/login',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password})
@@ -752,6 +848,7 @@ async function doRegister(){
       apiKey = loginData.api_key;
       user = {id:loginData.user_id,email,name,plan:loginData.plan,api_key:loginData.api_key};
       saveSession(loginData.access_token,user,loginData.api_key);
+      // INSTANT redirect — no delay
       showDashboard();
       toast('Account created! Welcome to S.T.E.W 🎉');
     }
@@ -1082,7 +1179,7 @@ async function runPlayground(){
     const search = document.getElementById('pgSearch').checked;
     const resp = await fetch(API+'/chat',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg,web_search:search,api_key:apiKey})
+      body:JSON.stringify({message:msg,web_search:search,api_key:apiKey,fusion_mode:document.getElementById("fusionToggle")?.checked||false})
     });
     const data = await resp.json();
     if(data.success){

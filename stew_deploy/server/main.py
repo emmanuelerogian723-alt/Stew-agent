@@ -563,9 +563,42 @@ async def chat(
             {"role": "user", "content": body.message},
         ]
 
-    result = llm.chat(messages)
-    response_text = result["content"]
-    tokens = result["tokens"].get("total", 0)
+    # ── Multi-Model Fusion (Sakana Fugu-style) ──────────────────────────────
+    # When fusion_mode is enabled, dispatch the prompt to multiple LLM providers
+    # in parallel, collect independent answers, then synthesize one best-of-all
+    # response — richer, more nuanced output than any single model alone.
+    if body.fusion_mode and len(llm.fallback_order) >= 2:
+        try:
+            from server.orchestrator import orchestrate_text
+            # Build the user message for fusion
+            user_msg = body.message
+            if search_results and web_grounded:
+                context = searcher.format_results_for_llm(search_results)
+                user_msg = f"{body.message}\n\n[Context from web search:]\n{context}"
+
+            fusion_result = await orchestrate_text(
+                prompt=user_msg,
+                system=system,
+                workers=llm.fallback_order[:3],  # up to 3 providers
+                temperature=0.7,
+            )
+            result = {
+                "content": fusion_result.get("answer", ""),
+                "provider": "stew_fusion",
+                "model": "mixture-of-agents",
+                "tokens": {"total": sum(r.get("tokens", {}).get("total", 0) for r in fusion_result.get("raw_worker_outputs", []))},
+            }
+            response_text = result["content"]
+            tokens = result["tokens"].get("total", 0)
+        except Exception as fusion_err:
+            logger.warning(f"Fusion failed, falling back to single model: {fusion_err}")
+            result = llm.chat(messages)
+            response_text = result["content"]
+            tokens = result["tokens"].get("total", 0)
+    else:
+        result = llm.chat(messages)
+        response_text = result["content"]
+        tokens = result["tokens"].get("total", 0)
 
     if user:
         await append_message(db, conv, "assistant", response_text)
@@ -577,7 +610,9 @@ async def chat(
         "response": response_text,
         "web_grounded": web_grounded,
         "sources": sources,
-        "provider": "stew_engine",
+        "provider": "stew_fusion" if body.fusion_mode and len(llm.fallback_order) >= 2 else "stew_engine",
+        "model": result.get("model", ""),
+        "fusion_workers": [r.get("worker") for r in result.get("raw_worker_outputs", [])] if body.fusion_mode else None,
         "conversation_id": conv.id if user and 'conv' in dir() else None,
         "success": True,
     }
