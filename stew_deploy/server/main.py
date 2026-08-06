@@ -1237,11 +1237,15 @@ async def fine_tune_key(body: FineTuneRequest, db: AsyncSession = Depends(get_db
         await db.execute(sql_update(User).where(User.id == user.id).values(**updates))
         await db.commit()
 
+    # Re-fetch the user to get updated values
+    result = await db.execute(select(User).where(User.id == user.id))
+    updated_user = result.scalar_one_or_none()
+
     return {
         "success": True,
         "message": f"API key fine-tuned to {body.persona or 'general'} persona",
         "settings": {
-            "persona": getattr(user, 'persona', 'general'),
+            "persona": getattr(updated_user, 'persona', 'general'),
             "persona_label": PERSONA_OPTIONS.get(body.persona or 'general', {}).get('label', 'General'),
             "response_style": body.response_style or "balanced",
             "language": body.language or "en",
