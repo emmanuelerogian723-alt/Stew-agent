@@ -476,9 +476,8 @@ async def chat(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        llm = get_llm_client()
-        searcher = get_searcher()
+    llm = get_llm_client()
+    searcher = get_searcher()
 
     user = None
     if body.api_key:
@@ -617,9 +616,6 @@ async def chat(
         "conversation_id": conv.id if user and 'conv' in dir() else None,
         "success": True,
     }
-    except Exception as e:
-        logger.error(f"CHAT ENDPOINT ERROR: {type(e).__name__}: {e}", exc_info=True)
-        return {"detail": str(e), "success": False}
 
 
 # ── Orchestrator (Fugu-style mixture-of-agents) ─────────────────────────────
@@ -1357,10 +1353,11 @@ async def not_found(request: Request, exc):
 
 @app.exception_handler(500)
 async def internal_error(request: Request, exc):
-    logger.error(f"Internal error on {request.url.path}: {exc}")
+    import traceback as _tb
+    logger.error(f"Internal error on {request.url.path}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "success": False},
+        content={"detail": str(exc), "traceback": _tb.format_exc()[-800:], "success": False},
     )
 
 
