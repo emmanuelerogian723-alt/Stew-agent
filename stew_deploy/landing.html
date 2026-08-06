@@ -1336,7 +1336,7 @@ async function doRegister(){
           localStorage.setItem('stew_apikey', loginData.api_key);
           localStorage.setItem('stew_user', JSON.stringify({id:loginData.user_id,email:email,plan:loginData.plan||'free',api_key:loginData.api_key,name}));
           showAuthResult('reg-result','success','✅ Welcome back! Redirecting to dashboard...');
-          setTimeout(()=>{ window.location.href='/dashboard'; },500);
+          window.location.href='/dashboard';
           return;
         }
       }
@@ -1350,21 +1350,14 @@ async function doRegister(){
       localStorage.setItem('stew_token', data.access_token || '');
       localStorage.setItem('stew_jwt', data.access_token || '');
       localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:_myKey,name}));
-      showAuthResult('reg-result','success',`
-        <div style="font-weight:800;margin-bottom:.5rem;font-size:1rem;">✅ Account Created!</div>
-        <div style="font-size:.82rem;color:#94a3b8;margin-bottom:.3rem;">Your API Key (save this!):</div>
-        <div class="api-key-display">${_myKey}</div>
-        <div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>${data.plan||_selectedPlan}</b> · ${data.calls_limit||500} calls/month</div>
-        <div style="margin-top:.5rem;font-size:.78rem;color:#64748b;">Redirecting to dashboard...</div>
-      `);
-      // INSTANT redirect — show key briefly then go to dashboard
-      console.log('✅ Register success, redirecting to /dashboard in 800ms');
-      console.log('Token:', data.access_token ? 'present' : 'MISSING');
-      console.log('API Key:', _myKey ? 'present' : 'MISSING');
-      console.log('localStorage keys being set: stew_token, stew_apikey, stew_user, stew_jwt');
-      setTimeout(()=>{
-        window.location.href = '/dashboard';
-      },800);
+      var successHtml = '<div style="font-weight:800;margin-bottom:.5rem;font-size:1rem;">✅ Account Created!</div>' +
+        '<div style="font-size:.82rem;color:#94a3b8;margin-bottom:.3rem;">Your API Key (save this!):</div>' +
+        '<div class="api-key-display">' + _myKey + '</div>' +
+        '<div style="margin-top:.75rem;font-size:.78rem;color:#64748b;">Plan: <b>' + (data.plan||_selectedPlan) + '</b> · ' + (data.calls_limit||500) + ' calls/month</div>' +
+        '<div style="margin-top:.5rem;font-size:.78rem;color:#64748b;">Redirecting to dashboard...</div>';
+      showAuthResult('reg-result','success', successHtml);
+      // Redirect to dashboard — try multiple methods for reliability
+      window.location.href = '/dashboard';
     } else {
       showAuthResult('reg-result','error','❌ '+(data.error||data.detail||'Registration failed.'));
     }
@@ -1404,8 +1397,7 @@ async function doLogin(){
       localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:data.api_key}));
       showAuthResult('login-result','success','✅ Welcome back! Redirecting...');
       if(data.api_key){ document.getElementById('dash-key').value=data.api_key; }
-      // INSTANT redirect
-      setTimeout(()=>{ window.location.href='/dashboard'; },500);
+      window.location.href='/dashboard';
     } else {
       showAuthResult('login-result','error','❌ '+(data.detail||'Invalid email or password.'));
     }
