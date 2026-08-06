@@ -20,7 +20,7 @@
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDLSQudDbSSAEeKa-BKgLESmNAztlwjJH0",
@@ -32,13 +32,20 @@ const firebaseConfig = {
   measurementId: "G-Z7EVT93JCN"
 };
 
+const fbApp = initializeApp(firebaseConfig);
+const fbAuth = getAuth(fbApp);
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
 window._fb = { 
-  fbApp: initializeApp(firebaseConfig),
-  fbAuth: null,
+  fbApp,
+  fbAuth,
   createUserWithEmailAndPassword,
-  signInWithEmailAndPassword
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+  googleProvider
 };
-window._fb.fbAuth = getAuth(window._fb.fbApp);
 </script>
 <meta name="theme-color" content="#7B2FBE">
 <link rel="canonical" href="https://stew-agent.onrender.com/">
@@ -821,8 +828,17 @@ question: <span class="str">"What text is in this image?"</span>
         <div class="auth-field"><label>Company (optional)</label><input type="text" id="reg-company" placeholder="Your company or project"></div>
         <div class="auth-field"><label>Password (optional)</label><input type="password" id="reg-password" placeholder="Min 8 chars (leave blank for auto-generated)"></div>
         <button class="auth-btn" id="reg-btn" onclick="doRegister()">🚀 Create Free Account</button>
+        <div style="display:flex;align-items:center;gap:.5rem;margin:1rem 0;">
+          <div style="flex:1;height:1px;background:var(--b);"></div>
+          <span style="font-size:.75rem;color:var(--m);">or</span>
+          <div style="flex:1;height:1px;background:var(--b);"></div>
+        </div>
+        <button class="auth-btn google-btn" onclick="doGoogleAuth('register')" style="background:#fff;color:#1a1a1a;border:1px solid #ddd;font-weight:600;">
+          <svg style="width:18px;height:18px;display:inline;vertical-align:middle;margin-right:.5rem;" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
         <div class="auth-result" id="reg-result"></div>
-        <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">By registering you agree to our fair use policy. Your API key is created instantly.</p>
+        <p style="font-size:.75rem;color:var(--m);text-align:center;margin-top:.75rem;">By registering you agree to our fair use policy. Generate your API key from the dashboard.</p>
       </div>
 
       <!-- LOGIN PANEL -->
@@ -833,6 +849,15 @@ question: <span class="str">"What text is in this image?"</span>
           <input type="password" id="login-password" placeholder="Your password">
         </div>
         <button class="auth-btn" id="login-btn" onclick="doLogin()">🔐 Log In</button>
+        <div style="display:flex;align-items:center;gap:.5rem;margin:1rem 0;">
+          <div style="flex:1;height:1px;background:var(--b);"></div>
+          <span style="font-size:.75rem;color:var(--m);">or</span>
+          <div style="flex:1;height:1px;background:var(--b);"></div>
+        </div>
+        <button class="auth-btn google-btn" onclick="doGoogleAuth('login')" style="background:#fff;color:#1a1a1a;border:1px solid #ddd;font-weight:600;">
+          <svg style="width:18px;height:18px;display:inline;vertical-align:middle;margin-right:.5rem;" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
         <div class="auth-result" id="login-result"></div>
         <p style="text-align:center;margin-top:.75rem;font-size:.8rem;color:var(--m);">
           Forgot your password? <a onclick="switchAuthTab('forgot')" style="color:#a78bfa;cursor:pointer;text-decoration:underline;">Reset it here →</a>
@@ -1336,7 +1361,7 @@ async function doRegister(){
           localStorage.setItem('stew_apikey', loginData.api_key);
           localStorage.setItem('stew_user', JSON.stringify({id:loginData.user_id,email:email,plan:loginData.plan||'free',api_key:loginData.api_key,name}));
           showAuthResult('reg-result','success','✅ Welcome back! Redirecting to dashboard...');
-          window.location.href='/dashboard';
+          setTimeout(function(){ window.location.href='/dashboard'; }, 500);
           return;
         }
       }
@@ -1371,6 +1396,90 @@ async function doRegister(){
 }
 
 // ══════════════════════════════════════
+// GOOGLE AUTH
+// ══════════════════════════════════════
+async function doGoogleAuth(mode){
+  const resultId = mode==='register' ? 'reg-result' : 'login-result';
+  try{
+    showAuthResult(resultId,'info','🔄 Opening Google sign-in...');
+    
+    if(!window._fb || !window._fb.signInWithPopup){
+      showAuthResult(resultId,'error','❌ Google sign-in not available. Please use email/password.');
+      return;
+    }
+
+    const result = await window._fb.signInWithPopup(window._fb.fbAuth, window._fb.googleProvider);
+    const googleUser = result.user;
+    const email = googleUser.email;
+    const name = googleUser.displayName || (googleUser.email ? googleUser.email.split('@')[0] : 'Google User');
+    const googleToken = await googleUser.getIdToken();
+
+    showAuthResult(resultId,'info','✅ Google authenticated. Setting up your STEW account...');
+
+    // Try register first, fall back to login
+    let stewResp;
+    if(mode === 'register'){
+      stewResp = await fetch(STEW_URL+'/auth/register',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name, email, password: googleToken.substring(0,20), plan:'free'}),
+        signal: AbortSignal.timeout(30000)
+      });
+      
+      if(stewResp.status === 409){
+        // Already registered — login instead
+        stewResp = await fetch(STEW_URL+'/auth/login',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({email, password: googleToken.substring(0,20)}),
+          signal: AbortSignal.timeout(20000)
+        });
+      }
+    } else {
+      stewResp = await fetch(STEW_URL+'/auth/login',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({email, password: googleToken.substring(0,20)}),
+        signal: AbortSignal.timeout(20000)
+      });
+      
+      if(stewResp.status === 401){
+        // Not registered yet — register
+        stewResp = await fetch(STEW_URL+'/auth/register',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({name, email, password: googleToken.substring(0,20), plan:'free'}),
+          signal: AbortSignal.timeout(30000)
+        });
+      }
+    }
+
+    const data = await stewResp.json();
+    if(stewResp.ok && data.access_token){
+      localStorage.setItem('stew_jwt', data.access_token);
+      localStorage.setItem('stew_token', data.access_token);
+      if(data.api_key){
+        localStorage.setItem('stew_api_key', data.api_key);
+        localStorage.setItem('stew_apikey', data.api_key);
+      }
+      localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:data.api_key||'',name}));
+      showAuthResult(resultId,'success','✅ Welcome ' + name + '! Redirecting to dashboard...');
+      setTimeout(function(){ window.location.href='/dashboard'; }, 500);
+    } else {
+      showAuthResult(resultId,'error','❌ '+(data.detail||data.error||'Authentication failed.'));
+    }
+  } catch(e){
+    if(e.code === 'auth/popup-closed-by-user'){
+      showAuthResult(resultId,'error','❌ Sign-in cancelled.');
+    } else if(e.code === 'auth/popup-blocked'){
+      showAuthResult(resultId,'error','❌ Popup blocked. Please allow popups and try again.');
+    } else {
+      showAuthResult(resultId,'error','❌ '+(e.message||'Google sign-in failed.'));
+    }
+  }
+}
+
+// ══════════════════════════════════════
 // LOGIN
 // ══════════════════════════════════════
 async function doLogin(){
@@ -1396,7 +1505,6 @@ async function doLogin(){
       if(data.api_key) localStorage.setItem('stew_apikey', data.api_key);
       localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:data.api_key}));
       showAuthResult('login-result','success','✅ Welcome back! Redirecting...');
-      if(data.api_key){ document.getElementById('dash-key').value=data.api_key; }
       window.location.href='/dashboard';
     } else {
       showAuthResult('login-result','error','❌ '+(data.detail||'Invalid email or password.'));

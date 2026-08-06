@@ -385,6 +385,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
         "token_type": "bearer",
         "name": user.name,
         "success": True,
+        "message": "Account created! Your API key is ready in the dashboard.",
     }
 
 
@@ -408,6 +409,39 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     }
 
 
+@app.post("/auth/generate-key")
+async def generate_api_key_endpoint(body: GenerateKeyRequest, db: AsyncSession = Depends(get_db)):
+    """Generate or retrieve the API key for a user."""
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(404, "User not found. Please register first.")
+
+    # If user has password, verify it
+    if user.password_hash and body.password:
+        if not verify_password(body.password, user.password_hash):
+            raise HTTPException(401, "Invalid password")
+
+    # Generate new key if none exists
+    if not user.api_key:
+        user.api_key = generate_api_key()
+        await db.flush()
+        await db.refresh(user)
+
+    token = create_access_token(user.id, user.email)
+    return {
+        "api_key": user.api_key,
+        "user_id": user.id,
+        "plan": user.plan,
+        "calls_limit": settings.PLAN_CALL_LIMITS[user.plan],
+        "access_token": token,
+        "token_type": "bearer",
+        "name": user.name,
+        "success": True,
+    }
+
+
 @app.get("/auth/me")
 async def get_me(current_user: User = Depends(get_current_user_jwt)):
     return {
@@ -416,6 +450,8 @@ async def get_me(current_user: User = Depends(get_current_user_jwt)):
         "email": current_user.email,
         "plan": current_user.plan,
         "api_key": current_user.api_key,
+        "calls_used": current_user.calls_used,
+        "calls_limit": settings.PLAN_CALL_LIMITS.get(current_user.plan, 500),
         "created_at": current_user.created_at.isoformat(),
     }
 
