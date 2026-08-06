@@ -26,6 +26,7 @@ RUN playwright install chromium
 
 COPY stew_deploy/ .
 COPY landing.html /app/landing.html
+COPY dashboard.html /app/dashboard.html
 COPY robots.txt /app/robots.txt
 COPY sitemap.xml /app/sitemap.xml
 COPY stew_playground.html /app/stew_playground.html

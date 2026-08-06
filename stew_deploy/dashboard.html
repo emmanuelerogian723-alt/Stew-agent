@@ -230,79 +230,6 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
 .ft-msg.info{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);color:var(--bl)}
 @media(max-width:640px){.ft-grid{grid-template-columns:1fr}.ft-personas{grid-template-columns:repeat(2,1fr)}}
 </style>
-<!-- Firebase -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDLSQudDbSSAEeKa-BKgLESmNAztlwjJH0",
-  authDomain: "stew-agent-9ca8c.firebaseapp.com",
-  projectId: "stew-agent-9ca8c",
-  storageBucket: "stew-agent-9ca8c.firebasestorage.app",
-  messagingSenderId: "389447033478",
-  appId: "1:389447033478:web:c812436d040712b1d26707",
-  measurementId: "G-Z7EVT93JCN"
-};
-
-const fbApp = initializeApp(firebaseConfig);
-const fbAuth = getAuth(fbApp);
-window._fb = { fbAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut };
-
-// Check existing Firebase session on load
-onAuthStateChanged(fbAuth, async (fbUser) => {
-  if (fbUser && !localStorage.getItem('stew_token')) {
-    // Firebase user exists but no STEW token — auto-register/login
-    try {
-      const email = fbUser.email || '';
-      const name = fbUser.displayName || email.split('@')[0];
-      const regResp = await fetch(API + '/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: 'firebase_' + fbUser.uid.slice(0, 12), name })
-      });
-      const regData = await regResp.json();
-      if (regData.success && regData.api_key) {
-        // Auto-login to get JWT
-        const loginResp = await fetch(API + '/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password: 'firebase_' + fbUser.uid.slice(0, 12) })
-        });
-        const loginData = await loginResp.json();
-        if (loginData.success) {
-          user = { id: loginData.user_id, email, name, plan: loginData.plan, api_key: loginData.api_key };
-          apiKey = loginData.api_key;
-          saveSession(loginData.access_token, user, loginData.api_key);
-          showDashboard();
-          toast('Welcome to S.T.E.W! 🎉');
-          return;
-        }
-      }
-      // If register fails (already exists), try login
-      const loginResp = await fetch(API + '/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: 'firebase_' + fbUser.uid.slice(0, 12) })
-      });
-      const loginData = await loginResp.json();
-      if (loginData.success) {
-        user = { id: loginData.user_id, email, name, plan: loginData.plan, api_key: loginData.api_key };
-        apiKey = loginData.api_key;
-        saveSession(loginData.access_token, user, loginData.api_key);
-        showDashboard();
-      }
-    } catch (e) {
-      console.log('Firebase auto-login fallback:', e.message);
-    }
-  } else if (fbUser && localStorage.getItem('stew_token')) {
-    // Already have STEW session — just show dashboard
-    if (typeof loadSession === 'function' && !loadSession()) {
-      // session expired, will be handled below
-    }
-  }
-});
-</script>
 </head>
 <body>
 <div class="bg-overlay"></div>
@@ -348,15 +275,6 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
       <input class="auth-input" type="email" id="loginEmail" placeholder="Email address">
       <input class="auth-input" type="password" id="loginPassword" placeholder="Password">
       <button class="auth-btn" id="loginBtn" onclick="doLogin()">Sign In →</button>
-      <div style="display:flex;align-items:center;gap:.5rem;margin:.75rem 0;">
-        <div style="flex:1;height:1px;background:var(--b);"></div>
-        <span style="font-size:.75rem;color:var(--m);">or</span>
-        <div style="flex:1;height:1px;background:var(--b);"></div>
-      </div>
-      <button class="auth-btn" onclick="doGoogleAuthDashboard()" style="background:#fff;color:#1a1a1a;border:1px solid #ddd;font-weight:600;font-size:14px;">
-        <svg style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:.4rem;" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-        Continue with Google
-      </button>
       <div class="auth-err" id="loginErr"></div>
     </div>
     <div id="registerForm" style="display:none">
@@ -364,15 +282,6 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
       <input class="auth-input" type="email" id="regEmail" placeholder="Email address">
       <input class="auth-input" type="password" id="regPassword" placeholder="Password (min 8 chars)">
       <button class="auth-btn" id="regBtn" onclick="doRegister()">Create Free Account →</button>
-      <div style="display:flex;align-items:center;gap:.5rem;margin:.75rem 0;">
-        <div style="flex:1;height:1px;background:var(--b);"></div>
-        <span style="font-size:.75rem;color:var(--m);">or</span>
-        <div style="flex:1;height:1px;background:var(--b);"></div>
-      </div>
-      <button class="auth-btn" onclick="doGoogleAuthDashboard()" style="background:#fff;color:#1a1a1a;border:1px solid #ddd;font-weight:600;font-size:14px;">
-        <svg style="width:16px;height:16px;display:inline;vertical-align:middle;margin-right:.4rem;" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-        Continue with Google
-      </button>
       <div class="auth-err" id="regErr"></div>
     </div>
     <div class="auth-hint">By signing in, you agree to the S.T.E.W Terms of Service and Privacy Policy.</div>
@@ -464,8 +373,8 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
             <span style="font-size:14px;font-weight:700;color:var(--p)">Active</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:12px;color:var(--m)">Billing</span>
-            <span style="font-size:14px;font-weight:700;color:var(--p)">Active</span>
+            <span style="font-size:12px;color:var(--m)">Payments</span>
+            <span style="font-size:14px;font-weight:700;color:var(--p)">Paystack Ready</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;color:var(--m)">Version</span>
@@ -478,19 +387,6 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
 
   <!-- API KEY TAB -->
   <div class="tab-content" id="tab-api">
-    <!-- Generate Key Banner (shown if user has no key) -->
-    <div id="generateKeyBanner" class="card" style="display:none;margin-bottom:16px;background:linear-gradient(135deg,rgba(0,255,102,.08),rgba(0,255,102,.02));border:1px solid rgba(0,255,102,.25);border-radius:12px;padding:20px;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-        <div style="font-size:28px">🔑</div>
-        <div>
-          <div style="font-weight:700;font-size:15px;color:var(--g)">Generate Your API Key</div>
-          <div style="font-size:12px;color:var(--m)">Your account is ready! Click below to generate your S.T.E.W API key and start building.</div>
-        </div>
-      </div>
-      <button class="auth-btn" style="width:auto;padding:10px 24px;background:#00FF66;color:#0a0a0a;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="generateKey()">
-        🔑 Generate API Key Now
-      </button>
-    </div>
     <div class="grid g2">
       <div class="card">
         <div class="sec-title">Your API Key</div>
@@ -681,8 +577,8 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
           </select>
         </div>
         <div class="ft-field">
-          <label>AI Engine AI Key (optional — Pro+)</label>
-          <input type="password" id="ftAI Engine" placeholder="sk-...">
+          <label>Mistral AI Key (optional — Pro+)</label>
+          <input type="password" id="ftMistral" placeholder="sk-...">
         </div>
         <div class="ft-field">
           <label>Persona Display Name (optional)</label>
@@ -696,7 +592,7 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
       <div class="ft-actions">
         <button class="pg-btn" onclick="saveFT()">💾 Save Settings</button>
         <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="loadFT()">📥 Load Current Settings</button>
-        <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="testAI Engine()">🔑 Test AI Engine Key</button>
+        <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="testMistral()">🔑 Test Mistral Key</button>
       </div>
       <div class="ft-msg" id="ftMsg"></div>
     </div>
@@ -759,10 +655,10 @@ onAuthStateChanged(fbAuth, async (fbUser) => {
 const API = 'https://stew-agent.onrender.com';
 let user = null, apiKey = null, keyVisible = false, allSkills = [], agentInterval = null;
 const PLANS = [
-  {id:'free',name:'Free',price:0,calls:'500',feats:['500 API calls/month','Chat & web search','Document generation','Community support']},
-  {id:'pro',name:'Pro',price:9900,calls:'5,000',feats:['Everything in Free','5,000 API calls/month','Image generation API','Priority support','Agent pool access (10)'],popular:true},
-  {id:'business',name:'Business',price:29000,calls:'15,000',feats:['Everything in Pro','15,000 API calls/month','100-agent pool','API key regeneration','Webhook notifications','Priority support'],},
-  {id:'enterprise',name:'Enterprise',price:49000,calls:'50,000',feats:['Everything in Business','50,000 API calls/month','Custom AI fine-tuning','Dedicated infrastructure','SLA guarantee','24/7 support']}
+  {id:'free',name:'Free',price:0,calls:'3,000',feats:['60+ skills','3 AI providers','Web search','Community support']},
+  {id:'pro',name:'Pro',price:9900,calls:'10,000',feats:['Everything in Free','6 AI providers','Priority processing','Email support','Document generation'],popular:true},
+  {id:'business',name:'Business',price:29000,calls:'100,000',feats:['Everything in Pro','100-agent pool','API key regeneration','Webhook notifications','Priority support'],},
+  {id:'enterprise',name:'Enterprise',price:49000,calls:'Unlimited',feats:['Everything in Business','Custom AI fine-tuning','Dedicated agents','SLA guarantee','Custom integrations','24/7 support']}
 ];
 const fmtNaira = n => '₦' + n.toLocaleString();
 const fmtDate = d => new Date(d).toLocaleDateString('en-NG',{month:'short',day:'numeric',year:'numeric'});
@@ -781,68 +677,13 @@ function saveSession(token,userData,key){
   localStorage.setItem('stew_apikey',key);
 }
 
-async function generateKey(){
-  if(!user || !user.email){
-    alert('Please log in first.');
-    return;
-  }
-  try{
-    const btn = event.target;
-    btn.disabled = true;
-    btn.textContent = '⏳ Generating...';
-    
-    const token = localStorage.getItem('stew_token') || localStorage.getItem('stew_jwt');
-    const resp = await fetch(API+'/auth/generate-key',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        ...(token ? {'Authorization':'Bearer '+token} : {})
-      },
-      body: JSON.stringify({email: user.email})
-    });
-    const data = await resp.json();
-    
-    if(resp.ok && data.api_key){
-      apiKey = data.api_key;
-      user.api_key = data.api_key;
-      localStorage.setItem('stew_api_key', data.api_key);
-      localStorage.setItem('stew_apikey', data.api_key);
-      localStorage.setItem('stew_user', JSON.stringify(user));
-      if(data.access_token){
-        localStorage.setItem('stew_token', data.access_token);
-        localStorage.setItem('stew_jwt', data.access_token);
-      }
-      // Update UI
-      document.getElementById('apiKeyDisplay').textContent = apiKey;
-      document.getElementById('apiKeyDisplay').style.color = '';
-      document.getElementById('generateKeyBanner').style.display = 'none';
-      btn.textContent = '✅ Key Generated!';
-      // Reload usage
-      await loadUsage();
-      setTimeout(function(){ btn.style.display='none'; }, 2000);
-    } else {
-      btn.disabled = false;
-      btn.textContent = '🔑 Generate API Key Now';
-      alert('Failed to generate key: '+(data.detail||data.error||'Unknown error'));
-    }
-  } catch(e){
-    console.error('Generate key error:', e);
-    if(event && event.target){
-      event.target.disabled = false;
-      event.target.textContent = '🔑 Generate API Key Now';
-    }
-    alert('Error generating key: '+e.message);
-  }
-}
-
 function loadSession(){
-  const token = localStorage.getItem('stew_token') || localStorage.getItem('stew_jwt') || '';
+  const token = localStorage.getItem('stew_token');
   const u = localStorage.getItem('stew_user');
-  const k = localStorage.getItem('stew_apikey') || localStorage.getItem('stew_api_key') || '';
-  if(u){
+  const k = localStorage.getItem('stew_apikey');
+  if(token && u && k){
     user = JSON.parse(u);
-    apiKey = k || '';
-    if(token){ localStorage.setItem('stew_token', token); }
+    apiKey = k;
     showDashboard();
     return true;
   }
@@ -854,9 +695,6 @@ function logout(){
   localStorage.removeItem('stew_user');
   localStorage.removeItem('stew_apikey');
   user = null; apiKey = null;
-  if(window._fb && window._fb.signOut){
-    window._fb.signOut(window._fb.fbAuth).catch(()=>{});
-  }
   document.getElementById('dashboard').style.display='none';
   document.getElementById('authScreen').style.display='flex';
   document.getElementById('navUser').style.display='none';
@@ -870,15 +708,6 @@ async function doLogin(){
   if(!email || !password){ errEl.textContent='Please fill in all fields'; return; }
   btn.disabled=true; btn.textContent='Signing in...'; errEl.textContent='';
   try{
-    // Firebase sign-in (for session persistence)
-    if(window._fb && window._fb.signInWithEmailAndPassword){
-      try {
-        await window._fb.signInWithEmailAndPassword(window._fb.fbAuth, email, password);
-      } catch(fbErr){
-        console.log('Firebase login:', fbErr.code || fbErr.message);
-      }
-    }
-    // STEW backend login
     const resp = await fetch(API+'/auth/login',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password})
@@ -886,7 +715,7 @@ async function doLogin(){
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Login failed');
     apiKey = data.api_key;
-    user = {id:data.user_id,email:email,plan:data.plan,api_key:data.api_key,name:data.name||email.split('@')[0]};
+    user = {id:data.user_id,email,plan:data.plan,api_key:data.api_key};
     saveSession(data.access_token,user,data.api_key);
     showDashboard();
     toast('Welcome back!');
@@ -907,24 +736,13 @@ async function doRegister(){
   if(password.length<8){ errEl.textContent='Password must be at least 8 characters'; return; }
   btn.disabled=true; btn.textContent='Creating account...'; errEl.textContent='';
   try{
-    // Step 1: Create Firebase auth account
-    if(window._fb && window._fb.createUserWithEmailAndPassword){
-      try {
-        const fbCred = await window._fb.createUserWithEmailAndPassword(window._fb.fbAuth, email, password);
-        if(fbCred.user) await fbCred.user.updateProfile({displayName: name});
-      } catch(fbErr){
-        // If Firebase fails (email exists), continue with STEW registration
-        console.log('Firebase signup:', fbErr.code || fbErr.message);
-      }
-    }
-    // Step 2: Register with STEW backend
     const resp = await fetch(API+'/auth/register',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password,name})
     });
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Registration failed');
-    // Step 3: Auto-login immediately
+    // Auto-login
     const loginResp = await fetch(API+'/auth/login',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,password})
@@ -934,7 +752,6 @@ async function doRegister(){
       apiKey = loginData.api_key;
       user = {id:loginData.user_id,email,name,plan:loginData.plan,api_key:loginData.api_key};
       saveSession(loginData.access_token,user,loginData.api_key);
-      // INSTANT redirect — no delay
       showDashboard();
       toast('Account created! Welcome to S.T.E.W 🎉');
     }
@@ -945,62 +762,6 @@ async function doRegister(){
   }
 }
 
-// Google Auth (Dashboard)
-async function doGoogleAuthDashboard(){
-  try{
-    if(!window._fb || !window._fb.signInWithPopup){
-      alert('Google sign-in not available. Please use email/password.');
-      return;
-    }
-    var result = await window._fb.signInWithPopup(window._fb.fbAuth, window._fb.googleProvider);
-    var googleUser = result.user;
-    var email = googleUser.email;
-    var name = googleUser.displayName || (email ? email.split('@')[0] : 'Google User');
-    var googleToken = await googleUser.getIdToken();
-
-    var resp = await fetch(API+'/auth/register',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name: name, email: email, password: googleToken.substring(0,20), plan:'free'}),
-      signal: AbortSignal.timeout(30000)
-    });
-
-    if(resp.status === 409){
-      resp = await fetch(API+'/auth/login',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({email: email, password: googleToken.substring(0,20)}),
-        signal: AbortSignal.timeout(20000)
-      });
-    }
-
-    var data = await resp.json();
-    if(resp.ok && data.access_token){
-      localStorage.setItem('stew_jwt', data.access_token);
-      localStorage.setItem('stew_token', data.access_token);
-      if(data.api_key){
-        localStorage.setItem('stew_api_key', data.api_key);
-        localStorage.setItem('stew_apikey', data.api_key);
-      }
-      localStorage.setItem('stew_user', JSON.stringify({id:data.user_id,email:email,plan:data.plan||'free',api_key:data.api_key||'',name:name}));
-      user = {id:data.user_id, email:email, plan:data.plan||'free', api_key:data.api_key||'', name:name};
-      apiKey = data.api_key || '';
-      await showDashboard();
-    } else {
-      document.getElementById('loginErr').textContent='❌ '+(data.detail||data.error||'Google sign-in failed.');
-    }
-  } catch(e){
-    if(e.code === 'auth/popup-closed-by-user'){
-      // cancelled
-    } else if(e.code === 'auth/popup-blocked'){
-      document.getElementById('loginErr').textContent='❌ Popup blocked. Please allow popups.';
-    } else {
-      document.getElementById('loginErr').textContent='❌ '+(e.message||'Google sign-in failed.');
-    }
-  }
-}
-
-
 // Dashboard
 async function showDashboard(){
   // Auto-load fine-tune settings
@@ -1008,17 +769,6 @@ async function showDashboard(){
 
   document.getElementById('authScreen').style.display='none';
   document.getElementById('dashboard').style.display='block';
-
-  // Check if user needs to generate API key
-  if(!apiKey){
-    document.getElementById('generateKeyBanner').style.display = 'block';
-    document.getElementById('apiKeyDisplay').textContent = 'No key — generate one below';
-    document.getElementById('apiKeyDisplay').style.color = 'var(--y)';
-  } else {
-    document.getElementById('generateKeyBanner').style.display = 'none';
-    document.getElementById('apiKeyDisplay').textContent = apiKey;
-    document.getElementById('apiKeyDisplay').style.color = '';
-  }
   document.getElementById('navUser').style.display='flex';
   // Nav user
   const initials = (user.email||'U')[0].toUpperCase();
@@ -1332,12 +1082,12 @@ async function runPlayground(){
     const search = document.getElementById('pgSearch').checked;
     const resp = await fetch(API+'/chat',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg,web_search:search,api_key:apiKey,fusion_mode:document.getElementById("fusionToggle")?.checked||false})
+      body:JSON.stringify({message:msg,web_search:search,api_key:apiKey})
     });
     const data = await resp.json();
     if(data.success){
       out.textContent = data.response;
-      prov.textContent = 'AI Engine: Operational'+(data.web_grounded?' · Web-grounded':'');
+      prov.textContent = 'Powered by '+data.provider+(data.web_grounded?' · Web-grounded':'');
       prov.style.display='block';
       if(data.sources && data.sources.length){
         out.textContent += '\n\nSources:\n'+data.sources.map((s,i)=>`${i+1}. ${s.title||s}`).join('\n');
@@ -1423,46 +1173,6 @@ function startAgentPolling(){
   agentInterval = setInterval(loadAgents, 5000);
 }
 
-// Image generation
-async function generateImage(){
-  const prompt = document.getElementById('imgPrompt').value.trim();
-  if(!prompt) return;
-  const btn = document.getElementById('imgGenBtn');
-  const out = document.getElementById('imgOutput');
-  const model = document.getElementById('imgModel').value;
-  const size = parseInt(document.getElementById('imgSize').value);
-  btn.disabled=true; btn.textContent='Generating...';
-  out.style.display='block';
-  document.getElementById('imgResult').style.opacity='0.5';
-  try{
-    const resp = await fetch(API+'/generate/image',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt,model,width:size,height:size,api_key:apiKey})
-    });
-    const data = await resp.json();
-    if(data.success && data.image_url){
-      document.getElementById('imgResult').src = data.image_url;
-      document.getElementById('imgResult').style.opacity='1';
-      document.getElementById('imgUrlBox').value = data.image_url;
-    }else{
-      out.style.display='none';
-      toast(data.detail||'Image generation failed', true);
-    }
-  }catch(e){
-    out.style.display='none';
-    toast('Error: '+e.message, true);
-  }finally{
-    btn.disabled=false; btn.textContent='Generate Image →';
-  }
-}
-
-function copyImageUrl(){
-  const box = document.getElementById('imgUrlBox');
-  box.select();
-  document.execCommand('copy');
-  toast('Image URL copied to clipboard');
-}
-
 // Toast
 function toast(msg, isErr){
   const t = document.getElementById('toast');
@@ -1516,7 +1226,7 @@ async function saveFT(){
   if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
   const body={api_key:apiKey,persona:document.getElementById('ftPersona').value,response_style:document.getElementById('ftStyle').value,
     language:document.getElementById('ftLang').value,custom_instructions:document.getElementById('ftInstructions').value.trim()||null,
-    persona_name:document.getElementById('ftName').value.trim()||null,mistral_api_key:document.getElementById('ftAI Engine').value.trim()||null};
+    persona_name:document.getElementById('ftName').value.trim()||null,mistral_api_key:document.getElementById('ftMistral').value.trim()||null};
   showFTMsg('Saving...','info');
   try{
     const r=await fetch(API+'/finetune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1538,20 +1248,20 @@ async function loadFT(){
       if(d.custom_instructions)document.getElementById('ftInstructions').value=d.custom_instructions;
       if(d.persona_name)document.getElementById('ftName').value=d.persona_name;
       document.querySelectorAll('.ft-pcard').forEach(c=>c.classList.toggle('sel',c.dataset.id===(d.persona||'general')));
-      showFTMsg('✅ Loaded! Persona: <strong>'+d.persona_label+'</strong> · AI Engine key stored: '+(d.has_mistral_key?'Yes':'No'),'ok');
+      showFTMsg('✅ Loaded! Persona: <strong>'+d.persona_label+'</strong> · Mistral key stored: '+(d.has_mistral_key?'Yes':'No'),'ok');
     }else showFTMsg('No settings found. Configure and save to get started.','info');
   }catch{showFTMsg('Connection error.','err');}
 }
-async function testAI Engine(){
+async function testMistral(){
   if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
-  const mk=document.getElementById('ftAI Engine').value.trim();
-  if(!mk){showFTMsg('Enter your AI Engine key first.','err');return;}
-  showFTMsg('Testing AI Engine key...','info');
+  const mk=document.getElementById('ftMistral').value.trim();
+  if(!mk){showFTMsg('Enter your Mistral key first.','err');return;}
+  showFTMsg('Testing Mistral key...','info');
   try{
     const r=await fetch(API+'/test-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey,mistral_api_key:mk})});
     const d=await r.json();
-    if(d.mistral_key_valid===true)showFTMsg('✅ AI Engine key is valid! Response: "'+d.mistral_test_response+'"','ok');
-    else showFTMsg('❌ AI Engine key invalid: '+(d.mistral_test_response||'Unknown error'),'err');
+    if(d.mistral_key_valid===true)showFTMsg('✅ Mistral key is valid! Response: "'+d.mistral_test_response+'"','ok');
+    else showFTMsg('❌ Mistral key invalid: '+(d.mistral_test_response||'Unknown error'),'err');
   }catch{showFTMsg('Connection error.','err');}
 }
 
