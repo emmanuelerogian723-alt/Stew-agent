@@ -808,10 +808,12 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
     """
     Generate an image from a text prompt.
     Uses pollinations.ai (free, no key required) with FLUX model.
-    Returns a direct image URL that can be embedded anywhere.
+    Downloads and verifies the image, returns as both a direct URL and base64 data URL.
     """
     import httpx
     import urllib.parse
+    import base64
+    import random
 
     user = await _safe_get_user(body.api_key, db) if body.api_key else None
 
@@ -824,20 +826,34 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
     model_name = model_map.get(body.model, "flux")
 
     encoded_prompt = urllib.parse.quote(body.prompt, safe='')
-    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={body.width}&height={body.height}&model={model_name}&nologo=true"
 
-    # Verify the URL is reachable
-    try:
-        async with httpx.AsyncClient(timeout=30) as http:
-            resp = await http.head(image_url)
-            if resp.status_code != 200:
-                raise HTTPException(503, "Image generation service unavailable")
-    except httpx.TimeoutException:
-        raise HTTPException(504, "Image generation timed out — try a simpler prompt")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"Image gen verification failed (continuing): {e}")
+    # Try up to 3 times with different seeds — pollinations sometimes returns 0 bytes
+    image_bytes = None
+    content_type = "image/jpeg"
+    final_url = None
+
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as http:
+        for attempt in range(3):
+            seed = random.randint(1, 999999)
+            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={body.width}&height={body.height}&model={model_name}&nologo=true&seed={seed}"
+            try:
+                resp = await http.get(url)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    image_bytes = resp.content
+                    content_type = resp.headers.get("content-type", "image/jpeg")
+                    final_url = url
+                    break
+                else:
+                    logger.warning(f"Image gen attempt {attempt+1}: status={resp.status_code} size={len(resp.content)} — retrying")
+            except Exception as e:
+                logger.warning(f"Image gen attempt {attempt+1} error: {e} — retrying")
+
+    if image_bytes is None:
+        raise HTTPException(503, "Image generation failed after 3 attempts. The free image service may be overloaded — please try again in a moment.")
+
+    # Convert to base64 data URL for reliable embedding
+    b64 = base64.b64encode(image_bytes).decode('utf-8')
+    data_url = f"data:{content_type};base64,{b64}"
 
     # Log the call
     if user:
@@ -851,10 +867,13 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
 
     return {
         "success": True,
-        "image_url": image_url,
+        "image_url": final_url,
+        "image_data": data_url,
         "prompt": body.prompt,
         "model": model_name,
         "dimensions": f"{body.width}x{body.height}",
+        "provider": "pollinations.ai",
+        "image_size_bytes": len(image_bytes),
     }
 
 

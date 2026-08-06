@@ -115,25 +115,30 @@ async def orchestrate_text(prompt: str, system: Optional[str] = None,
 # ─────────────────────────────────────────────────────────────────────────
 
 async def _image_worker_pollinations(prompt: str) -> dict:
-    """pollinations.ai — free, no API key required."""
+    """pollinations.ai — free, no API key required. Retries with random seed."""
+    import random
+    import urllib.parse
     start = time.time()
-    try:
-        url = f"https://image.pollinations.ai/prompt/{httpx.QueryParams({'p': prompt})['p']}"
-        url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?nologo=true"
-        async with httpx.AsyncClient(timeout=60) as http:
-            resp = await http.get(url)
-            resp.raise_for_status()
-        return {"worker": "pollinations", "ok": True, "image_url": url,
-                "latency_s": round(time.time() - start, 2)}
-    except Exception as e:
-        return {"worker": "pollinations", "ok": False, "error": str(e),
-                "latency_s": round(time.time() - start, 2)}
+    encoded = urllib.parse.quote(prompt, safe='')
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as http:
+        for attempt in range(3):
+            seed = random.randint(1, 999999)
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
+            try:
+                resp = await http.get(url)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    return {"worker": "pollinations", "ok": True, "image_url": url,
+                            "latency_s": round(time.time() - start, 2)}
+            except Exception:
+                pass
+    return {"worker": "pollinations", "ok": False, "error": "pollinations returned empty/failed after 3 retries",
+            "latency_s": round(time.time() - start, 2)}
 
 
 async def _image_worker_hf(prompt: str) -> dict:
     """HuggingFace Inference API — FLUX/Stable Diffusion (needs HF_TOKEN)."""
     start = time.time()
-    token = settings.HF_TOKEN_IMAGE or settings.HF_TOKEN
+    token = getattr(settings, 'HF_TOKEN_IMAGE', '') or getattr(settings, 'HF_TOKEN', '')
     if not token:
         return {"worker": "huggingface_image", "ok": False, "error": "no HF token configured",
                 "latency_s": 0}
@@ -166,7 +171,7 @@ async def orchestrate_image(prompt: str, mode: str = "first") -> dict:
     to add another model/provider as a worker with zero changes elsewhere.
     """
     workers = [_image_worker_pollinations(prompt)]
-    if settings.HF_TOKEN_IMAGE or settings.HF_TOKEN:
+    if getattr(settings, 'HF_TOKEN_IMAGE', '') or getattr(settings, 'HF_TOKEN', '') or False:
         workers.append(_image_worker_hf(prompt))
 
     if mode == "all":

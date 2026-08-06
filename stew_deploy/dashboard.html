@@ -1229,16 +1229,19 @@ async function generateImage(){
     });
     const data = await resp.json();
 
-    if(data.success && data.image_url){
-      document.getElementById('imgOutput').src = data.image_url;
-      document.getElementById('imgDownload').href = data.image_url;
+    if(data.success && (data.image_data || data.image_url)){
+      var imgSrc = data.image_data || data.image_url;
+      document.getElementById('imgOutput').src = imgSrc;
+      document.getElementById('imgDownload').href = imgSrc;
       document.getElementById('imgMeta').textContent =
-        'Model: ' + (data.model||model) + ' | Size: ' + (data.dimensions||width+'x'+height) + ' | Generated via ' + (data.provider||'Pollinations');
+        'Model: ' + (data.model||model) + ' | Size: ' + (data.dimensions||width+'x'+height) + ' | ' +
+        (data.image_size_bytes ? (Math.round(data.image_size_bytes/1024) + 'KB | ') : '') +
+        'Generated via ' + (data.provider||'Pollinations');
       result.style.display = 'block';
       status.textContent = 'Done!';
 
       // Add to gallery
-      imgGalleryArr.unshift({url: data.image_url, prompt: prompt, time: new Date().toLocaleTimeString()});
+      imgGalleryArr.unshift({url: imgSrc, prompt: prompt, time: new Date().toLocaleTimeString()});
       renderGallery();
       toast('Image generated successfully!');
     } else {
