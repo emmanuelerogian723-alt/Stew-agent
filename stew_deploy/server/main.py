@@ -151,6 +151,10 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+class GenerateKeyRequest(BaseModel):
+    email: EmailStr
+    password: Optional[str] = None
+
 
 class ChatRequest(BaseModel):
     message: str
