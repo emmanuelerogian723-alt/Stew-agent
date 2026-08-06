@@ -20,24 +20,26 @@ from server.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ─── Active model list (as of July 2026) ────────────────────────────────────
+# ─── Active model list (as of August 2026) ────────────────────────────────────
+# Updated: Groq deprecated llama-3.3-70b, llama-4-scout, llama-3.1-8b, qwen3-32b
+# Migrated to openai/gpt-oss-120b (default) and gpt-oss-20b (fast)
 PROVIDER_MODELS = {
-    "groq":         "llama-3.3-70b-versatile",
-    "groq_fast":    "meta-llama/llama-4-scout-17b-16e-instruct",  # faster option
+    "groq":         "openai/gpt-oss-120b",           # best Groq model (replaced llama-3.3-70b)
+    "groq_fast":    "openai/gpt-oss-20b",            # faster Groq model (replaced llama-4-scout)
     "nvidia":       "meta/llama-3.3-70b-instruct",   # free on build.nvidia.com NIM
     "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
     "openai":       "gpt-4o-mini",
-    "huggingface":  "Qwen/Qwen3-235B-A22B",  # best free on HF Router
-    "mistral":      "mistral-large-latest",       # Mistral AI flagship
-    "mistral_fast": "mistral-small-latest",       # Mistral AI fast/cheap
+    "huggingface":  "Qwen/Qwen3-235B-A22B",         # best free on HF Router
+    "mistral":      "mistral-large-latest",          # Mistral AI flagship
+    "mistral_fast": "mistral-small-latest",          # Mistral AI fast/cheap
+    "pollinations": "openai",                         # free fallback (no key needed)
 }
 
 # Fallback chain for Groq if primary fails
 GROQ_FALLBACKS = [
-    "llama-3.3-70b-versatile",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "llama-3.1-8b-instant",
-    "qwen/qwen3-32b",
+    "openai/gpt-oss-120b",        # primary — replaced llama-3.3-70b
+    "openai/gpt-oss-20b",         # fast fallback — replaced llama-4-scout
+    "llama-3.1-8b-instant",      # emergency fallback (still alive for now)
 ]
 
 
@@ -121,12 +123,22 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"Mistral init failed: {e}")
 
+        # Pollinations.ai — always available, no API key required
+        try:
+            self.providers["pollinations"] = OpenAI(
+                base_url="https://text.pollinations.ai/openai",
+                api_key="none",  # no key needed
+            )
+            logger.info("Pollinations.ai provider initialized (free fallback)")
+        except Exception as e:
+            logger.warning(f"Pollinations init failed: {e}")
+
         if not self.providers:
             logger.error("No LLM providers available — set GROQ_API_KEY at minimum")
 
     @property
     def fallback_order(self) -> list[str]:
-        return [p for p in ["groq", "nvidia", "mistral", "openrouter", "huggingface", "openai"] if p in self.providers]
+        return [p for p in ["groq", "nvidia", "mistral", "openrouter", "huggingface", "openai", "pollinations"] if p in self.providers]
 
     def _call_groq_with_fallback(self, messages: list[dict], temperature: float) -> dict:
         """Try each Groq model in fallback order."""
@@ -234,6 +246,21 @@ class LLMClient:
             except Exception:
                 return self._call_nvidia_with_fallback(messages, temperature)
 
+
+
+        if provider_name == "pollinations":
+            client = self.providers["pollinations"]
+            m = model or "openai"
+            try:
+                response = client.chat.completions.create(
+                    model=m, messages=messages, temperature=temperature)
+                content = response.choices[0].message.content
+                return {
+                    "content": content, "provider": "pollinations", "model": m,
+                    "tokens": {"prompt": 0, "completion": 0, "total": 0},
+                }
+            except Exception as e:
+                raise e
 
         if provider_name == "mistral":
             client = self.providers["mistral"]

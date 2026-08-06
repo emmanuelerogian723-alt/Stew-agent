@@ -286,6 +286,23 @@ footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:6
 .reveal{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s ease;}
 .reveal.vis{opacity:1;transform:none;}
 </style>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script>
+// Firebase config — S.T.E.W Agent
+const firebaseConfig = {
+  apiKey: "AIzaSyDLSQudDbSSAEeKa-BKgLESmNAztlwjJH0",
+  authDomain: "stew-agent-9ca8c.firebaseapp.com",
+  projectId: "stew-agent-9ca8c",
+  storageBucket: "stew-agent-9ca8c.firebasestorage.app",
+  messagingSenderId: "389447033478",
+  appId: "1:389447033478:web:c812436d040712b1d26707",
+  measurementId: "G-Z7EVT93JCN"
+};
+firebase.initializeApp(firebaseConfig);
+const fbAuth = firebase.auth();
+</script>
 </head>
 <body>
 
@@ -738,44 +755,78 @@ function showMsg(msg,type){const el=document.getElementById('authMsg');el.classN
 async function doReg(e){
   e.preventDefault();
   const btn=document.getElementById('rBtn');btn.disabled=true;btn.textContent='Creating...';
+  const name=document.getElementById('rName').value.trim();
+  const email=document.getElementById('rEmail').value.trim();
+  const password=document.getElementById('rPass').value;
   try{
-    const r=await fetch(BASE+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name:document.getElementById('rName').value.trim(),email:document.getElementById('rEmail').value.trim(),password:document.getElementById('rPass').value})});
+    // Step 1: Create Firebase account
+    const cred=await fbAuth.createUserWithEmailAndPassword(email,password);
+    const fbUser=cred.user;
+    // Step 2: Update Firebase profile with name
+    await fbUser.updateProfile({displayName:name});
+    // Step 3: Get Firebase ID token
+    const idToken=await fbUser.getIdToken();
+    // Step 4: Register with backend using Firebase token
+    const r=await fetch(BASE+'/auth/firebase',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id_token:idToken,name: name,email:email})});
     const d=await r.json();
     if(r.ok&&d.api_key){
       localStorage.setItem('stew_api_key',d.api_key);
       localStorage.setItem('stew_apikey',d.api_key);
-      localStorage.setItem('stew_user',JSON.stringify({name:document.getElementById('rName').value.trim(),email:document.getElementById('rEmail').value.trim(),plan:d.plan||'free',api_key:d.api_key}));
-      if(d.token)localStorage.setItem('stew_token',d.token);
+      localStorage.setItem('stew_user',JSON.stringify({name:name,email:email,plan:d.plan||'free',api_key:d.api_key}));
       if(d.access_token)localStorage.setItem('stew_token',d.access_token);
+      localStorage.setItem('stew_firebase_uid',fbUser.uid);
       showMsg('Account created! Redirecting to dashboard...','auth-msg ok');
       document.getElementById('keyBox').style.display='block';
       document.getElementById('keyVal').textContent=d.api_key;
       document.getElementById('ftKey').value=d.api_key;
       injectKey(d.api_key);
-      setTimeout(function(){window.location.href='/dashboard';},1200);
+      // Immediate redirect — no delay
+      window.location.href='/dashboard';
     }else{showMsg('Error: '+(d.detail||d.message||'Registration failed'),'auth-msg err');}
-  }catch{showMsg('Connection error — STEW may be waking up on free tier. Retry in 15s.','auth-msg err');}
+  }catch(err){
+    const msg=err.code==='auth/email-already-in-use'?'Email already registered — try Sign In':
+             err.code==='auth/weak-password'?'Password too weak (min 8 characters)':
+             err.code==='auth/invalid-email'?'Invalid email address':
+             err.message||'Registration failed';
+    showMsg(msg,'auth-msg err');
+  }
   btn.disabled=false;btn.textContent='Create Account & Get API Key →';
 }
 async function doLogin(e){
   e.preventDefault();
   const btn=document.getElementById('lBtn');btn.disabled=true;btn.textContent='Signing in...';
+  const email=document.getElementById('lEmail').value.trim();
+  const password=document.getElementById('lPass').value;
   try{
-    const r=await fetch(BASE+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:document.getElementById('lEmail').value.trim(),password:document.getElementById('lPass').value})});
+    // Step 1: Sign in with Firebase
+    const cred=await fbAuth.signInWithEmailAndPassword(email,password);
+    const fbUser=cred.user;
+    const idToken=await fbUser.getIdToken();
+    // Step 2: Login with backend using Firebase token
+    const r=await fetch(BASE+'/auth/firebase',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id_token:idToken,name:fbUser.displayName||email.split('@')[0],email:email})});
     const d=await r.json();
-    if(r.ok&&(d.token||d.access_token)){
-      const token=d.token||d.access_token,key=d.user?.api_key||d.api_key;
+    if(r.ok&&d.api_key){
+      const token=d.access_token||d.token;
+      const key=d.api_key;
       localStorage.setItem('stew_token',token);
       if(key){localStorage.setItem('stew_api_key',key);localStorage.setItem('stew_apikey',key);document.getElementById('ftKey').value=key;injectKey(key);}
-      localStorage.setItem('stew_user',JSON.stringify({name:d.name||d.user?.name||'User',email:document.getElementById('lEmail').value.trim(),plan:d.plan||'free',api_key:key||''}));
-      showMsg('Welcome back, '+(d.name||d.user?.name||'there')+'!','auth-msg ok');
+      localStorage.setItem('stew_user',JSON.stringify({name:d.name||fbUser.displayName||'User',email:email,plan:d.plan||'free',api_key:key||''}));
+      localStorage.setItem('stew_firebase_uid',fbUser.uid);
+      showMsg('Welcome back, '+(d.name||fbUser.displayName||'there')+'!','auth-msg ok');
       if(key){document.getElementById('keyBox').style.display='block';document.getElementById('keyVal').textContent=key;}
-      // Redirect to dashboard after successful login
-      setTimeout(function(){window.location.href='/dashboard';},1500);
+      // Redirect to dashboard
+      setTimeout(function(){window.location.href='/dashboard';},800);
     }else{showMsg('Error: '+(d.detail||d.message||'Invalid credentials'),'auth-msg err');}
-  }catch{showMsg('Connection error — please retry.','auth-msg err');}
+  }catch(err){
+    const msg=err.code==='auth/invalid-credential'?'Invalid email or password':
+             err.code==='auth/user-not-found'?'No account found — try Create Account':
+             err.code==='auth/wrong-password'?'Incorrect password':
+             err.code==='auth/too-many-requests'?'Too many attempts — try again later':
+             err.message||'Login failed';
+    showMsg(msg,'auth-msg err');
+  }
   btn.disabled=false;btn.textContent='Sign In →';
 }
 async function doForgot(){

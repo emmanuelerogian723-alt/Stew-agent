@@ -230,6 +230,23 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
 .ft-msg.info{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);color:var(--bl)}
 @media(max-width:640px){.ft-grid{grid-template-columns:1fr}.ft-personas{grid-template-columns:repeat(2,1fr)}}
 </style>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script>
+// Firebase config — S.T.E.W Agent
+const firebaseConfig = {
+  apiKey: "AIzaSyDLSQudDbSSAEeKa-BKgLESmNAztlwjJH0",
+  authDomain: "stew-agent-9ca8c.firebaseapp.com",
+  projectId: "stew-agent-9ca8c",
+  storageBucket: "stew-agent-9ca8c.firebasestorage.app",
+  messagingSenderId: "389447033478",
+  appId: "1:389447033478:web:c812436d040712b1d26707",
+  measurementId: "G-Z7EVT93JCN"
+};
+firebase.initializeApp(firebaseConfig);
+const fbAuth = firebase.auth();
+</script>
 </head>
 <body>
 <div class="bg-overlay"></div>
@@ -708,19 +725,30 @@ async function doLogin(){
   if(!email || !password){ errEl.textContent='Please fill in all fields'; return; }
   btn.disabled=true; btn.textContent='Signing in...'; errEl.textContent='';
   try{
-    const resp = await fetch(API+'/auth/login',{
+    // Step 1: Firebase sign in
+    const cred = await fbAuth.signInWithEmailAndPassword(email,password);
+    const fbUser = cred.user;
+    const idToken = await fbUser.getIdToken();
+    // Step 2: Backend auth with Firebase token
+    const resp = await fetch(API+'/auth/firebase',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email,password})
+      body:JSON.stringify({id_token:idToken,name:fbUser.displayName||email.split('@')[0],email:email})
     });
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Login failed');
     apiKey = data.api_key;
-    user = {id:data.user_id,email,plan:data.plan,api_key:data.api_key};
+    user = {id:data.user_id,email,plan:data.plan,api_key:data.api_key,name:data.name||fbUser.displayName||''};
     saveSession(data.access_token,user,data.api_key);
+    localStorage.setItem('stew_firebase_uid',fbUser.uid);
     showDashboard();
     toast('Welcome back!');
   }catch(e){
-    errEl.textContent = e.message;
+    const msg = e.code==='auth/invalid-credential'?'Invalid email or password':
+               e.code==='auth/user-not-found'?'No account found — try Create Account':
+               e.code==='auth/wrong-password'?'Incorrect password':
+               e.code==='auth/too-many-requests'?'Too many attempts — try again later':
+               e.message||'Login failed';
+    errEl.textContent = msg;
   }finally{
     btn.disabled=false; btn.textContent='Sign In →';
   }
@@ -736,27 +764,30 @@ async function doRegister(){
   if(password.length<8){ errEl.textContent='Password must be at least 8 characters'; return; }
   btn.disabled=true; btn.textContent='Creating account...'; errEl.textContent='';
   try{
-    const resp = await fetch(API+'/auth/register',{
+    // Step 1: Create Firebase account
+    const cred = await fbAuth.createUserWithEmailAndPassword(email,password);
+    const fbUser = cred.user;
+    await fbUser.updateProfile({displayName:name});
+    const idToken = await fbUser.getIdToken();
+    // Step 2: Register with backend using Firebase token
+    const resp = await fetch(API+'/auth/firebase',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email,password,name})
+      body:JSON.stringify({id_token:idToken,name:name,email:email})
     });
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Registration failed');
-    // Auto-login
-    const loginResp = await fetch(API+'/auth/login',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email,password})
-    });
-    const loginData = await loginResp.json();
-    if(loginData.success){
-      apiKey = loginData.api_key;
-      user = {id:loginData.user_id,email,name,plan:loginData.plan,api_key:loginData.api_key};
-      saveSession(loginData.access_token,user,loginData.api_key);
-      showDashboard();
-      toast('Account created! Welcome to S.T.E.W 🎉');
-    }
+    apiKey = data.api_key;
+    user = {id:data.user_id,email,name,plan:data.plan,api_key:data.api_key};
+    saveSession(data.access_token,user,data.api_key);
+    localStorage.setItem('stew_firebase_uid',fbUser.uid);
+    showDashboard();
+    toast('Account created! Welcome to S.T.E.W 🎉');
   }catch(e){
-    errEl.textContent = e.message;
+    const msg = e.code==='auth/email-already-in-use'?'Email already registered — try Sign In':
+               e.code==='auth/weak-password'?'Password too weak (min 8 characters)':
+               e.code==='auth/invalid-email'?'Invalid email address':
+               e.message||'Registration failed';
+    errEl.textContent = msg;
   }finally{
     btn.disabled=false; btn.textContent='Create Free Account →';
   }
@@ -1265,6 +1296,57 @@ async function testMistral(){
   }catch{showFTMsg('Connection error.','err');}
 }
 
+
+// Firebase auth state listener — auto-login if already authenticated
+fbAuth.onAuthStateChanged(function(fbUser){
+  if(fbUser && !user && !localStorage.getItem('stew_token')){
+    // Firebase says logged in but we have no local session — try to restore
+    fbUser.getIdToken().then(function(idToken){
+      fetch(API+'/auth/firebase',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id_token:idToken,name:fbUser.displayName||fbUser.email.split('@')[0],email:fbUser.email})
+      }).then(function(r){return r.json();}).then(function(data){
+        if(data.success){
+          apiKey = data.api_key;
+          user = {id:data.user_id,email:fbUser.email,plan:data.plan,api_key:data.api_key,name:data.name||fbUser.displayName||''};
+          saveSession(data.access_token,user,data.api_key);
+          localStorage.setItem('stew_firebase_uid',fbUser.uid);
+          showDashboard();
+          toast('Welcome back!');
+        }
+      }).catch(function(err){console.log('Firebase auto-login failed:',err);});
+    });
+  }
+});
+
+// On page load: check Firebase first, then localStorage
+window.addEventListener('DOMContentLoaded', function(){
+  fbAuth.onAuthStateChanged(function(fbUser){
+    if(fbUser){
+      // Firebase user exists — try to get session
+      fbUser.getIdToken().then(function(idToken){
+        fetch(API+'/auth/firebase',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({id_token:idToken,name:fbUser.displayName||fbUser.email.split('@')[0],email:fbUser.email})
+        }).then(function(r){return r.json();}).then(function(data){
+          if(data.success){
+            apiKey = data.api_key;
+            user = {id:data.user_id,email:fbUser.email,plan:data.plan,api_key:data.api_key,name:data.name||fbUser.displayName||''};
+            saveSession(data.access_token,user,data.api_key);
+            localStorage.setItem('stew_firebase_uid',fbUser.uid);
+            showDashboard();
+          }else{
+            // Try localStorage fallback
+            loadSession();
+          }
+        }).catch(function(){ loadSession(); });
+      });
+    }else{
+      // No Firebase user — try localStorage
+      loadSession();
+    }
+  });
+});
 </script>
 </body>
 </html>

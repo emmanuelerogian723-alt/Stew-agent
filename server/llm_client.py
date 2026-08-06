@@ -1,12 +1,7 @@
 """
 S.T.E.W LLM Client — multi-provider with automatic fallback.
-Updated 2026-07-02: Migrated off Groq models deprecated in the June 17, 2026
-notice (llama-3.3-70b-versatile, llama-3.1-8b-instant, qwen/qwen3-32b,
-meta-llama/llama-4-scout-17b-16e-instruct) to their recommended replacements
-(openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.6-27b) per
-console.groq.com/docs/deprecations. Old models remain live until 07/17-08/16/26
-but requests should migrate now to avoid a hard cutover later.
-Chain: Groq (gpt-oss-120b) → NVIDIA NIM → OpenRouter → HuggingFace → OpenAI
+Updated 2026-07-01: Added NVIDIA NIM (free tier) as a provider.
+Chain: Groq (llama-3.3-70b) → NVIDIA NIM → OpenRouter → HuggingFace → OpenAI
 """
 import logging
 from typing import Optional
@@ -14,27 +9,46 @@ from typing import Optional
 from fastapi import HTTPException
 from groq import Groq
 from openai import OpenAI
+try:
+    from mistralai import Mistral as MistralClient
+    HAS_MISTRAL = True
+except ImportError:
+    HAS_MISTRAL = False
 
 from server.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ─── Active model list (as of July 2026) ────────────────────────────────────
+# ─── Active model list (as of August 2026) ────────────────────────────────────
+# Updated: Groq deprecated llama-3.3-70b, llama-4-scout, llama-3.1-8b, qwen3-32b
+# Migrated to openai/gpt-oss-120b (default) and gpt-oss-20b (fast)
 PROVIDER_MODELS = {
-    "groq":         "openai/gpt-oss-120b",
-    "groq_fast":    "openai/gpt-oss-20b",  # faster option
+    "groq":         "openai/gpt-oss-120b",           # best Groq model (replaced llama-3.3-70b)
+    "groq_fast":    "openai/gpt-oss-20b",            # faster Groq model (replaced llama-4-scout)
     "nvidia":       "meta/llama-3.3-70b-instruct",   # free on build.nvidia.com NIM
     "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
     "openai":       "gpt-4o-mini",
-    "huggingface":  "Qwen/Qwen3-235B-A22B",  # best free on HF Router
+    "huggingface":  "Qwen/Qwen3-235B-A22B",         # best free on HF Router
+    "mistral":      "mistral-large-latest",          # Mistral AI flagship
+    "mistral_fast": "mistral-small-latest",          # Mistral AI fast/cheap
+    "pollinations": "openai",                         # free fallback (no key needed)
 }
 
 # Fallback chain for Groq if primary fails
 GROQ_FALLBACKS = [
-    "openai/gpt-oss-120b",
-    "qwen/qwen3.6-27b",
-    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",        # primary — replaced llama-3.3-70b
+    "openai/gpt-oss-20b",         # fast fallback — replaced llama-4-scout
+    "llama-3.1-8b-instant",      # emergency fallback (still alive for now)
+]
+
+
+MISTRAL_FALLBACKS = [
+    "mistral-large-latest",
+    "mistral-medium-latest",
+    "mistral-small-latest",
+    "open-mixtral-8x22b",
+    "open-mistral-7b",
 ]
 
 # Fallback chain for NVIDIA NIM if primary fails (all free-tier models)
@@ -84,11 +98,11 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"OpenRouter init failed: {e}")
 
-        if settings.HF_TOKEN:
+        if settings.HF_TOKEN or settings.HUGGINGFACE_API_KEY:
             try:
                 self.providers["huggingface"] = OpenAI(
                     base_url="https://router.huggingface.co/v1",
-                    api_key=settings.HF_TOKEN,
+                    api_key=settings.HF_TOKEN or settings.HUGGINGFACE_API_KEY,
                 )
                 logger.info("HuggingFace provider initialized")
             except Exception as e:
@@ -101,12 +115,30 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"OpenAI init failed: {e}")
 
+
+        if settings.MISTRAL_API_KEY and HAS_MISTRAL:
+            try:
+                self.providers["mistral"] = MistralClient(api_key=settings.MISTRAL_API_KEY)
+                logger.info("Mistral AI provider initialized")
+            except Exception as e:
+                logger.warning(f"Mistral init failed: {e}")
+
+        # Pollinations.ai — always available, no API key required
+        try:
+            self.providers["pollinations"] = OpenAI(
+                base_url="https://text.pollinations.ai/openai",
+                api_key="none",  # no key needed
+            )
+            logger.info("Pollinations.ai provider initialized (free fallback)")
+        except Exception as e:
+            logger.warning(f"Pollinations init failed: {e}")
+
         if not self.providers:
             logger.error("No LLM providers available — set GROQ_API_KEY at minimum")
 
     @property
     def fallback_order(self) -> list[str]:
-        return [p for p in ["groq", "nvidia", "openrouter", "huggingface", "openai"] if p in self.providers]
+        return [p for p in ["groq", "nvidia", "mistral", "openrouter", "huggingface", "openai", "pollinations"] if p in self.providers]
 
     def _call_groq_with_fallback(self, messages: list[dict], temperature: float) -> dict:
         """Try each Groq model in fallback order."""
@@ -214,6 +246,51 @@ class LLMClient:
             except Exception:
                 return self._call_nvidia_with_fallback(messages, temperature)
 
+
+
+        if provider_name == "pollinations":
+            client = self.providers["pollinations"]
+            m = model or "openai"
+            try:
+                response = client.chat.completions.create(
+                    model=m, messages=messages, temperature=temperature)
+                content = response.choices[0].message.content
+                return {
+                    "content": content, "provider": "pollinations", "model": m,
+                    "tokens": {"prompt": 0, "completion": 0, "total": 0},
+                }
+            except Exception as e:
+                raise e
+
+        if provider_name == "mistral":
+            client = self.providers["mistral"]
+            chosen_model = model or PROVIDER_MODELS.get("mistral", "mistral-large-latest")
+            last_err = None
+            for m in MISTRAL_FALLBACKS:
+                try:
+                    if model:
+                        m = model
+                    resp = client.chat.complete(
+                        model=m,
+                        messages=messages,
+                        temperature=temperature,
+                    )
+                    content_text = resp.choices[0].message.content
+                    return {
+                        "content": content_text, "provider": "mistral", "model": m,
+                        "tokens": {
+                            "prompt": resp.usage.prompt_tokens if resp.usage else 0,
+                            "completion": resp.usage.completion_tokens if resp.usage else 0,
+                            "total": resp.usage.total_tokens if resp.usage else 0,
+                        },
+                    }
+                except Exception as e:
+                    last_err = e
+                    if "model" in str(e).lower() or "404" in str(e):
+                        continue
+                    raise
+            raise last_err
+
         client = self.providers[provider_name]
         chosen_model = model or PROVIDER_MODELS.get(provider_name, "gpt-4o-mini")
         response = client.chat.completions.create(
@@ -230,22 +307,40 @@ class LLMClient:
         }
 
     def chat(self, messages: list[dict], model: Optional[str] = None,
-             temperature: float = 0.7) -> dict:
-        """Try each provider in fallback order until one succeeds."""
+             temperature: float = 0.7, _retry: int = 0) -> dict:
+        """Try each provider in fallback order until one succeeds. Auto-retries once on 429."""
+        import time as _time
         last_error = None
-        for provider_name in self.fallback_order:
+        providers = self.fallback_order
+        if not providers:
+            raise HTTPException(status_code=503, detail="No LLM providers configured. Set GROQ_API_KEY.")
+        for provider_name in providers:
             try:
                 result = self._call_provider(provider_name, messages, model, temperature)
                 logger.info(f"LLM success via {provider_name}/{result['model']}")
                 return result
             except Exception as e:
                 last_error = e
-                logger.warning(f"{provider_name} failed: {e}")
+                err_str = str(e)
+                if any(x in err_str for x in ["429", "rate_limit", "rate limit", "temporarily"]):
+                    logger.warning(f"{provider_name} rate-limited, trying next provider...")
+                elif any(x in err_str for x in ["401", "invalid_api_key", "Unauthorized"]):
+                    logger.warning(f"{provider_name} auth error, trying next provider...")
+                elif any(x in err_str for x in ["model_not_active", "decommissioned", "404"]):
+                    logger.warning(f"{provider_name} model unavailable, trying next provider...")
+                else:
+                    logger.warning(f"{provider_name} failed: {e}")
                 continue
+
+        # All providers failed — wait 3s and retry once automatically
+        if _retry == 0:
+            logger.warning("All providers failed on first pass, retrying after 3s...")
+            _time.sleep(3)
+            return self.chat(messages, model, temperature, _retry=1)
 
         raise HTTPException(
             status_code=503,
-            detail=f"All LLM providers unavailable. Last error: {last_error}",
+            detail="S.T.E.W is temporarily overloaded — all AI providers are rate-limited. Please retry in 30 seconds.",
         )
 
     def complete(self, prompt: str,
@@ -274,3 +369,4 @@ def reset_llm_client():
     """Force re-initialization (useful after config changes)."""
     global _llm_client
     _llm_client = None
+

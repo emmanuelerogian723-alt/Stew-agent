@@ -61,3 +61,4 @@ loguru==0.7.2
 aiofiles==24.1.0
 
 mistralai>=1.0.0
+firebase-admin>=6.5.0

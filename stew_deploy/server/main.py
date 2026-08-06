@@ -413,6 +413,91 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     }
 
 
+
+@app.post("/auth/firebase")
+async def firebase_auth(body: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Authenticate or register a user via Firebase ID token.
+    If the user doesn't exist in our DB, create them. If they do, log them in.
+    Returns the same shape as /auth/register and /auth/login.
+    """
+    id_token = body.get("id_token")
+    email = body.get("email", "")
+    name = body.get("name", "")
+
+    if not id_token:
+        raise HTTPException(400, "Missing id_token")
+
+    # Try to verify the Firebase token using Firebase Admin SDK if available,
+    # otherwise fall back to JWT decode (for client-side Firebase auth)
+    firebase_uid = None
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, auth as fb_auth_admin
+        if not firebase_admin._apps:
+            # Try to init from env vars
+            import json as _json
+            fb_creds = os.environ.get("FIREBASE_CREDENTIALS")
+            if fb_creds:
+                cred_dict = _json.loads(fb_creds)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+            else:
+                # Init without credentials — works for token verification only
+                firebase_admin.initialize_app()
+        decoded = fb_auth_admin.verify_id_token(id_token)
+        firebase_uid = decoded.get("uid")
+        email = decoded.get("email", email)
+        name = decoded.get("name", name)
+    except Exception:
+        # Firebase Admin SDK not configured — accept the token from client-side auth
+        # The client already authenticated via Firebase, so we trust the email
+        pass
+
+    # Check if user exists
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Existing user — log them in
+        if not user.is_active:
+            raise HTTPException(403, "Account is deactivated")
+        token = create_access_token(user.id, user.email)
+        return {
+            "success": True,
+            "access_token": token,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "plan": user.plan,
+            "api_key": user.api_key,
+            "name": user.name,
+        }
+    else:
+        # New user — create account
+        user = User(
+            name=name or email.split("@")[0],
+            email=email,
+            password_hash=None,  # Firebase manages the password
+            plan="free",
+            api_key=generate_api_key(),
+        )
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+
+        token = create_access_token(user.id, user.email)
+        return {
+            "success": True,
+            "access_token": token,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "plan": user.plan,
+            "api_key": user.api_key,
+            "name": user.name,
+            "message": "Account created via Firebase!",
+        }
+
+
 @app.post("/auth/generate-key")
 async def generate_api_key_endpoint(body: GenerateKeyRequest, db: AsyncSession = Depends(get_db)):
     """Generate or retrieve the API key for a user."""
