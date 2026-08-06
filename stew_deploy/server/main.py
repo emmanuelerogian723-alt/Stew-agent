@@ -476,8 +476,9 @@ async def chat(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
-    llm = get_llm_client()
-    searcher = get_searcher()
+    try:
+        llm = get_llm_client()
+        searcher = get_searcher()
 
     user = None
     if body.api_key:
@@ -616,6 +617,9 @@ async def chat(
         "conversation_id": conv.id if user and 'conv' in dir() else None,
         "success": True,
     }
+    except Exception as e:
+        logger.error(f"CHAT ENDPOINT ERROR: {type(e).__name__}: {e}", exc_info=True)
+        return {"detail": str(e), "success": False}
 
 
 # ── Orchestrator (Fugu-style mixture-of-agents) ─────────────────────────────
