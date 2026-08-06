@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     @property
     def PLAN_CALL_LIMITS(self) -> dict:
-        return {"free": 3000, "pro": 10000, "business": 100000, "enterprise": 999999}
+        return {"free": 500, "pro": 5000, "business": 15000, "enterprise": 50000}
 
     # Fine-tune preset system prompts per persona
     @property

@@ -373,8 +373,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
             <span style="font-size:14px;font-weight:700;color:var(--p)">Active</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:12px;color:var(--m)">Payments</span>
-            <span style="font-size:14px;font-weight:700;color:var(--p)">Paystack Ready</span>
+            <span style="font-size:12px;color:var(--m)">Billing</span>
+            <span style="font-size:14px;font-weight:700;color:var(--p)">Active</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:12px;color:var(--m)">Version</span>
@@ -577,8 +577,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
           </select>
         </div>
         <div class="ft-field">
-          <label>Mistral AI Key (optional — Pro+)</label>
-          <input type="password" id="ftMistral" placeholder="sk-...">
+          <label>AI Engine AI Key (optional — Pro+)</label>
+          <input type="password" id="ftAI Engine" placeholder="sk-...">
         </div>
         <div class="ft-field">
           <label>Persona Display Name (optional)</label>
@@ -592,7 +592,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
       <div class="ft-actions">
         <button class="pg-btn" onclick="saveFT()">💾 Save Settings</button>
         <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="loadFT()">📥 Load Current Settings</button>
-        <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="testMistral()">🔑 Test Mistral Key</button>
+        <button class="pg-btn" style="background:var(--card);border:1px solid var(--b);color:var(--t)" onclick="testAI Engine()">🔑 Test AI Engine Key</button>
       </div>
       <div class="ft-msg" id="ftMsg"></div>
     </div>
@@ -655,10 +655,10 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
 const API = 'https://stew-agent.onrender.com';
 let user = null, apiKey = null, keyVisible = false, allSkills = [], agentInterval = null;
 const PLANS = [
-  {id:'free',name:'Free',price:0,calls:'3,000',feats:['60+ skills','3 AI providers','Web search','Community support']},
-  {id:'pro',name:'Pro',price:9900,calls:'10,000',feats:['Everything in Free','6 AI providers','Priority processing','Email support','Document generation'],popular:true},
-  {id:'business',name:'Business',price:29000,calls:'100,000',feats:['Everything in Pro','100-agent pool','API key regeneration','Webhook notifications','Priority support'],},
-  {id:'enterprise',name:'Enterprise',price:49000,calls:'Unlimited',feats:['Everything in Business','Custom AI fine-tuning','Dedicated agents','SLA guarantee','Custom integrations','24/7 support']}
+  {id:'free',name:'Free',price:0,calls:'500',feats:['500 API calls/month','Chat & web search','Document generation','Community support']},
+  {id:'pro',name:'Pro',price:9900,calls:'5,000',feats:['Everything in Free','5,000 API calls/month','Image generation API','Priority support','Agent pool access (10)'],popular:true},
+  {id:'business',name:'Business',price:29000,calls:'15,000',feats:['Everything in Pro','15,000 API calls/month','100-agent pool','API key regeneration','Webhook notifications','Priority support'],},
+  {id:'enterprise',name:'Enterprise',price:49000,calls:'50,000',feats:['Everything in Business','50,000 API calls/month','Custom AI fine-tuning','Dedicated infrastructure','SLA guarantee','24/7 support']}
 ];
 const fmtNaira = n => '₦' + n.toLocaleString();
 const fmtDate = d => new Date(d).toLocaleDateString('en-NG',{month:'short',day:'numeric',year:'numeric'});
@@ -1087,7 +1087,7 @@ async function runPlayground(){
     const data = await resp.json();
     if(data.success){
       out.textContent = data.response;
-      prov.textContent = 'Powered by '+data.provider+(data.web_grounded?' · Web-grounded':'');
+      prov.textContent = 'AI Engine: Operational'+(data.web_grounded?' · Web-grounded':'');
       prov.style.display='block';
       if(data.sources && data.sources.length){
         out.textContent += '\n\nSources:\n'+data.sources.map((s,i)=>`${i+1}. ${s.title||s}`).join('\n');
@@ -1173,6 +1173,46 @@ function startAgentPolling(){
   agentInterval = setInterval(loadAgents, 5000);
 }
 
+// Image generation
+async function generateImage(){
+  const prompt = document.getElementById('imgPrompt').value.trim();
+  if(!prompt) return;
+  const btn = document.getElementById('imgGenBtn');
+  const out = document.getElementById('imgOutput');
+  const model = document.getElementById('imgModel').value;
+  const size = parseInt(document.getElementById('imgSize').value);
+  btn.disabled=true; btn.textContent='Generating...';
+  out.style.display='block';
+  document.getElementById('imgResult').style.opacity='0.5';
+  try{
+    const resp = await fetch(API+'/generate/image',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt,model,width:size,height:size,api_key:apiKey})
+    });
+    const data = await resp.json();
+    if(data.success && data.image_url){
+      document.getElementById('imgResult').src = data.image_url;
+      document.getElementById('imgResult').style.opacity='1';
+      document.getElementById('imgUrlBox').value = data.image_url;
+    }else{
+      out.style.display='none';
+      toast(data.detail||'Image generation failed', true);
+    }
+  }catch(e){
+    out.style.display='none';
+    toast('Error: '+e.message, true);
+  }finally{
+    btn.disabled=false; btn.textContent='Generate Image →';
+  }
+}
+
+function copyImageUrl(){
+  const box = document.getElementById('imgUrlBox');
+  box.select();
+  document.execCommand('copy');
+  toast('Image URL copied to clipboard');
+}
+
 // Toast
 function toast(msg, isErr){
   const t = document.getElementById('toast');
@@ -1226,7 +1266,7 @@ async function saveFT(){
   if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
   const body={api_key:apiKey,persona:document.getElementById('ftPersona').value,response_style:document.getElementById('ftStyle').value,
     language:document.getElementById('ftLang').value,custom_instructions:document.getElementById('ftInstructions').value.trim()||null,
-    persona_name:document.getElementById('ftName').value.trim()||null,mistral_api_key:document.getElementById('ftMistral').value.trim()||null};
+    persona_name:document.getElementById('ftName').value.trim()||null,mistral_api_key:document.getElementById('ftAI Engine').value.trim()||null};
   showFTMsg('Saving...','info');
   try{
     const r=await fetch(API+'/finetune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -1248,20 +1288,20 @@ async function loadFT(){
       if(d.custom_instructions)document.getElementById('ftInstructions').value=d.custom_instructions;
       if(d.persona_name)document.getElementById('ftName').value=d.persona_name;
       document.querySelectorAll('.ft-pcard').forEach(c=>c.classList.toggle('sel',c.dataset.id===(d.persona||'general')));
-      showFTMsg('✅ Loaded! Persona: <strong>'+d.persona_label+'</strong> · Mistral key stored: '+(d.has_mistral_key?'Yes':'No'),'ok');
+      showFTMsg('✅ Loaded! Persona: <strong>'+d.persona_label+'</strong> · AI Engine key stored: '+(d.has_mistral_key?'Yes':'No'),'ok');
     }else showFTMsg('No settings found. Configure and save to get started.','info');
   }catch{showFTMsg('Connection error.','err');}
 }
-async function testMistral(){
+async function testAI Engine(){
   if(!apiKey){showFTMsg('No API key loaded. Sign in first.','err');return;}
-  const mk=document.getElementById('ftMistral').value.trim();
-  if(!mk){showFTMsg('Enter your Mistral key first.','err');return;}
-  showFTMsg('Testing Mistral key...','info');
+  const mk=document.getElementById('ftAI Engine').value.trim();
+  if(!mk){showFTMsg('Enter your AI Engine key first.','err');return;}
+  showFTMsg('Testing AI Engine key...','info');
   try{
     const r=await fetch(API+'/test-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey,mistral_api_key:mk})});
     const d=await r.json();
-    if(d.mistral_key_valid===true)showFTMsg('✅ Mistral key is valid! Response: "'+d.mistral_test_response+'"','ok');
-    else showFTMsg('❌ Mistral key invalid: '+(d.mistral_test_response||'Unknown error'),'err');
+    if(d.mistral_key_valid===true)showFTMsg('✅ AI Engine key is valid! Response: "'+d.mistral_test_response+'"','ok');
+    else showFTMsg('❌ AI Engine key invalid: '+(d.mistral_test_response||'Unknown error'),'err');
   }catch{showFTMsg('Connection error.','err');}
 }
 

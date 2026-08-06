@@ -95,17 +95,38 @@ app.add_middleware(RateLimitMiddleware)
 
 # ── Background: log API call ──────────────────────────────────────────────────
 
-async def _log_call(db: AsyncSession, user_id: Optional[str], endpoint: str,
+async def _log_call(_db: AsyncSession, user_id: Optional[str], endpoint: str,
                     method: str, tokens: int, status: int):
-    call = APICall(
-        user_id=user_id,
-        endpoint=endpoint,
-        method=method,
-        tokens_used=tokens,
-        status_code=status,
+    """Log an API call using its own fresh DB session (background-safe)."""
+    from server.database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as session:
+            call = APICall(
+                user_id=user_id,
+                endpoint=endpoint,
+                method=method,
+                tokens_used=tokens,
+                status_code=status,
+            )
+            session.add(call)
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"Failed to log API call: {e}")
+
+async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
+    """Check if user has remaining quota. Returns (allowed, calls_used, limit)."""
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(func.count(APICall.id)).where(
+            APICall.user_id == user.id,
+            APICall.timestamp >= month_start
+        )
     )
-    db.add(call)
-    await db.commit()
+    calls_used = result.scalar() or 0
+    plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 500)
+    return (calls_used < plan_limit, calls_used, plan_limit)
+
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -221,18 +242,18 @@ async def _safe_get_user(api_key: str, db: AsyncSession) -> Optional[User]:
 
 @app.get("/heartbeat")
 async def heartbeat():
+    # Sanitized status — no provider names exposed
+    ai_ready = bool(settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY or settings.OPENAI_API_KEY or settings.MISTRAL_API_KEY)
     return {
         "status": "ok",
         "version": "6.0.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "environment": settings.ENVIRONMENT,
-        "providers": {
-            "groq": bool(settings.GROQ_API_KEY),
-            "openrouter": bool(settings.OPENROUTER_API_KEY),
-            "openai": bool(settings.OPENAI_API_KEY),
-            "huggingface": bool(settings.HF_TOKEN or settings.HUGGINGFACE_API_KEY),
-            "search": bool(settings.SERPER_API_KEY),
-            "payments": bool(settings.PAYSTACK_SECRET_KEY),
+        "services": {
+            "ai_engine": "operational" if ai_ready else "degraded",
+            "web_search": "operational" if settings.SERPER_API_KEY else "unavailable",
+            "payments": "operational" if settings.PAYSTACK_SECRET_KEY else "unavailable",
+            "agent_pool": "operational",
+            "image_generation": "operational",
         },
     }
 
@@ -466,6 +487,15 @@ async def chat(
         except (HTTPException, _asyncio.TimeoutError, Exception):
             user = None  # Invalid/unknown key — treat as anonymous
 
+    # Enforce quota — block calls when limit exceeded
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue."
+            )
+
     # Web search grounding
     search_results = None
     sources = []
@@ -547,7 +577,7 @@ async def chat(
         "response": response_text,
         "web_grounded": web_grounded,
         "sources": sources,
-        "provider": result.get("provider"),
+        "provider": "stew_engine",
         "conversation_id": conv.id if user and 'conv' in dir() else None,
         "success": True,
     }
@@ -598,6 +628,69 @@ async def orchestrate_image_endpoint(body: OrchestrateImageRequest):
         raise HTTPException(status_code=503, detail=str(e))
 
 
+# ── Image Generation (API-accessible) ────────────────────────────────────────
+
+class GenerateImageRequest(BaseModel):
+    prompt: str
+    api_key: Optional[str] = None
+    width: int = 1024
+    height: int = 1024
+    model: str = "flux"  # flux | turbo
+
+
+@app.post("/generate/image")
+async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Generate an image from a text prompt.
+    Uses pollinations.ai (free, no key required) with FLUX model.
+    Returns a direct image URL that can be embedded anywhere.
+    """
+    import httpx
+    import urllib.parse
+
+    user = await _safe_get_user(body.api_key, db) if body.api_key else None
+
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
+    model_map = {"flux": "flux", "turbo": "turbo", "flux-realism": "flux-realism"}
+    model_name = model_map.get(body.model, "flux")
+
+    encoded_prompt = urllib.parse.quote(body.prompt, safe='')
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={body.width}&height={body.height}&model={model_name}&nologo=true"
+
+    # Verify the URL is reachable
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            resp = await http.head(image_url)
+            if resp.status_code != 200:
+                raise HTTPException(503, "Image generation service unavailable")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Image generation timed out — try a simpler prompt")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Image gen verification failed (continuing): {e}")
+
+    # Log the call
+    if user:
+        from server.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            call = APICall(
+                user_id=user.id, endpoint="/generate/image", method="POST", tokens_used=0, status_code=200
+            )
+            session.add(call)
+            await session.commit()
+
+    return {
+        "success": True,
+        "image_url": image_url,
+        "prompt": body.prompt,
+        "model": model_name,
+        "dimensions": f"{body.width}x{body.height}",
+    }
 
 
 # ── 100-Agent Swarm ────────────────────────────────────────────────────────────
@@ -617,6 +710,12 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
     synthesizes their outputs into a single best-of-all-worlds response.
     """
     from agents.agent_pool import AgentPool
+
+    user = await _safe_get_user(body.api_key, db) if body.api_key else None
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
 
     pool = AgentPool()
 
@@ -674,6 +773,11 @@ async def task(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
     llm = get_llm_client()
     searcher = get_searcher()
 
