@@ -751,12 +751,13 @@ function saveSession(token,userData,key){
 }
 
 function loadSession(){
-  const token = localStorage.getItem('stew_token');
+  const token = localStorage.getItem('stew_token') || localStorage.getItem('stew_jwt') || '';
   const u = localStorage.getItem('stew_user');
-  const k = localStorage.getItem('stew_apikey');
-  if(token && u && k){
+  const k = localStorage.getItem('stew_apikey') || localStorage.getItem('stew_api_key');
+  if(u && k){
     user = JSON.parse(u);
     apiKey = k;
+    if(token){ localStorage.setItem('stew_token', token); }
     showDashboard();
     return true;
   }
