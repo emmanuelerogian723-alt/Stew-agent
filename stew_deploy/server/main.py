@@ -157,6 +157,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     api_key: Optional[str] = None
     web_search: bool = True
+    fusion_mode: bool = False
 
 
 class TaskRequest(BaseModel):
