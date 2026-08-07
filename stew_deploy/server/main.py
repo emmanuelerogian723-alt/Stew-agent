@@ -124,7 +124,7 @@ async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
         )
     )
     calls_used = result.scalar() or 0
-    plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 500)
+    plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
     return (calls_used < plan_limit, calls_used, plan_limit)
 
 
@@ -541,7 +541,7 @@ async def get_me(current_user: User = Depends(get_current_user_jwt)):
         "plan": current_user.plan,
         "api_key": current_user.api_key,
         "calls_used": current_user.calls_used,
-        "calls_limit": settings.PLAN_CALL_LIMITS.get(current_user.plan, 500),
+        "calls_limit": settings.PLAN_CALL_LIMITS.get(current_user.plan, 1500),
         "created_at": current_user.created_at.isoformat(),
     }
 
@@ -567,7 +567,7 @@ async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
     )
     calls_used = result.scalar() or 0
 
-    plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 500)
+    plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
     calls_remaining = max(0, plan_limit - calls_used)
 
     return {
@@ -1491,6 +1491,40 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
             logger.info(f"Webhook: upgraded user {user_id} to {plan}")
 
     return {"status": "ok"}
+
+
+@app.get("/payments/callback")
+async def payment_callback(request: Request, reference: str = ""):
+    """Paystack redirects here after payment. Redirect to dashboard with reference."""
+    if not reference:
+        return HTMLResponse('<script>window.location.href="/dashboard.html?payment=unknown";</script>')
+    return HTMLResponse('<script>window.location.href="/dashboard.html?payment=success&reference=' + reference + '";</script>')
+
+
+@app.get("/payments/status/{reference}")
+async def payment_status(reference: str, api_key: str, db: AsyncSession = Depends(get_db)):
+    """Check payment status by reference (for polling)."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    try:
+        tx_data = verify_payment(reference)
+        if tx_data["status"] == "success":
+            plan = tx_data.get("metadata", {}).get("plan", "pro")
+            await upgrade_user_plan(db, user.id, plan)
+            t = PaymentTransaction(
+                user_id=user.id,
+                reference=reference,
+                plan=plan,
+                amount=tx_data["amount"],
+                status="success",
+            )
+            db.add(t)
+            await db.flush()
+            return {"success": True, "plan": plan, "status": "success", "message": "Plan upgraded to " + plan}
+        return {"success": False, "status": tx_data["status"], "message": "Payment not yet completed"}
+    except HTTPException as e:
+        return {"success": False, "status": "error", "message": str(e.detail)}
 
 
 # ── Conversations ──────────────────────────────────────────────────────────────

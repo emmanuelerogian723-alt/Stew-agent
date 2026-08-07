@@ -36,7 +36,7 @@ def initialize_payment(email: str, amount_kobo: int, plan: str, metadata: dict =
         "amount": amount_kobo,
         "currency": "NGN",
         "metadata": metadata or {},
-        "callback_url": f"{settings.APP_BASE_URL or 'https://stew-agent.onrender.com'}/payments/verify",
+        "callback_url": f"{settings.APP_BASE_URL or 'https://stew-agent.onrender.com'}/payments/callback",
         "channels": ["card", "bank", "ussd", "bank_transfer"],
     }
     try:

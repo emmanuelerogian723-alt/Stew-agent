@@ -818,7 +818,7 @@ const fbAuth = firebase.auth();
 const API = 'https://stew-agent.onrender.com';
 let user = null, apiKey = null, keyVisible = false, allSkills = [], agentInterval = null;
 const PLANS = [
-  {id:'free',name:'Free',price:0,calls:'3,000',feats:['60+ skills','3 AI providers','Web search','Community support']},
+  {id:'free',name:'Free',price:0,calls:'1,500',feats:['60+ skills','3 AI providers','Web search','Community support']},
   {id:'pro',name:'Pro',price:9900,calls:'10,000',feats:['Everything in Free','6 AI providers','Priority processing','Email support','Document generation'],popular:true},
   {id:'business',name:'Business',price:29000,calls:'100,000',feats:['Everything in Pro','100-agent pool','API key regeneration','Webhook notifications','Priority support'],},
   {id:'enterprise',name:'Enterprise',price:49000,calls:'Unlimited',feats:['Everything in Business','Custom AI fine-tuning','Dedicated agents','SLA guarantee','Custom integrations','24/7 support']}
@@ -968,7 +968,7 @@ async function loadUsage(){
     const data = await resp.json();
     if(data.success){
       const used = data.calls_used || 0;
-      const limit = data.calls_limit || 3000;
+      const limit = data.calls_limit || 1500;
       const remaining = data.calls_remaining || limit;
       const pct = limit > 0 ? (used/limit*100) : 0;
       // Overview
@@ -1182,18 +1182,42 @@ async function initiatePayment(){
     if(data.success && data.authorization_url){
       // Open Paystack checkout in new window
       window.open(data.authorization_url, '_blank');
-      // Show verification UI
+      // Show verification UI with auto-poll
+      const ref = data.reference || '';
       document.getElementById('modalContent').innerHTML = `
         <div class="modal-title">Complete Your Payment</div>
         <div class="modal-sub">A Paystack checkout window has been opened. Complete your payment there.</div>
         <div style="text-align:center;padding:20px 0">
-          <div style="font-size:14px;color:var(--m);margin-bottom:20px">Reference: <strong style="color:var(--p);font-family:var(--mono)">${data.reference||''}</strong></div>
-          <button class="modal-pay-btn" onclick="verifyPayment('${data.reference||''}')">
-            ✓ I've Paid — Verify Payment
+          <div style="font-size:14px;color:var(--m);margin-bottom:20px">Reference: <strong style="color:var(--p);font-family:var(--mono)">${ref}</strong></div>
+          <button class="modal-pay-btn" onclick="verifyPayment('${ref}')">
+            \u2713 I've Paid \u2014 Verify Payment
           </button>
           <div style="font-size:11px;color:var(--m);margin-top:12px">Click verify after completing payment in the Paystack window</div>
         </div>
       `;
+      // Auto-poll for payment status every 5 seconds
+      if(window._payPoll) clearInterval(window._payPoll);
+      window._payPoll = setInterval(async () => {
+        try {
+          const sr = await fetch(API+'/payments/status/'+ref+'?api_key='+encodeURIComponent(apiKey));
+          const sd = await sr.json();
+          if(sd.success) {
+            clearInterval(window._payPoll);
+            window._payPoll = null;
+            user.plan = sd.plan;
+            localStorage.setItem('stew_user', JSON.stringify(user));
+            document.getElementById('modalContent').innerHTML = `
+              <div class="modal-success">
+                <div class="modal-success-icon">\u2713</div>
+                <div class="modal-title" style="font-size:18px">Plan Upgraded!</div>
+                <div style="font-size:13px;color:var(--m);margin-top:8px">Your plan has been upgraded to <strong style="color:var(--p)">${sd.plan.toUpperCase()}</strong>. Enjoy your new limits!</div>
+              </div>
+              <button class="modal-pay-btn" style="margin-top:20px" onclick="closeModal();loadUsage();renderPlans();">Continue \u2192</button>
+            `;
+            toast('Plan upgraded automatically! \uD83C\uDF89');
+          }
+        } catch(e) { /* ignore poll errors */ }
+      }, 5000);
     }else{
       throw new Error(data.detail||'Payment initialization failed');
     }
@@ -1665,6 +1689,19 @@ document.addEventListener('DOMContentLoaded', function(){
     });
   }
 });
+
+
+// Auto-verify payment if returning from Paystack redirect
+if(new URLSearchParams(window.location.search).get('payment') === 'success'){
+  const ref = new URLSearchParams(window.location.search).get('reference');
+  if(ref && apiKey){
+    setTimeout(() => {
+      verifyPayment(ref);
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }, 1500);
+  }
+}
 
 </script>
 </body>
