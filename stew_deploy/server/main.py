@@ -38,6 +38,10 @@ from server.memory import (
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User
+from server.security_guard import (
+    compute_fingerprint, check_vpn_proxy, assess_registration_risk,
+    record_device_fingerprint, log_security_event, get_security_dashboard
+)
 from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
 from server.search import get_searcher
 from server.ocr_engine import ocr_file, ocr_and_reason, SUPPORTED_LANGS
