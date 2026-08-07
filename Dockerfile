@@ -8,9 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
     libgdk-pixbuf2.0-0 libcairo2 libffi-dev \
     libxml2-dev libxslt1-dev shared-mime-info \
-    tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-deu \
-    tesseract-ocr-spa tesseract-ocr-por tesseract-ocr-ara tesseract-ocr-hin \
-    tesseract-ocr-rus tesseract-ocr-chi-sim tesseract-ocr-jpn tesseract-ocr-kor \
+    tesseract-ocr tesseract-ocr-eng \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libasound2 \
