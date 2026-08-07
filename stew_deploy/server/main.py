@@ -925,7 +925,11 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
                 {"role": "user", "content": prompt},
             ]
             try:
-                result = llm.chat(messages)
+                # llm.chat() is a blocking sync call — run it in a thread so
+                # asyncio.gather() in agent_pool actually parallelizes agents
+                # instead of serializing them on the event loop (was causing
+                # /agents/run to time out with >2 agents).
+                result = await asyncio.to_thread(llm.chat, messages)
                 return result.get("content", "")
             except Exception as e:
                 logger.warning(f"Agent brain call failed: {e}")
