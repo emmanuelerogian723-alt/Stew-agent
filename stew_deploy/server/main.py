@@ -40,6 +40,7 @@ from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.models import APICall, Conversation, Document, PaymentTransaction, User
 from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
 from server.search import get_searcher
+from server.ocr_engine import ocr_file, ocr_and_reason, SUPPORTED_LANGS
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -1192,6 +1193,177 @@ async def upload_document(
         "answer": answer,
         "document_id": doc.id,
         "success": True,
+    }
+
+
+# ── OCR & Vision ──────────────────────────────────────────────────────────────
+
+@app.post("/api/ocr")
+async def ocr_endpoint(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    lang: str = Form("eng"),
+    include_boxes: bool = Form(False),
+    include_confidence: bool = Form(True),
+    api_key: str = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run OCR on an uploaded image or PDF document.
+
+    Supported formats: PNG, JPG, JPEG, WEBP, BMP, TIFF, GIF, PDF
+
+    Returns extracted text, document structure, confidence scores,
+    detected language, and word-level bounding boxes (when include_boxes=true).
+
+    Use lang to specify Tesseract language code (e.g. 'eng', 'fra', 'eng+fra').
+    Multiple languages can be combined with '+' (e.g. 'eng+fra+deu').
+    """
+    user = await _safe_get_user(api_key, db) if api_key else None
+
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
+    content_bytes = await file.read()
+
+    try:
+        result = await asyncio.to_thread(
+            ocr_file,
+            content_bytes,
+            file.filename or "upload",
+            lang,
+            include_boxes,
+            include_confidence,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        logger.error(f"OCR error: {e}", exc_info=True)
+        raise HTTPException(500, f"OCR processing failed: {str(e)}")
+
+    # Log the call
+    if user:
+        background_tasks.add_task(_log_call, db, user.id, "/api/ocr", "POST", 0, 200)
+
+    return {
+        "success": True,
+        "filename": result["filename"],
+        "file_type": result["file_type"],
+        "page_count": result["page_count"],
+        "text": result["text"],
+        "word_count": result["word_count"],
+        "char_count": result["char_count"],
+        "avg_confidence": result["avg_confidence"],
+        "detected_language": result.get("detected_language", "unknown"),
+        "lines": result["lines"],
+        "paragraphs": result["paragraphs"],
+        "pages": result["pages"],
+        "words": result.get("words", []),
+        "provider": "tesseract",
+        "engine": "S.T.E.W OCR v1.0",
+    }
+
+
+@app.post("/api/ocr/analyze")
+async def ocr_analyze_endpoint(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    task: str = Form("summarize"),
+    question: str = Form(None),
+    lang: str = Form("eng"),
+    api_key: str = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run OCR on a file, then use S.T.E.W AI reasoning to analyze the content.
+
+    Tasks:
+      - "answer": Answer a specific question about the document (requires question)
+      - "summarize": Generate a concise summary
+      - "extract": Extract key information (names, dates, amounts, etc.)
+      - "analyze": General analysis of the document content
+
+    The OCR text is extracted first, then fed to the S.T.E.W reasoning engine
+    for intelligent analysis, Q&A, or summarization.
+    """
+    user = await _safe_get_user(api_key, db) if api_key else None
+
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
+    valid_tasks = {"answer", "summarize", "extract", "analyze"}
+    if task not in valid_tasks:
+        raise HTTPException(400, f"Invalid task '{task}'. Must be one of: {', '.join(sorted(valid_tasks))}")
+
+    if task == "answer" and not question:
+        raise HTTPException(400, "The 'question' field is required when task='answer'")
+
+    content_bytes = await file.read()
+
+    try:
+        result = await ocr_and_reason(
+            content=content_bytes,
+            filename=file.filename or "upload",
+            question=question or "",
+            lang=lang,
+            task=task,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        logger.error(f"OCR analyze error: {e}", exc_info=True)
+        raise HTTPException(500, f"OCR analysis failed: {str(e)}")
+
+    if user:
+        background_tasks.add_task(_log_call, db, user.id, "/api/ocr/analyze", "POST", 0, 200)
+
+    return result
+
+
+@app.get("/api/ocr/languages")
+async def ocr_languages_endpoint():
+    """List all supported OCR languages."""
+    return {
+        "supported_languages": SUPPORTED_LANGS,
+        "total": len(SUPPORTED_LANGS),
+        "note": "Combine multiple languages with '+' (e.g. 'eng+fra+deu')",
+    }
+
+
+@app.get("/api/ocr/info")
+async def ocr_info_endpoint():
+    """Get OCR service information and supported formats."""
+    return {
+        "service": "S.T.E.W OCR Engine",
+        "version": "1.0.0",
+        "engine": "Tesseract OCR via pytesseract",
+        "pdf_backend": "PyMuPDF (fitz)",
+        "supported_formats": ["PNG", "JPG", "JPEG", "WEBP", "BMP", "TIFF", "GIF", "PDF"],
+        "max_file_size_mb": 25,
+        "max_pdf_pages": 50,
+        "features": [
+            "Text extraction from images and PDFs",
+            "Multi-page PDF processing",
+            "Word-level bounding boxes",
+            "Confidence scores per word",
+            "Automatic language detection",
+            "Document structure (lines, paragraphs)",
+            "AI-powered analysis (summarize, Q&A, extract, analyze)",
+        ],
+        "endpoints": {
+            "POST /api/ocr": "Extract text from image/PDF",
+            "POST /api/ocr/analyze": "OCR + AI reasoning (summarize, answer, extract, analyze)",
+            "GET /api/ocr/languages": "List supported languages",
+            "GET /api/ocr/info": "This endpoint",
+        },
     }
 
 

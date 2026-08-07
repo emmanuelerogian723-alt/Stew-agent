@@ -325,6 +325,7 @@ const fbAuth = firebase.auth();
     <button class="tab" onclick="switchTab('finetune')">Fine-Tune</button>
     <button class="tab" onclick="switchTab('playground')">Playground</button>
     <button class="tab" onclick="switchTab('imagegen')">Image Gen</button>
+    <button class="tab" onclick="switchTab('ocr')">OCR</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -702,6 +703,87 @@ const fbAuth = firebase.auth();
         <div class="sec-title" style="font-size:14px;margin-bottom:12px">Gallery</div>
         <div id="imgGalleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px"></div>
         <p id="imgGalleryEmpty" style="font-size:12px;color:var(--m);text-align:center;padding:20px 0">No images generated yet. Create your first image above!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- OCR Tab -->
+  <div class="tab-content" id="tab-ocr">
+    <div class="card">
+      <div class="sec-title">OCR & Document Vision</div>
+      <p style="font-size:13px;color:var(--m);margin-bottom:16px">Upload images, screenshots, or PDFs to extract text and analyze content. Powered by Tesseract OCR + S.T.E.W AI reasoning.</p>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Upload File (PNG, JPG, WEBP, PDF)</label>
+        <input type="file" id="ocrFile" accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/tiff,image/gif,application/pdf" style="font-size:13px;color:var(--t);background:var(--c);border:1px solid var(--b);border-radius:8px;padding:10px;width:100%" />
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Language</label>
+          <select class="auth-input" id="ocrLang" style="margin:0;width:100%">
+            <option value="eng">English</option>
+            <option value="eng+fra">English + French</option>
+            <option value="fra">French</option>
+            <option value="spa">Spanish</option>
+            <option value="deu">German</option>
+            <option value="por">Portuguese</option>
+            <option value="ita">Italian</option>
+            <option value="rus">Russian</option>
+            <option value="ara">Arabic</option>
+            <option value="chi_sim">Chinese (Simplified)</option>
+            <option value="jpn">Japanese</option>
+            <option value="kor">Korean</option>
+            <option value="hin">Hindi</option>
+            <option value="tur">Turkish</option>
+            <option value="vie">Vietnamese</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Task</label>
+          <select class="auth-input" id="ocrTask" style="margin:0;width:100%">
+            <option value="extract">Extract Text Only</option>
+            <option value="summarize">Summarize Document</option>
+            <option value="answer">Answer Question</option>
+            <option value="extract_info">Extract Key Info</option>
+            <option value="analyze">Analyze Content</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="ocrQuestionWrap" style="display:none;margin-bottom:14px">
+        <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Question</label>
+        <input class="pg-input" id="ocrQuestion" placeholder="Ask a question about the document..." style="width:100%" />
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">
+          <input type="checkbox" id="ocrBoxes" style="margin-right:6px" />Include word bounding boxes & confidence
+        </label>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="pg-btn" id="ocrBtn" onclick="doOCR()">Process Document →</button>
+        <span id="ocrStatus" style="font-size:12px;color:var(--m)"></span>
+      </div>
+
+      <div id="ocrResult" style="display:none;margin-top:20px">
+        <div style="background:var(--c);border:1px solid var(--b);border-radius:12px;padding:16px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+            <div style="font-size:12px;color:var(--m)">File: <span id="ocrFilename" style="color:var(--t)"></span></div>
+            <div style="font-size:12px;color:var(--m)">Pages: <span id="ocrPages" style="color:var(--t)"></span></div>
+            <div style="font-size:12px;color:var(--m)">Words: <span id="ocrWords" style="color:var(--t)"></span></div>
+            <div style="font-size:12px;color:var(--m)">Confidence: <span id="ocrConf" style="color:var(--e)"></span></div>
+            <div style="font-size:12px;color:var(--m)">Language: <span id="ocrLangDet" style="color:var(--t)"></span></div>
+          </div>
+          <div id="ocrAIResult" style="display:none;margin-bottom:12px">
+            <div class="sec-title" style="font-size:14px;margin-bottom:8px">AI Analysis</div>
+            <div id="ocrAIAnswer" style="font-size:13px;color:var(--t);line-height:1.6;white-space:pre-wrap;background:var(--bg);border-radius:8px;padding:12px"></div>
+          </div>
+          <div class="sec-title" style="font-size:14px;margin-bottom:8px;margin-top:12px">Extracted Text</div>
+          <div id="ocrText" style="font-size:13px;color:var(--t);line-height:1.6;white-space:pre-wrap;background:var(--bg);border-radius:8px;padding:12px;max-height:400px;overflow:auto"></div>
+        </div>
+        <button class="pg-btn" style="margin:12px 0 0;font-size:13px;background:transparent;border:1px solid var(--b);color:var(--t)" onclick="document.getElementById('ocrResult').style.display='none'">Clear</button>
       </div>
     </div>
   </div>
@@ -1488,6 +1570,102 @@ window.addEventListener('DOMContentLoaded', function(){
     }
   });
 });
+
+// OCR
+async function doOCR(){
+  const fileInput = document.getElementById('ocrFile');
+  const status = document.getElementById('ocrStatus');
+  const btn = document.getElementById('ocrBtn');
+  const result = document.getElementById('ocrResult');
+
+  if(!fileInput.files[0]){
+    toast('Please select a file first');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const lang = document.getElementById('ocrLang').value;
+  const task = document.getElementById('ocrTask').value;
+  const question = document.getElementById('ocrQuestion').value || '';
+  const includeBoxes = document.getElementById('ocrBoxes').checked;
+  const apiKey = localStorage.getItem('stew_api_key') || '';
+
+  // Show question field if task is "answer"
+  const taskSelect = document.getElementById('ocrTask');
+  document.getElementById('ocrQuestionWrap').style.display = (taskSelect.value === 'answer') ? 'block' : 'none';
+
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  status.textContent = 'Running OCR + AI analysis...';
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('lang', lang);
+  formData.append('include_boxes', includeBoxes);
+  formData.append('include_confidence', 'true');
+  if(apiKey) formData.append('api_key', apiKey);
+
+  const isAI = (task === 'summarize' || task === 'answer' || task === 'extract_info' || task === 'analyze');
+  const endpoint = isAI ? '/api/ocr/analyze' : '/api/ocr';
+
+  if(isAI){
+    const taskMap = {'summarize':'summarize','answer':'answer','extract_info':'extract','analyze':'analyze'};
+    formData.delete('include_boxes');
+    formData.delete('include_confidence');
+    formData.append('task', taskMap[task] || 'summarize');
+    if(question) formData.append('question', question);
+  }
+
+  try{
+    const resp = await fetch(endpoint, { method:'POST', body:formData });
+    const data = await resp.json();
+
+    if(!resp.ok){
+      throw new Error(data.detail || 'OCR failed');
+    }
+
+    result.style.display = 'block';
+
+    if(isAI && data.success){
+      document.getElementById('ocrFilename').textContent = data.filename || file.name;
+      document.getElementById('ocrPages').textContent = data.page_count || 1;
+      document.getElementById('ocrWords').textContent = data.word_count || 0;
+      document.getElementById('ocrConf').textContent = (data.ocr_confidence || 0) + '%';
+      document.getElementById('ocrLangDet').textContent = data.detected_language || 'unknown';
+      document.getElementById('ocrText').textContent = data.ocr_text || '';
+      document.getElementById('ocrAIResult').style.display = 'block';
+      document.getElementById('ocrAIAnswer').textContent = data.answer || '';
+    } else {
+      document.getElementById('ocrFilename').textContent = data.filename || file.name;
+      document.getElementById('ocrPages').textContent = data.page_count || 1;
+      document.getElementById('ocrWords').textContent = data.word_count || 0;
+      document.getElementById('ocrConf').textContent = (data.avg_confidence || 0) + '%';
+      document.getElementById('ocrLangDet').textContent = data.detected_language || 'unknown';
+      document.getElementById('ocrText').textContent = data.text || '';
+      document.getElementById('ocrAIResult').style.display = 'none';
+    }
+
+    status.textContent = 'Done!';
+    toast('Document processed successfully!');
+  } catch(err){
+    status.textContent = 'Error: ' + err.message;
+    toast('OCR failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Process Document →';
+  }
+}
+
+// Show/hide question field based on task selection
+document.addEventListener('DOMContentLoaded', function(){
+  const taskSelect = document.getElementById('ocrTask');
+  if(taskSelect){
+    taskSelect.addEventListener('change', function(){
+      document.getElementById('ocrQuestionWrap').style.display = (this.value === 'answer') ? 'block' : 'none';
+    });
+  }
+});
+
 </script>
 </body>
 </html>

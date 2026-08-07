@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-6 libx11-xcb1 libxcb1 libxext6 \
     libxi6 libxtst6 fonts-liberation libfreetype6 \
     libglib2.0-0 libxml2 libasound2t64 \
-    tesseract-ocr tesseract-ocr-eng \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra tesseract-ocr-deu tesseract-ocr-spa tesseract-ocr-ita tesseract-ocr-por tesseract-ocr-rus tesseract-ocr-ara tesseract-ocr-hin \
     && apt-get clean
 
 WORKDIR /app
