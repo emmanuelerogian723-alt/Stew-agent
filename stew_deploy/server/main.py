@@ -533,14 +533,27 @@ async def generate_api_key_endpoint(body: GenerateKeyRequest, db: AsyncSession =
 
 
 @app.get("/auth/me")
-async def get_me(current_user: User = Depends(get_current_user_jwt)):
+async def get_me(current_user: User = Depends(get_current_user_jwt), db: AsyncSession = Depends(get_db)):
+    # Count actual API calls this month from the APICall table
+    from datetime import timedelta
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    try:
+        result = await db.execute(
+            select(func.count(APICall.id)).where(
+                APICall.user_id == current_user.id,
+                APICall.timestamp >= month_start
+            )
+        )
+        calls_used = result.scalar() or 0
+    except Exception:
+        calls_used = 0
     return {
         "id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
         "plan": current_user.plan,
         "api_key": current_user.api_key,
-        "calls_used": current_user.calls_used,
+        "calls_used": calls_used,
         "calls_limit": settings.PLAN_CALL_LIMITS.get(current_user.plan, 1500),
         "created_at": current_user.created_at.isoformat(),
     }
