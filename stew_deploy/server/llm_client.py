@@ -27,7 +27,7 @@ PROVIDER_MODELS = {
     "groq":         "openai/gpt-oss-120b",           # best Groq model (replaced llama-3.3-70b)
     "groq_fast":    "openai/gpt-oss-20b",            # faster Groq model (replaced llama-4-scout)
     "nvidia":       "meta/llama-3.3-70b-instruct",   # free on build.nvidia.com NIM
-    "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
+    "openrouter":   "openai/gpt-oss-20b",              # OpenRouter (paid, cheap)
     "openai":       "gpt-4o-mini",
     "huggingface":  "Qwen/Qwen3-235B-A22B",         # best free on HF Router
     "mistral":      "mistral-large-latest",          # Mistral AI flagship

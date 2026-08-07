@@ -39,8 +39,10 @@ from server.memory import (
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User
 from server.security_guard import (
-    compute_fingerprint, check_vpn_proxy, assess_registration_risk,
-    record_device_fingerprint, log_security_event, get_security_dashboard
+    assess_registration_risk, record_device_fingerprint,
+    log_security_event, get_security_dashboard, compute_fingerprint,
+    detect_device_type, detect_os, detect_browser, check_vpn_proxy,
+    RISK_THRESHOLD_BLOCK, RISK_THRESHOLD_FLAG,
 )
 from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
 from server.search import get_searcher
@@ -275,7 +277,7 @@ async def _safe_get_user(api_key: str, db: AsyncSession) -> Optional[User]:
 @app.get("/heartbeat")
 async def heartbeat():
     # Sanitized status — no provider names exposed
-    ai_ready = bool(settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY or settings.OPENAI_API_KEY or settings.MISTRAL_API_KEY)
+    ai_ready = bool(settings.GROQ_API_KEY or settings.OPENROUTER_API_KEY or settings.OPENAI_API_KEY or settings.MISTRAL_API_KEY or settings.SAKANA_API_KEY)
     return {
         "status": "ok",
         "version": "6.0.0",
@@ -286,6 +288,8 @@ async def heartbeat():
             "payments": "operational" if settings.PAYSTACK_SECRET_KEY else "unavailable",
             "agent_pool": "operational",
             "image_generation": "operational",
+            "sakana_fugu": "operational" if settings.SAKANA_API_KEY else "not_configured",
+            "mistral_ai": "operational" if settings.MISTRAL_API_KEY else "not_configured",
         },
     }
 
@@ -1158,7 +1162,7 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
     Selects num_agents specialists, runs them in parallel, and optionally
     synthesizes their outputs into a single best-of-all-worlds response.
     """
-    from agents.agent_pool import AgentPool
+    from agents.agent_pool import get_agent_pool
 
     user = await _safe_get_user(body.api_key, db) if body.api_key else None
     if user:
@@ -1166,7 +1170,9 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
         if not allowed:
             raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
 
-    pool = AgentPool()
+    # Shared singleton — same pool the dashboard's /agents/status reads,
+    # so the "Live Agent Pool" grid reflects agents actually at work.
+    pool = get_agent_pool()
 
     class BrainAdapter:
         async def call_llm(self, prompt: str, system: str = "", max_tokens: int = 2048) -> str:
@@ -1212,10 +1218,98 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
 
 @app.get("/agents/status")
 async def agents_status():
-    """Get the status of the 100-agent pool."""
-    from agents.agent_pool import AgentPool
-    pool = AgentPool()
+    """Get the LIVE status of the shared 100-agent pool (real state, not decorative)."""
+    from agents.agent_pool import get_agent_pool
+    pool = get_agent_pool()
     return {"success": True, **pool.get_pool_status()}
+
+
+# ── TRINITY — Multi-Agent Orchestration (hidden feature) ─────────────────────
+# Architecture inspired by Sakana AI's TRINITY + Conductor (ICLR 2026).
+# Implements: Thinker -> Worker -> Verifier pipeline with feedback loops,
+# dynamic model pool routing, and Conductor-style parallel worker synthesis.
+
+class TrinityRequest(BaseModel):
+    prompt: str
+    temperature: float = 0.7
+    multi_worker: bool = False       # Conductor-style ensemble (parallel workers + synthesis)
+    secret: Optional[str] = None     # Admin secret for access control
+    api_key: Optional[str] = None    # User API key (for quota tracking)
+
+
+@app.post("/trinity/orchestrate")
+async def trinity_orchestrate(body: TrinityRequest, db: AsyncSession = Depends(get_db)):
+    """
+    TRINITY Coordinator — hidden multi-agent orchestration endpoint.
+    
+    Flow: Thinker plans -> Worker(s) execute -> Verifier checks -> feedback loop if needed.
+    
+    With multi_worker=True: spawns 2-3 workers on different LLM providers in parallel,
+    then synthesizes the best elements (Conductor-style ensemble).
+    
+    Requires either a valid user api_key or the admin secret.
+    """
+    settings = get_settings()
+    
+    # Access control: need either admin secret or valid API key
+    is_admin = body.secret and settings.STEW_ADMIN_SECRET and body.secret == settings.STEW_ADMIN_SECRET
+    
+    user = None
+    if body.api_key:
+        user = await _safe_get_user(body.api_key, db)
+    
+    if not is_admin and not user:
+        raise HTTPException(status_code=403, detail="Access denied. Provide valid api_key or admin secret.")
+    
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
+    try:
+        from agents.trinity import get_trinity
+        coordinator = get_trinity()
+        
+        result = await coordinator.orchestrate(
+            prompt=body.prompt,
+            temperature=body.temperature,
+            multi_worker=body.multi_worker,
+            api_key=body.api_key,
+        )
+        
+        # Log API call
+        if user:
+            call = APICall(
+                user_id=user.id,
+                endpoint="/trinity/orchestrate",
+                method="POST",
+                tokens_used=result.get("total_tokens", 0),
+                status_code=200,
+            )
+            db.add(call)
+            await db.commit()
+        
+        return {"success": True, **result}
+    
+    except Exception as e:
+        logger.error(f"TRINITY orchestration failed: {e}")
+        raise HTTPException(status_code=503, detail=f"Orchestration failed: {e}")
+
+
+@app.get("/fugu/models")
+async def fugu_models():
+    """List Sakana Fugu reference models (for when SAKANA_API_KEY is configured)."""
+    return {
+        "success": True,
+        "provider": "sakana_ai",
+        "models": [
+            {"id": "fugu", "name": "Fugu", "description": "Balanced performance and latency", "context_window": 1000000},
+            {"id": "fugu-ultra", "name": "Fugu Ultra", "description": "Maximum performance on hard problems", "context_window": 1000000},
+            {"id": "fugu-cyber", "name": "Fugu Cyber", "description": "Specialized for cybersecurity reasoning", "context_window": 1000000},
+        ],
+        "configured": bool(get_settings().SAKANA_API_KEY),
+        "api_base": "https://api.sakana.ai/v1",
+    }
 
 # ── Task ───────────────────────────────────────────────────────────────────────
 

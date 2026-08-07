@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     HUGGINGFACE_API_KEY: str = ""
     NVIDIA_API_KEY: str = ""
     MISTRAL_API_KEY: str = ""          # NEW: Mistral AI
+    SAKANA_API_KEY: str = ""           # NEW: Sakana AI (Fugu multi-agent)
 
     # Search
     SERPER_API_KEY: str = ""

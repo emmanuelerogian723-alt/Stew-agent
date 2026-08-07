@@ -363,10 +363,40 @@ Return ONLY 5 lines, each starting with TASK_N: (where N is 1-5)""",
 
     def get_pool_status(self) -> Dict:
         idle = sum(1 for a in self.agents.values() if a.status == AgentStatus.IDLE)
-        working = sum(1 for a in self.agents.values() if a.status == AgentStatus.WORKING)
+        working_agents = [a for a in self.agents.values() if a.status == AgentStatus.WORKING]
         return {
             "total_agents": len(self.agents),
             "idle": idle,
-            "working": working,
+            "working": len(working_agents),
             "total_tasks_completed": sum(a.tasks_completed for a in self.agents.values()),
+            # Real agent IDs currently executing — lets the UI light up the
+            # actual busy agents instead of an arbitrary count of dots.
+            "working_agent_ids": [a.agent_id for a in working_agents],
+            "working_details": [
+                {
+                    "id": a.agent_id,
+                    "name": a.name,
+                    "specialty": a.specialty,
+                    "task": (a.current_task or "")[:80],
+                }
+                for a in working_agents
+            ],
         }
+
+
+# ═══════════════════════════════════════════
+# SHARED SINGLETON — one live pool per process
+# ═══════════════════════════════════════════
+# Previously every /agents/run and /agents/status call created its OWN
+# AgentPool() instance, so the pool doing the work was never the pool being
+# read for status — the dashboard grid could never reflect real activity.
+# Use a single shared instance so status reads see the real, current state.
+_shared_pool: Optional["AgentPool"] = None
+
+
+def get_agent_pool() -> "AgentPool":
+    """Return the single shared AgentPool instance for this process."""
+    global _shared_pool
+    if _shared_pool is None:
+        _shared_pool = AgentPool()
+    return _shared_pool

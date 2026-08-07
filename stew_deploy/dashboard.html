@@ -936,6 +936,7 @@ async function doRegister(){
     user = {id:data.user_id,email,name,plan:data.plan,api_key:data.api_key};
     saveSession(data.access_token,user,data.api_key);
     localStorage.setItem('stew_firebase_uid',fbUser.uid);
+    submitFingerprint(apiKey);
     showDashboard();
     toast('Account created! Welcome to S.T.E.W 🎉');
   }catch(e){
@@ -949,7 +950,7 @@ async function doRegister(){
   }
 }
 
-// ── Google Sign-In ──
+// Google Sign-In
 async function doGoogleLogin(){
   const btn = document.getElementById('googleBtn');
   btn.disabled = true; btn.textContent = 'Connecting...';
@@ -959,8 +960,6 @@ async function doGoogleLogin(){
     const result = await fbAuth.signInWithPopup(provider);
     const fbUser = result.user;
     const idToken = await fbUser.getIdToken();
-
-    // Collect device fingerprint
     const fpData = collectFingerprint();
 
     const resp = await fetch(API + '/auth/firebase', {
@@ -980,8 +979,6 @@ async function doGoogleLogin(){
     user = { id: data.user_id, email: fbUser.email, plan: data.plan, api_key: data.api_key, name: data.name || fbUser.displayName || '' };
     saveSession(data.access_token, user, data.api_key);
     localStorage.setItem('stew_firebase_uid', fbUser.uid);
-
-    // Submit fingerprint
     submitFingerprint(apiKey);
 
     showDashboard();
@@ -998,7 +995,7 @@ async function doGoogleLogin(){
   }
 }
 
-// ── Device Fingerprint Collection ──
+// Device Fingerprint Collection
 function collectFingerprint() {
   try {
     const canvas = document.createElement('canvas');
@@ -1115,13 +1112,32 @@ async function loadAgents(){
       document.getElementById('agCompleted').textContent = completed;
       document.getElementById('agIdlePct').textContent = total>0?Math.round(idle/total*100)+'%':'0%';
       document.getElementById('agWorkPct').textContent = total>0?Math.round(working/total*100)+'%':'0%';
-      // Agent grid
+
+      // Agent grid — light up the REAL agents currently executing (by id),
+      // not just the first N boxes. Falls back to count-based highlighting
+      // only if the backend hasn't been updated to send working_agent_ids.
+      const workingIds = new Set(data.working_agent_ids || []);
+      const details = {};
+      (data.working_details || []).forEach(d => { details[d.id] = d; });
       const grid = document.getElementById('agentGrid');
       grid.innerHTML = '';
-      for(let i=0;i<total;i++){
+      for(let i=1;i<=total;i++){
         const dot = document.createElement('div');
-        dot.className = 'agent-dot '+(i<working?'working':'idle');
+        const isWorking = data.working_agent_ids ? workingIds.has(i) : (i<=working);
+        dot.className = 'agent-dot '+(isWorking?'working':'idle');
+        const d = details[i];
+        dot.title = d ? `${d.name} (${d.specialty}) — ${d.task||'working...'}` : `Agent #${i}`;
         grid.appendChild(dot);
+      }
+
+      // Speed up polling while agents are actually busy so the grid feels
+      // live; slow back down once everything's idle again.
+      if(working > 0 && agentInterval){
+        clearInterval(agentInterval);
+        agentInterval = setInterval(loadAgents, 1500);
+      }else if(working === 0 && agentInterval){
+        clearInterval(agentInterval);
+        agentInterval = setInterval(loadAgents, 5000);
       }
     }
   }catch(e){ console.error('Agent load error:',e) }
