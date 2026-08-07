@@ -257,6 +257,63 @@ async def log_security_event(
         await db.flush()
 
 
+
+
+
+# ── Known VPN/datacenter AS numbers (fallback when ip-api.com is unavailable) ──
+KNOWN_VPN_AS_NUMBERS = {
+    "AS14061",   # DigitalOcean
+    "AS16509",   # Amazon AWS
+    "AS15169",   # Google Cloud
+    "AS8075",    # Microsoft Azure
+    "AS13335",   # Cloudflare
+    "AS24940",   # Hetzner
+    "AS49505",   # Selectel (common VPN provider)
+    "AS60068",   # Datacamp (VPN)
+    "AS396982",  # Google Cloud
+    "AS14618",   # Amazon AES
+}
+
+# ── Disposable email domains (block free account creation) ──
+DISPOSABLE_EMAIL_DOMAINS = {
+    "10minutemail.com", "guerrillamail.com", "mailinator.com", "tempmail.net",
+    "throwaway.email", "temp-mail.org", "fakeinbox.com", "sharklasers.com",
+    "guerrillamailblock.com", "spam4.me", "dispostable.com", "maildrop.cc",
+    "getnada.com", "tempmailo.com", "yopmail.com", "mohmal.com",
+    "tempinbox.com", "emailondeck.com", "mintemail.com", "dudmail.com",
+}
+
+
+def is_disposable_email(email: str) -> bool:
+    """Check if email is from a disposable email provider."""
+    if not email or "@" not in email:
+        return False
+    domain = email.split("@")[-1].lower()
+    return domain in DISPOSABLE_EMAIL_DOMAINS
+
+
+def check_as_number_vpn(as_number: str) -> bool:
+    """Fallback: check if AS number is a known VPN/datacenter."""
+    return as_number.upper() in KNOWN_VPN_AS_NUMBERS if as_number else False
+
+
+async def is_ip_blocked(ip: str, db: AsyncSession) -> bool:
+    """
+    Check if an IP should be completely blocked from registration.
+    Returns True if the IP has been flagged for abuse (3+ blocked registrations).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    result = await db.execute(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.ip_address == ip,
+            SecurityEvent.event_type == "registration_blocked",
+            SecurityEvent.created_at >= cutoff
+        )
+    )
+    block_count = result.scalar() or 0
+    return block_count >= 3  # 3 blocked attempts in 24h = permanent block for the day
+
+
 async def get_security_dashboard(db: AsyncSession) -> dict:
     """Get security statistics for admin dashboard."""
     # Total registrations

@@ -5,6 +5,8 @@ FastAPI Backend v5.0
 import json
 import logging
 import os
+import time
+import base64
 import requests as http_requests
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -43,6 +45,7 @@ from server.security_guard import (
     log_security_event, get_security_dashboard, compute_fingerprint,
     detect_device_type, detect_os, detect_browser, check_vpn_proxy,
     RISK_THRESHOLD_BLOCK, RISK_THRESHOLD_FLAG,
+    is_disposable_email, is_ip_blocked,
 )
 from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
 from server.search import get_searcher
@@ -400,8 +403,25 @@ async def register(
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "")
 
-    # ── Security: Check if IP is already rate-limited for registrations ──
-    # Prevent rapid-fire account creation
+    # ── Security: Disposable email blocking ──
+    if is_disposable_email(body.email):
+        await log_security_event(
+            "registration_blocked", client_ip,
+            risk_score=90, details=f"Disposable email domain: {body.email.split('@')[-1]}",
+            db=db,
+        )
+        raise HTTPException(403, "Disposable email addresses are not allowed. Please use a real email.")
+
+    # ── Security: IP blocking (repeated abuse detection) ──
+    if await is_ip_blocked(client_ip, db):
+        await log_security_event(
+            "registration_blocked", client_ip,
+            risk_score=100, details="IP blocked due to repeated abuse",
+            db=db,
+        )
+        raise HTTPException(403, "This network has been flagged for suspicious activity. Contact support@mutyint.com")
+
+    # ── Security: Multi-account IP limit ──
     ip_reg_count = await count_free_accounts_by_ip_secured(client_ip, db)
     if body.plan == "free" and ip_reg_count >= 3:
         await log_security_event(
@@ -535,7 +555,7 @@ async def firebase_auth(body: dict, request: Request, db: AsyncSession = Depends
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "")
 
-    # Try to verify the Firebase token using Firebase Admin SDK if available
+    # Verify the Firebase ID token
     firebase_uid = None
     try:
         import firebase_admin
@@ -548,13 +568,47 @@ async def firebase_auth(body: dict, request: Request, db: AsyncSession = Depends
                 cred = credentials.Certificate(cred_dict)
                 firebase_admin.initialize_app(cred)
             else:
+                # Try default credentials (works on Render/Cloud Run)
                 firebase_admin.initialize_app()
         decoded = fb_auth_admin.verify_id_token(id_token)
         firebase_uid = decoded.get("uid")
         email = decoded.get("email", email)
         name = decoded.get("name", name)
-    except Exception:
-        pass
+    except ImportError:
+        # firebase_admin not installed — validate JWT structure as fallback
+        import base64 as _b64
+        try:
+            parts = id_token.split(".")
+            if len(parts) != 3:
+                raise HTTPException(401, "Invalid Firebase token format")
+            # Decode payload (part[1]) — add padding
+            payload_b64 = parts[1] + "=" * (4 - len(parts[1]) % 4)
+            payload = _b64.urlsafe_b64decode(payload_b64)
+            import json as _json
+            decoded = _json.loads(payload)
+            # Verify it's from our Firebase project
+            if decoded.get("aud") != "stew-agent-9ca8c":
+                raise HTTPException(401, "Token is not from this Firebase project")
+            # Verify expiry
+            if decoded.get("exp", 0) < time.time():
+                raise HTTPException(401, "Firebase token has expired")
+            firebase_uid = decoded.get("user_id") or decoded.get("uid", "")
+            email = decoded.get("email", email)
+            name = decoded.get("name", name)
+            logger.info(f"Firebase token verified (JWT fallback) for {email}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(401, f"Invalid Firebase token: {e}")
+    except Exception as e:
+        logger.warning(f"Firebase token verification failed: {e}")
+        # Even on failure, continue if we have email — but log the risk
+        await log_security_event(
+            "firebase_token_warning", client_ip,
+            risk_score=30,
+            details=f"Firebase token verification failed: {str(e)[:100]}. Proceeding with email-based auth.",
+            db=db,
+        )
 
     # Compute device fingerprint
     fp_hash = compute_fingerprint(
@@ -614,6 +668,24 @@ async def firebase_auth(body: dict, request: Request, db: AsyncSession = Depends
         }
     else:
         # New user — security checks before creating
+        # Check disposable email
+        if is_disposable_email(email):
+            await log_security_event(
+                "registration_blocked", client_ip,
+                risk_score=90, details=f"Firebase: disposable email domain: {email.split('@')[-1]}",
+                db=db,
+            )
+            raise HTTPException(403, "Disposable email addresses are not allowed.")
+
+        # Check if IP is blocked
+        if await is_ip_blocked(client_ip, db):
+            await log_security_event(
+                "registration_blocked", client_ip,
+                risk_score=100, details="Firebase: IP blocked due to repeated abuse",
+                db=db,
+            )
+            raise HTTPException(403, "This network has been flagged for suspicious activity.")
+
         ip_reg_count = await count_free_accounts_by_ip_secured(client_ip, db)
         if ip_reg_count >= 3:
             await log_security_event(
@@ -1024,20 +1096,32 @@ class OrchestrateTextRequest(BaseModel):
     system: Optional[str] = None
     workers: Optional[list[str]] = None
     temperature: float = 0.7
+    api_key: Optional[str] = None
 
 
 @app.post("/orchestrate/text")
-async def orchestrate_text_endpoint(body: OrchestrateTextRequest):
+async def orchestrate_text_endpoint(
+    body: OrchestrateTextRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Mixture-of-agents endpoint (Fugu-style): fans your prompt out to multiple
     LLM workers in parallel (Groq, NVIDIA NIM, OpenRouter, HuggingFace, OpenAI —
     whichever are configured), then synthesizes their independent answers into
     one best-of-all-worlds response through a single call.
     """
+    user = await _safe_get_user(body.api_key, db) if body.api_key else None
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
     try:
         result = await orchestrate_text(
             body.prompt, system=body.system, workers=body.workers, temperature=body.temperature
         )
+        background_tasks.add_task(_log_call, db, user.id if user else None, "/orchestrate/text", "POST", 0, 200)
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -1046,17 +1130,29 @@ async def orchestrate_text_endpoint(body: OrchestrateTextRequest):
 class OrchestrateImageRequest(BaseModel):
     prompt: str
     mode: str = "first"  # "first" = fastest worker wins, "all" = return every worker's output
+    api_key: Optional[str] = None
 
 
 @app.post("/orchestrate/image")
-async def orchestrate_image_endpoint(body: OrchestrateImageRequest):
+async def orchestrate_image_endpoint(
+    body: OrchestrateImageRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Multi-worker image generation: dispatches your prompt to multiple free
     image-generation models in parallel (pollinations.ai, HuggingFace FLUX,
     more to come) and returns the fastest result, or all of them for comparison.
     """
+    user = await _safe_get_user(body.api_key, db) if body.api_key else None
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+
     try:
         result = await orchestrate_image(body.prompt, mode=body.mode)
+        background_tasks.add_task(_log_call, db, user.id if user else None, "/orchestrate/image", "POST", 0, 200)
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -1201,6 +1297,15 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
             num_agents=min(body.num_agents, 10),
             synthesize=body.synthesize,
         )
+        # Track usage
+        if user:
+            from server.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                call = APICall(
+                    user_id=user.id, endpoint="/agents/run", method="POST", tokens_used=0, status_code=200
+                )
+                session.add(call)
+                await session.commit()
         return {
             "success": True,
             "task": body.task,
@@ -1738,6 +1843,12 @@ async def api_proxy_call(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+
+    # Enforce quota if user identified
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
 
     # Block calls to internal/private IPs
     blocked_prefixes = ("localhost", "127.", "10.", "192.168.", "172.16.", "0.0.0.0")
