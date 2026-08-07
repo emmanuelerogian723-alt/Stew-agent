@@ -37,7 +37,7 @@ from server.memory import (
     append_message, build_llm_messages, get_or_create_conversation,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, Document, PaymentTransaction, User
+from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User
 from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
 from server.search import get_searcher
 from server.ocr_engine import ocr_file, ocr_and_reason, SUPPORTED_LANGS
