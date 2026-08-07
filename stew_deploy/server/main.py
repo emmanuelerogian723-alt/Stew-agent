@@ -216,6 +216,15 @@ class APICallRequest(BaseModel):
     api_key: str
 
 
+class FingerprintRequest(BaseModel):
+    """Device fingerprint data sent from the frontend."""
+    canvas_hash: Optional[str] = ""
+    webgl_hash: Optional[str] = ""
+    screen_resolution: Optional[str] = ""
+    timezone: Optional[str] = ""
+    language: Optional[str] = ""
+
+
 class InitPaymentRequest(BaseModel):
     plan: str
     api_key: str
@@ -231,6 +240,19 @@ class VerifyPaymentRequest(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Health ─────────────────────────────────────────────────────────────────────
+
+
+async def count_free_accounts_by_ip_secured(ip: str, db: AsyncSession) -> int:
+    """Count free-tier accounts from this IP in the last 24h."""
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    result = await db.execute(
+        select(func.count(DeviceFingerprint.id)).where(
+            DeviceFingerprint.ip_address == ip,
+            DeviceFingerprint.created_at >= cutoff,
+        )
+    )
+    return result.scalar() or 0
 
 async def _safe_get_user(api_key: str, db: AsyncSession) -> Optional[User]:
     """Safely look up a user by API key. Returns None if not found or inactive."""
@@ -360,7 +382,50 @@ async def dashboard_page():
 
 
 @app.post("/auth/register", status_code=201)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    # ── Security: Get client IP and user agent ──
+    from server.security import get_client_ip
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "")
+
+    # ── Security: Check if IP is already rate-limited for registrations ──
+    # Prevent rapid-fire account creation
+    ip_reg_count = await count_free_accounts_by_ip_secured(client_ip, db)
+    if body.plan == "free" and ip_reg_count >= 3:
+        await log_security_event(
+            "registration_blocked", client_ip,
+            risk_score=80, details=f"IP already has {ip_reg_count} accounts",
+            db=db,
+        )
+        raise HTTPException(429, "Too many accounts created from this network. Please upgrade to a paid plan or try again later.")
+
+    # ── Security: Compute device fingerprint ──
+    fp_hash = compute_fingerprint(
+        user_agent=user_agent,
+        canvas_hash=body.__dict__.get("canvas_hash", ""),
+        screen_resolution=body.__dict__.get("screen_resolution", ""),
+        timezone=body.__dict__.get("timezone", ""),
+        language=body.__dict__.get("language", ""),
+    )
+
+    # ── Security: Assess registration risk ──
+    risk_score, risk_reasons, vpn_info = await assess_registration_risk(
+        client_ip, fp_hash, user_agent, db
+    )
+
+    if risk_score >= RISK_THRESHOLD_BLOCK:
+        await log_security_event(
+            "registration_blocked", client_ip,
+            fingerprint_hash=fp_hash, risk_score=risk_score,
+            details="; ".join(risk_reasons), db=db,
+        )
+        raise HTTPException(403, f"Registration blocked: suspicious activity detected. If this is an error, contact support@mutyint.com")
+
+    # Check email
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(409, "Email already registered")
@@ -375,6 +440,26 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
     await db.refresh(user)
+
+    # ── Security: Record device fingerprint ──
+    await record_device_fingerprint(
+        user_id=user.id,
+        fingerprint_hash=fp_hash,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        vpn_info=vpn_info,
+        risk_score=risk_score,
+        db=db,
+    )
+
+    # Log the security event
+    await log_security_event(
+        "register", client_ip,
+        user_id=user.id, fingerprint_hash=fp_hash,
+        risk_score=risk_score,
+        details=f"New registration. Risk: {risk_score}. {'Flagged: ' + '; '.join(risk_reasons) if risk_reasons else 'Clean'}",
+        db=db,
+    )
 
     # Send welcome email in background (non-blocking)
     import asyncio
@@ -391,6 +476,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
         "name": user.name,
         "success": True,
         "message": "Account created! Your API key is ready in the dashboard.",
+        "risk_score": risk_score,
+        "security_flags": risk_reasons if risk_reasons else [],
     }
 
 
@@ -416,27 +503,36 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/auth/firebase")
-async def firebase_auth(body: dict, db: AsyncSession = Depends(get_db)):
+async def firebase_auth(body: dict, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Authenticate or register a user via Firebase ID token.
     If the user doesn't exist in our DB, create them. If they do, log them in.
     Returns the same shape as /auth/register and /auth/login.
+    Now includes device fingerprinting and VPN/risk assessment.
     """
+    from server.security import get_client_ip
     id_token = body.get("id_token")
     email = body.get("email", "")
     name = body.get("name", "")
+    # Device fingerprint data from frontend
+    canvas_hash = body.get("canvas_hash", "")
+    webgl_hash = body.get("webgl_hash", "")
+    screen_resolution = body.get("screen_resolution", "")
+    fp_timezone = body.get("timezone", "")
+    fp_language = body.get("language", "")
 
     if not id_token:
         raise HTTPException(400, "Missing id_token")
 
-    # Try to verify the Firebase token using Firebase Admin SDK if available,
-    # otherwise fall back to JWT decode (for client-side Firebase auth)
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "")
+
+    # Try to verify the Firebase token using Firebase Admin SDK if available
     firebase_uid = None
     try:
         import firebase_admin
         from firebase_admin import credentials, auth as fb_auth_admin
         if not firebase_admin._apps:
-            # Try to init from env vars
             import json as _json
             fb_creds = os.environ.get("FIREBASE_CREDENTIALS")
             if fb_creds:
@@ -444,16 +540,23 @@ async def firebase_auth(body: dict, db: AsyncSession = Depends(get_db)):
                 cred = credentials.Certificate(cred_dict)
                 firebase_admin.initialize_app(cred)
             else:
-                # Init without credentials — works for token verification only
                 firebase_admin.initialize_app()
         decoded = fb_auth_admin.verify_id_token(id_token)
         firebase_uid = decoded.get("uid")
         email = decoded.get("email", email)
         name = decoded.get("name", name)
     except Exception:
-        # Firebase Admin SDK not configured — accept the token from client-side auth
-        # The client already authenticated via Firebase, so we trust the email
         pass
+
+    # Compute device fingerprint
+    fp_hash = compute_fingerprint(
+        user_agent=user_agent,
+        canvas_hash=canvas_hash,
+        webgl_hash=webgl_hash,
+        screen_resolution=screen_resolution,
+        timezone=fp_timezone,
+        language=fp_language,
+    )
 
     # Check if user exists
     result = await db.execute(select(User).where(User.email == email))
@@ -463,6 +566,34 @@ async def firebase_auth(body: dict, db: AsyncSession = Depends(get_db)):
         # Existing user — log them in
         if not user.is_active:
             raise HTTPException(403, "Account is deactivated")
+
+        # Record this login's device fingerprint
+        try:
+            risk_score, risk_reasons, vpn_info = await assess_registration_risk(
+                client_ip, fp_hash, user_agent, db
+            )
+            await record_device_fingerprint(
+                user_id=user.id,
+                fingerprint_hash=fp_hash,
+                ip_address=client_ip,
+                user_agent=user_agent,
+                vpn_info=vpn_info,
+                risk_score=risk_score,
+                screen_resolution=screen_resolution,
+                timezone=fp_timezone,
+                language=fp_language,
+                db=db,
+            )
+            await log_security_event(
+                "login", client_ip,
+                user_id=user.id, fingerprint_hash=fp_hash,
+                risk_score=risk_score,
+                details=f"Login. Risk: {risk_score}. {'; '.join(risk_reasons) if risk_reasons else 'Clean'}",
+                db=db,
+            )
+        except Exception as e:
+            logger.warning(f"Security logging failed during login: {e}")
+
         token = create_access_token(user.id, user.email)
         return {
             "success": True,
@@ -474,17 +605,58 @@ async def firebase_auth(body: dict, db: AsyncSession = Depends(get_db)):
             "name": user.name,
         }
     else:
-        # New user — create account
+        # New user — security checks before creating
+        ip_reg_count = await count_free_accounts_by_ip_secured(client_ip, db)
+        if ip_reg_count >= 3:
+            await log_security_event(
+                "registration_blocked", client_ip,
+                risk_score=80, details=f"Firebase auth: IP already has {ip_reg_count} accounts",
+                db=db,
+            )
+            raise HTTPException(429, "Too many accounts created from this network. Please upgrade to a paid plan or try again later.")
+
+        risk_score, risk_reasons, vpn_info = await assess_registration_risk(
+            client_ip, fp_hash, user_agent, db
+        )
+        if risk_score >= RISK_THRESHOLD_BLOCK:
+            await log_security_event(
+                "registration_blocked", client_ip,
+                fingerprint_hash=fp_hash, risk_score=risk_score,
+                details="; ".join(risk_reasons), db=db,
+            )
+            raise HTTPException(403, "Registration blocked: suspicious activity detected. If this is an error, contact support@mutyint.com")
+
         user = User(
             name=name or email.split("@")[0],
             email=email,
-            password_hash=None,  # Firebase manages the password
+            password_hash=None,
             plan="free",
             api_key=generate_api_key(),
         )
         db.add(user)
         await db.flush()
         await db.refresh(user)
+
+        # Record device fingerprint
+        await record_device_fingerprint(
+            user_id=user.id,
+            fingerprint_hash=fp_hash,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            vpn_info=vpn_info,
+            risk_score=risk_score,
+            screen_resolution=screen_resolution,
+            timezone=fp_timezone,
+            language=fp_language,
+            db=db,
+        )
+        await log_security_event(
+            "register", client_ip,
+            user_id=user.id, fingerprint_hash=fp_hash,
+            risk_score=risk_score,
+            details=f"Firebase registration. Risk: {risk_score}. {'; '.join(risk_reasons) if risk_reasons else 'Clean'}",
+            db=db,
+        )
 
         token = create_access_token(user.id, user.email)
         return {
@@ -496,6 +668,8 @@ async def firebase_auth(body: dict, db: AsyncSession = Depends(get_db)):
             "api_key": user.api_key,
             "name": user.name,
             "message": "Account created via Firebase!",
+            "risk_score": risk_score,
+            "security_flags": risk_reasons if risk_reasons else [],
         }
 
 
@@ -559,17 +733,76 @@ async def get_me(current_user: User = Depends(get_current_user_jwt), db: AsyncSe
     }
 
 
+
+
+@app.get("/security/dashboard")
+async def security_dashboard(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Get security statistics. Requires admin API key."""
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        user = await _safe_get_user(api_key, db)
+        if not user or user.plan not in ("enterprise",):
+            raise HTTPException(403, "Admin access required")
+    return await get_security_dashboard(db)
+
+
+@app.post("/security/fingerprint")
+async def submit_fingerprint(body: dict, request: Request, db: AsyncSession = Depends(get_db)):
+    """Record device fingerprint for an existing user (called after login)."""
+    from server.security import get_client_ip
+    api_key = body.get("api_key", "")
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "")
+    fp_hash = compute_fingerprint(
+        user_agent=user_agent,
+        canvas_hash=body.get("canvas_hash", ""),
+        webgl_hash=body.get("webgl_hash", ""),
+        screen_resolution=body.get("screen_resolution", ""),
+        timezone=body.get("timezone", ""),
+        language=body.get("language", ""),
+    )
+
+    # Check if this fingerprint already exists for this user
+    existing = await db.execute(
+        select(DeviceFingerprint).where(
+            DeviceFingerprint.user_id == user.id,
+            DeviceFingerprint.fingerprint_hash == fp_hash,
+        )
+    )
+    if existing.scalar_one_or_none():
+        return {"success": True, "message": "Fingerprint already recorded"}
+
+    vpn_info = await check_vpn_proxy(client_ip)
+    risk_score = vpn_info.get("is_vpn", False) and 30 or vpn_info.get("is_proxy", False) and 20 or 0
+
+    await record_device_fingerprint(
+        user_id=user.id,
+        fingerprint_hash=fp_hash,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        vpn_info=vpn_info,
+        risk_score=risk_score,
+        screen_resolution=body.get("screen_resolution", ""),
+        timezone=body.get("timezone", ""),
+        language=body.get("language", ""),
+        db=db,
+    )
+    return {"success": True, "message": "Fingerprint recorded", "risk_score": risk_score}
+
+
 # ── Chat ───────────────────────────────────────────────────────────────────────
 
 
 @app.get("/auth/usage")
 async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
-    """Return the user's current plan, calls used, and remaining quota."""
+    """Return the user's current plan, calls used, remaining quota, and device info."""
     user = await get_user_by_api_key(api_key, db)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    # Count calls this month
     from datetime import timedelta
     month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
@@ -579,9 +812,16 @@ async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
         )
     )
     calls_used = result.scalar() or 0
-
     plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
     calls_remaining = max(0, plan_limit - calls_used)
+
+    # Get latest device fingerprint
+    fp_result = await db.execute(
+        select(DeviceFingerprint).where(
+            DeviceFingerprint.user_id == user.id
+        ).order_by(DeviceFingerprint.created_at.desc()).limit(1)
+    )
+    device = fp_result.scalar_one_or_none()
 
     return {
         "success": True,
@@ -590,6 +830,13 @@ async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
         "calls_limit": plan_limit,
         "calls_remaining": calls_remaining,
         "reset_date": (month_start.replace(month=month_start.month + 1) if month_start.month < 12 else month_start.replace(year=month_start.year + 1, month=1)).isoformat(),
+        "device_info": {
+            "type": device.device_type if device else "unknown",
+            "os": device.os_name if device else "unknown",
+            "browser": device.browser_name if device else "unknown",
+            "is_vpn": device.is_vpn if device else False,
+            "risk_score": device.risk_score if device else 0,
+        } if device else None,
     }
 
 

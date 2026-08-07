@@ -46,6 +46,7 @@ class User(Base):
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     api_calls: Mapped[list["APICall"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     documents: Mapped[list["Document"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    device_fingerprints: Mapped[list["DeviceFingerprint"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Conversation(Base):
@@ -98,4 +99,42 @@ class PaymentTransaction(Base):
     plan: Mapped[str] = mapped_column(String(50), nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class DeviceFingerprint(Base):
+    """Tracks device fingerprints to prevent multi-account abuse."""
+    __tablename__ = "device_fingerprints"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    fingerprint_hash: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    ip_address: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    device_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # desktop/mobile/tablet
+    os_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    browser_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    screen_resolution: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    language: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_vpn: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_proxy: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_tor: Mapped[bool] = mapped_column(Boolean, default=False)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="device_fingerprints")
+
+
+class SecurityEvent(Base):
+    """Tracks security events for audit and abuse detection."""
+    __tablename__ = "security_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)  # register, login, blocked, vpn_detected, multi_account
+    ip_address: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    fingerprint_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0)
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
