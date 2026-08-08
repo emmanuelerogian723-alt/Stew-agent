@@ -1,8 +1,9 @@
 services:
   - type: web
     name: stew-agent
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    runtime: python
+    buildCommand: pip install -r stew_deploy/requirements.txt
+    startCommand: cd stew_deploy && uvicorn server.main:app --host 0.0.0.0 --port $PORT
     plan: free
     envVars:
       - key: PORT
@@ -19,8 +20,16 @@ services:
         sync: false
       - key: SERPER_API_KEY
         sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: SAKANA_API_KEY
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
+      - key: STEW_ADMIN_SECRET
+        sync: false
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: PAYSTACK_PUBLIC_KEY
@@ -31,4 +40,3 @@ services:
         value: "https://stew-agent.onrender.com"
     healthCheckPath: /heartbeat
     autoDeploy: true
-    # deploy-trigger: 2026-06-26T14:40:00
