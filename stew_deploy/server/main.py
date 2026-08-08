@@ -111,6 +111,7 @@ async def strip_server_headers(request: Request, call_next):
         if header in response.headers:
             del response.headers[header]
     response.headers["Server"] = "S.T.E.W"
+    response.headers["X-Powered-By"] = "S.T.E.W"
     return response
 app.add_middleware(RateLimitMiddleware)
 
@@ -303,7 +304,7 @@ async def heartbeat():
             "payments": "operational" if settings.PAYSTACK_SECRET_KEY else "unavailable",
             "agent_pool": "operational",
             "image_generation": "operational",
-            "sakana_fugu": "operational" if settings.SAKANA_API_KEY else "not_configured",
+            "inference_engine": "operational" if settings.SAKANA_API_KEY else "not_configured",
             "mistral_ai": "operational" if settings.MISTRAL_API_KEY else "not_configured",
         },
     }
