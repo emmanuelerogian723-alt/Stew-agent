@@ -30,6 +30,10 @@ services:
         sync: false
       - key: STEW_ADMIN_SECRET
         generateValue: true
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: SAKANA_API_KEY
+        sync: false
     healthCheckPath: /heartbeat
     autoDeploy: true
 
