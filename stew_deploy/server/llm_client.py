@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from groq import Groq
 from openai import OpenAI
 try:
-    from mistralai import Mistral as MistralClient
+    from mistralai.client import Mistral as MistralClient
     HAS_MISTRAL = True
 except ImportError:
     HAS_MISTRAL = False
