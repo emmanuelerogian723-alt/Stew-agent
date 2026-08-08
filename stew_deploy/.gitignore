@@ -6,4 +6,6 @@ memory/data/
 output/
 logs/
 *.log
-.DS_Store
+.DS_Storetest_local*.db
+test_local*.db
+*.db
