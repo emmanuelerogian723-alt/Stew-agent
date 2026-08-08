@@ -83,13 +83,15 @@ async def lifespan(app: FastAPI):
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
+import os as _os
+_is_prod = _os.environ.get("RENDER") or _os.environ.get("STEW_ENV") == "production"
 app = FastAPI(
     title="S.T.E.W Agent API",
-    description="Structured Task Execution Workflow — AI Agent Backend v5.0",
     version="6.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
 app.add_middleware(
@@ -99,7 +101,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(SecurityHeadersMiddleware)
+
+# Strip server-identifying headers to hide tech stack
+@app.middleware("http")
+async def strip_server_headers(request: Request, call_next):
+    response = await call_next(request)
+    # Remove headers that leak our tech stack
+    for header in ["x-render-origin-server", "x-powered-by", "server"]:
+        if header in response.headers:
+            del response.headers[header]
+    response.headers["Server"] = "S.T.E.W"
+    return response
 app.add_middleware(RateLimitMiddleware)
 
 
