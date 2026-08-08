@@ -1967,11 +1967,26 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
 
 
 @app.get("/payments/callback")
-async def payment_callback(request: Request, reference: str = ""):
-    """Paystack redirects here after payment. Redirect to dashboard with reference."""
+async def payment_callback(request: Request, reference: str = "", db: AsyncSession = Depends(get_db)):
+    """Paystack redirects here after payment. Verify server-side before showing success."""
     if not reference:
         return HTMLResponse('<script>window.location.href="/dashboard.html?payment=unknown";</script>')
-    return HTMLResponse('<script>window.location.href="/dashboard.html?payment=success&reference=' + reference + '";</script>')
+    try:
+        from server.payments import verify_payment
+        tx_data = verify_payment(reference)
+        if tx_data["status"] == "success":
+            # Auto-upgrade the user's plan
+            metadata = tx_data.get("metadata", {})
+            plan = metadata.get("plan", "pro")
+            user_id = metadata.get("user_id")
+            if user_id:
+                await upgrade_user_plan(db, user_id, plan)
+            return HTMLResponse('<script>window.location.href="/dashboard.html?payment=success&reference=' + reference + '";</script>')
+        else:
+            return HTMLResponse('<script>window.location.href="/dashboard.html?payment=pending&reference=' + reference + '";</script>')
+    except Exception as e:
+        logger.warning(f"Payment callback verification failed for {reference}: {e}")
+        return HTMLResponse('<script>window.location.href="/dashboard.html?payment=error&reference=' + reference + '";</script>')
 
 
 @app.get("/payments/status/{reference}")
@@ -2156,7 +2171,7 @@ async def test_api_key(body: TestKeyRequest, db: AsyncSession = Depends(get_db))
     # Test Mistral key if provided
     if body.mistral_api_key:
         try:
-            from mistralai import Mistral as _Mistral
+            from mistralai.client import Mistral as _Mistral
             _mc = _Mistral(api_key=body.mistral_api_key)
             _resp = _mc.chat.complete(
                 model="mistral-small-latest",

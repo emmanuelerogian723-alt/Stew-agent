@@ -293,13 +293,17 @@ def _pdf_to_images(content: bytes) -> list:
         import fitz  # PyMuPDF
         images = []
         doc = fitz.open(stream=content, filetype="pdf")
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            mat = fitz.Matrix(200/72, 200/72)
-            pix = page.get_pixmap(matrix=mat)
-            img_data = pix.tobytes("png")
-            images.append(Image.open(io.BytesIO(img_data)))
-        doc.close()
+        try:
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                mat = fitz.Matrix(200/72, 200/72)
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("png")
+                pil_img = Image.open(io.BytesIO(img_data))
+                pil_img.load()  # Force load so we can close the BytesIO
+                images.append(pil_img)
+        finally:
+            doc.close()
         return images
     except ImportError:
         pass

@@ -22,9 +22,8 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright + Chromium for browse endpoint
-RUN pip install --no-cache-dir playwright==1.44.0 && \
-    playwright install chromium --with-deps || true
+# Install Playwright Chromium browser (Python package already in requirements.txt)
+RUN playwright install chromium --with-deps || true
 
 # Copy application code
 COPY server/ ./server/
@@ -45,4 +44,4 @@ EXPOSE 8000
 
 # Run DB migrations then start server
 CMD alembic upgrade head && \
-    uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 2
+    uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 1

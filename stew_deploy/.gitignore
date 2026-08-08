@@ -9,3 +9,4 @@ logs/
 .DS_Storetest_local*.db
 test_local*.db
 *.db
+**/__pycache__/

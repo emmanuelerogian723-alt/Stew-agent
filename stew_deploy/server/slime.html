@@ -2116,7 +2116,7 @@ async function shareTxt(text){
 // ── AI CALL ──
 async function callAI(messages,sys){
   const sysFull=(sys||SYS)+MEM.buildContext();
-  const body={model:'meta-llama/llama-4-scout-17b-16e-instruct',max_tokens:3500,messages:[{role:'system',content:sysFull},...messages]};
+  const body={model:'openai/gpt-oss-20b',max_tokens:3500,messages:[{role:'system',content:sysFull},...messages]};
   if(!isOnline){
     const lastMsg=messages[messages.length-1]?.content||'';
     const math=OFFLINE_KB.math(lastMsg);
@@ -2138,7 +2138,7 @@ async function callAI(messages,sys){
     const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+K.or,'HTTP-Referer':'https://slimeai.app','X-Title':'Slime AI'},
-      body:JSON.stringify({...body,model:'meta-llama/llama-3.1-8b-instruct:free'}),
+      body:JSON.stringify({...body,model:'openai/gpt-oss-20b'}),
       signal:AbortSignal.timeout(30000)
     });
     if(r.ok){const d=await r.json();const c=d.choices?.[0]?.message?.content;if(c)return c;}
@@ -2214,7 +2214,7 @@ async function analyzeImageFile(att,userQ=''){
         const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
           method:'POST',
           headers:{'Content-Type':'application/json','Authorization':'Bearer '+K.or,'HTTP-Referer':'https://slimeai.app'},
-          body:JSON.stringify({model:'meta-llama/llama-4-maverick:free',max_tokens:1400,messages:[{role:'user',content:[
+          body:JSON.stringify({model:'openai/gpt-oss-120b',max_tokens:1400,messages:[{role:'user',content:[
             {type:'image_url',image_url:{url:att.data}},
             {type:'text',text:userQ||'Analyze this image thoroughly. Describe everything you see, any text, context, and what action or insight this conveys.'}
           ]}]}),signal:AbortSignal.timeout(25000)
