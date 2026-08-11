@@ -547,10 +547,10 @@ S.T.E.W is optimized for Render's free tier (512MB RAM):
 - [x] Chrome browser extension
 - [x] SearXNG search fallback
 - [x] Kimi-style tool-calling agent
-- [ ] npm SDK (`stew-ai` package) — in progress
+- [x] npm SDK (`stew-ai` package) — github.com/emmanuelerogian723-alt/stew-ai
 - [ ] WhatsApp Business API integration
 - [ ] Stew Skill Marketplace (third-party developer skills)
-- [ ] Python SDK
+- [x] Python SDK (`stew-ai` package) — github.com/emmanuelerogian723-alt/stew-python
 - [ ] React component library (`<StewChat />`)
 - [ ] WordPress plugin
 - [ ] Visual agent workflow builder
@@ -571,6 +571,8 @@ S.T.E.W — Smart Task Execution Worker
 - **API Docs:** https://stew-agent.onrender.com/docs
 - **Playground:** https://stew-agent.onrender.com/playground
 - **GitHub:** https://github.com/emmanuelerogian723-alt/Stew-agent
+- **npm SDK:** https://github.com/emmanuelerogian723-alt/stew-ai
+- **Python SDK:** https://github.com/emmanuelerogian723-alt/stew-python
 - **Email:** emmanuelerogian723@gmail.com
 
 ---
