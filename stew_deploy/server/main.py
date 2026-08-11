@@ -2183,26 +2183,18 @@ async def deep_research(
     # Step 2: Fetch top pages for deeper content (depth >= 2)
     page_contents = []
     if body.depth >= 2 and all_sources:
-        import httpx
-        async with httpx.AsyncClient(timeout=15) as client:
-            for source in all_sources[:5]:
-                try:
-                    resp = await client.get(source["link"], headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-                    if resp.status_code == 200:
-                        from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(resp.text, "html.parser")
-                        # Remove scripts and styles
-                        for tag in soup(["script", "style", "nav", "footer", "header"]):
-                            tag.decompose()
-                        text = soup.get_text(separator=" ", strip=True)[:3000]
-                        if len(text) > 200:
-                            page_contents.append({
-                                "title": source["title"],
-                                "url": source["link"],
-                                "content": text,
-                            })
-                except Exception as e:
-                    logger.warning(f"Failed to fetch {source['link']}: {e}")
+        for source in all_sources[:5]:
+            try:
+                page = await asyncio.to_thread(searcher.fetch_page_content, source["link"], 3000)
+                if page.get("content"):
+                    page_contents.append({
+                        "title": source["title"],
+                        "url": source["link"],
+                        "content": page["content"],
+                        "extractor": page.get("extractor", "unknown"),
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to fetch {source['link']}: {e}")
 
     # Step 3: Synthesize with LLM
     context_parts = []

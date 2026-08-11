@@ -283,6 +283,59 @@ class WebSearch:
                 "error": str(e),
             }
 
+
+    def fetch_page_content(self, url: str, max_length: int = 3000) -> dict:
+        """
+        Fetch and extract clean text content from a web page.
+        Uses trafilatura (no Playwright needed) with BeautifulSoup fallback.
+        """
+        import requests as req
+        try:
+            resp = req.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            html = resp.text
+
+            # Try trafilatura first (best extraction)
+            try:
+                import trafilatura
+                extracted = trafilatura.extract(html, include_links=True, include_tables=True)
+                if extracted and len(extracted) > 100:
+                    return {
+                        "url": url,
+                        "content": extracted[:max_length],
+                        "length": len(extracted),
+                        "extractor": "trafilatura",
+                    }
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.warning(f"trafilatura extraction failed for {url}: {e}")
+
+            # Fallback: BeautifulSoup
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "footer", "header", "aside", "ad"]):
+                tag.decompose()
+            text = soup.get_text(separator=" ", strip=True)
+            if text and len(text) > 100:
+                return {
+                    "url": url,
+                    "content": text[:max_length],
+                    "length": len(text),
+                    "extractor": "beautifulsoup",
+                }
+
+            return {"url": url, "content": "", "length": 0, "error": "No content extracted"}
+
+        except Exception as e:
+            logger.warning(f"Page fetch failed for {url}: {e}")
+            return {"url": url, "content": "", "length": 0, "error": str(e)}
+
+
     def stew_extension_research(self, query: str, depth: int = 3) -> dict:
         """
         Deep research via the S.T.E.W Browser Extension.
