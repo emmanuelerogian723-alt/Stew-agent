@@ -61,6 +61,7 @@ from server.email_service import send_welcome_email, send_password_reset_email, 
 from server.auth import create_reset_token, consume_reset_token
 from server.keepalive import start_keepalive, stop_keepalive
 from server.skills_engine import run_skill, list_skills as get_skills_list
+from server.openai_compat import router as openai_router
 
 
 
@@ -97,6 +98,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
+app.include_router(openai_router)
 app.add_middleware(RateLimitMiddleware)
 
 
