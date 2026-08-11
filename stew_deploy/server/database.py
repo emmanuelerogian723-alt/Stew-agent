@@ -6,7 +6,6 @@ import os
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
 from sqlalchemy import event, text
 
 from server.config import get_settings
@@ -43,8 +42,18 @@ else:
     engine = create_async_engine(
         ASYNC_DATABASE_URL,
         echo=settings.DEBUG,
-        poolclass=NullPool,
     )
+
+# Set PRAGMA on every new SQLite connection via event listener (outside transactions)
+if IS_SQLITE:
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+        logger.info("SQLite connection: WAL mode + 30s busy timeout set")
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -62,11 +71,6 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         try:
-            # Set busy timeout for SQLite
-            if IS_SQLITE:
-                await session.execute(text("PRAGMA busy_timeout=30000"))
-                await session.execute(text("PRAGMA journal_mode=WAL"))
-                await session.execute(text("PRAGMA synchronous=NORMAL"))
             yield session
             await session.commit()
         except Exception:
@@ -80,9 +84,7 @@ async def init_db():
     """Create all tables (used in dev/test; prod uses Alembic)."""
     async with engine.begin() as conn:
         if IS_SQLITE:
-            # Enable WAL mode for better concurrent access
             await conn.execute(text("PRAGMA journal_mode=WAL"))
             await conn.execute(text("PRAGMA busy_timeout=30000"))
-            await conn.execute(text("PRAGMA synchronous=NORMAL"))
             logger.info("SQLite WAL mode enabled with 30s busy timeout")
         await conn.run_sync(Base.metadata.create_all)
