@@ -13,6 +13,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+logger = logging.getLogger(__name__)
+
 # Crawl4AI — LLM-friendly content extraction (works without Playwright browser)
 try:
     from crawl4ai.content_scraping_strategy import WebScrapingStrategy
@@ -23,8 +25,6 @@ try:
 except ImportError:
     CRAWL4AI_AVAILABLE = False
     logger.info("Crawl4AI not available — using basic BeautifulSoup extraction")
-
-logger = logging.getLogger(__name__)
 
 # Detect Playwright availability
 try:
