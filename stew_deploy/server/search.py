@@ -74,13 +74,18 @@ class WebSearch:
         if result.get("organic"):
             return result
 
-        # Try 4: Brave Search API (if configured)
+        # Try 4: SearXNG public instances (free, no key)
+        result = self._searxng_search(query, num_results)
+        if result.get("organic"):
+            return result
+
+        # Try 5: Brave Search API (if configured)
         if self.brave_key:
             result = self._brave_search(query, num_results)
             if result.get("organic"):
                 return result
 
-        # Try 5: Jina AI search (if configured)
+        # Try 6: Jina AI search (if configured)
         if self.jina_key:
             result = self._jina_search(query, num_results)
             if result.get("organic"):
@@ -156,6 +161,53 @@ class WebSearch:
             "error": "News search not available",
         }
 
+
+    # ── SearXNG public instances (free, no key) ──────────────────────────
+
+    def _searxng_search(self, query: str, num_results: int) -> dict:
+        """Search via SearXNG public instances. Free, no key needed."""
+        import urllib.parse as _up
+        instances = [
+            "https://search.mdosch.de/search",
+            "https://searx.be/search",
+            "https://search.bus-hit.me/search",
+            "https://searxng.site/search",
+        ]
+        for base in instances:
+            try:
+                params = {
+                    "q": query,
+                    "format": "json",
+                    "engines": "google,bing,duckduckgo",
+                    "safesearch": 0,
+                }
+                resp = requests.get(base, params=params, headers=BROWSER_HEADERS, timeout=8)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = []
+                    for r in data.get("results", [])[:num_results]:
+                        results.append({
+                            "title": r.get("title", ""),
+                            "link": r.get("url", ""),
+                            "snippet": r.get("content", ""),
+                            "position": len(results) + 1,
+                        })
+                    if results:
+                        logger.info(f"SearXNG ({base}) returned {len(results)} results for: {query}")
+                        return {
+                            "organic": results,
+                            "answer_box": {},
+                            "knowledge_graph": {},
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "query": query,
+                            "grounded": True,
+                            "source": f"searxng:{base.split('/')[2]}",
+                        }
+            except Exception as e:
+                logger.warning(f"SearXNG {base} error: {e}")
+                continue
+        return {"organic": []}
+
     # ── Serper (Google) ──────────────────────────────────────────────
 
     def _serper_search(self, query: str, num_results: int) -> dict:
@@ -197,7 +249,7 @@ class WebSearch:
                 "https://html.duckduckgo.com/html/",
                 data={"q": query},
                 headers={**BROWSER_HEADERS, **DDG_REFERER},
-                timeout=12,
+                timeout=8,
                 allow_redirects=True,
             )
             resp.raise_for_status()
@@ -246,7 +298,7 @@ class WebSearch:
         try:
             ddg_url = f"https://html.duckduckgo.com/html/?q={_up.quote(query)}"
             proxy_url = f"https://api.allorigins.win/raw?url={_up.quote(ddg_url)}"
-            resp = requests.get(proxy_url, timeout=15, headers={**BROWSER_HEADERS, **DDG_REFERER})
+            resp = requests.get(proxy_url, timeout=10, headers={**BROWSER_HEADERS, **DDG_REFERER})
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
             results = []
@@ -292,7 +344,7 @@ class WebSearch:
                 "https://lite.duckduckgo.com/lite/",
                 params={"q": query, "kl": "us-en"},
                 headers={**BROWSER_HEADERS, **DDG_REFERER},
-                timeout=12,
+                timeout=8,
             )
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
@@ -347,7 +399,7 @@ class WebSearch:
                     "Accept-Encoding": "gzip",
                     "X-Subscription-Token": self.brave_key,
                 },
-                timeout=12,
+                timeout=8,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -386,7 +438,7 @@ class WebSearch:
                     "Accept": "application/json",
                     "X-Retain-Images": "none",
                 },
-                timeout=15,
+                timeout=10,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -468,7 +520,7 @@ class WebSearch:
                 pass
             # Fallback: direct fetch
             try:
-                resp = httpx.get(url, timeout=15, headers=headers, follow_redirects=True)
+                resp = httpx.get(url, timeout=10, headers=headers, follow_redirects=True)
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
                     soup.select("script, style, nav, footer, aside").extract()

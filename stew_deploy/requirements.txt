@@ -73,3 +73,8 @@ pymupdf>=1.24.0,<2.0.0
 # Optional: chromadb for advanced vector memory (falls back to numpy if not installed)
 # pip install chromadb
 # crawl4ai removed — too heavy for Render free tier (code has graceful fallback)
+
+# ── Code Sandbox (data analysis & charts) ─────────────────────────────────────
+numpy>=1.26.0,<2.0.0
+matplotlib>=3.8.0,<4.0.0
+pandas>=2.2.0,<3.0.0

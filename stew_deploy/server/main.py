@@ -1692,6 +1692,73 @@ async def ocr_info_endpoint():
     }
 
 
+
+# ── Code Execution Sandbox ────────────────────────────────────────────────────
+
+@app.post("/api/code/exec")
+async def code_exec_endpoint(
+    body: dict,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Execute Python code in a restricted sandbox.
+    
+    Safety: No network, no file system, limited built-ins, 10-second timeout.
+    Allowed modules: math, json, re, datetime, statistics, matplotlib, numpy, pandas
+    """
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month).")
+
+    code = body.get("code", "")
+    if not code:
+        raise HTTPException(400, "Code is required")
+
+    from server.code_sandbox import execute_code
+    timeout = min(int(body.get("timeout", 10)), 30)
+
+    result = await asyncio.to_thread(execute_code, code, timeout)
+
+    if user:
+        background_tasks.add_task(_log_call, db, user.id, "/api/code/exec", "POST", 0, 200)
+
+    return {
+        "success": result.get("success"),
+        "stdout": result.get("stdout", ""),
+        "result": result.get("result", ""),
+        "error": result.get("error"),
+        "figures": result.get("figures", []),
+        "execution_time": result.get("execution_time", 0),
+        "engine": "S.T.E.W Code Sandbox v1.0",
+    }
+
+
+@app.get("/api/code/info")
+async def code_info_endpoint():
+    """Get code sandbox information."""
+    from server.code_sandbox import ALLOWED_MODULES, OPTIONAL_MODULES
+    return {
+        "service": "S.T.E.W Code Execution Sandbox",
+        "version": "1.0.0",
+        "allowed_modules": sorted(ALLOWED_MODULES),
+        "optional_modules": sorted(OPTIONAL_MODULES.keys()),
+        "timeout_seconds": 10,
+        "max_output_bytes": 50000,
+        "features": [
+            "Python code execution in restricted sandbox",
+            "Math, statistics, data analysis",
+            "Matplotlib chart generation (PNG)",
+            "NumPy for numerical computing",
+            "Pandas for data manipulation",
+            "Stdout capture + expression result",
+            "No network access, no file system access",
+        ],
+    }
+
+
 # ── API Proxy ──────────────────────────────────────────────────────────────────
 
 @app.post("/api/call")
@@ -2794,6 +2861,55 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 logger.error(f"Telegram browse error: {e}")
                 await bot.send_message(chat_id, f"Error browsing: {str(e)[:200]}")
             return {"ok": True}
+
+    # ── TOOL-CALLING AGENT (Kimi-style) ─────────────────────────────────────────
+    # Detect requests that need tool calling: code, math, data analysis, documents
+    needs_tools = any(kw in user_lower for kw in [
+        "calculate", "compute", "solve", "math", "equation", "formula",
+        "analyze data", "data analysis", "chart", "graph", "plot",
+        "statistics", "probability", "compound", "interest",
+        "convert", "currency", "naira to", "dollar to", "exchange rate",
+        "budget", "loan", "mortgage", "investment", "roi",
+        "run code", "python", "code", "program", "algorithm",
+        "make a document", "create a document", "generate report",
+        "business plan", "financial projection", "cash flow",
+    ])
+
+    if needs_tools:
+        await bot.send_message(chat_id, "S.T.E.W Agent mode activated. Analyzing your request...")
+        await bot.send_typing(chat_id)
+        try:
+            from server.tool_agent import run_agent_loop
+            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5)
+
+            # Send any generated files
+            if agent_result.get("files"):
+                import base64 as _b64
+                for f in agent_result["files"]:
+                    try:
+                        file_bytes = _b64.b64decode(f["base64"])
+                        filename = f.get("filename", f"stew_document.{f.get('doc_type','pdf')}")
+                        caption = f"S.T.E.W generated {f.get('doc_type','').upper()}"
+                        await bot.send_document(chat_id, file_bytes, filename, caption)
+                    except Exception as fe:
+                        logger.error(f"File send error: {fe}")
+
+            # Send the final response
+            response = agent_result.get("response", "")
+            if response:
+                await bot.send_message(chat_id, response)
+            else:
+                await bot.send_message(chat_id, "Task completed.")
+
+            # Log
+            if tg_user:
+                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
+
+            return {"ok": True}
+        except Exception as e:
+            logger.error(f"Tool agent error: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Agent encountered an error. Trying regular mode...")
+            # Fall through to regular chat
 
     # ── REGULAR CHAT WITH SEARCH + RESEARCH ────────────────────────────────────
     llm = get_llm_client()
