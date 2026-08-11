@@ -533,6 +533,111 @@ S.T.E.W is optimized for Render's free tier (512MB RAM):
 
 ---
 
+## OpenAI-Compatible API (Use Stew as Your AI Brain)
+
+S.T.E.W now speaks OpenAI's language. Any tool built for OpenAI can use Stew instead — just change the URL and API key.
+
+### Supported Tools
+- **OpenCode** — autonomous coding agent
+- **Devin** — AI software engineer
+- **Cursor** — AI code editor
+- **LangChain** — LLM framework
+- **AutoGen** — multi-agent framework
+- **OpenClaw** — agent orchestration
+- **Hermes Agent** — task execution
+- **Any tool** that supports custom OpenAI base URLs
+
+### Quick Setup (3 lines)
+
+```bash
+# Instead of OpenAI:
+# OPENAI_API_KEY=sk-xxx  OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Use Stew:
+export OPENAI_API_KEY=stew_your_api_key_here
+export OPENAI_BASE_URL=https://stew-agent.onrender.com/v1
+```
+
+### Python (OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+# Point to Stew instead of OpenAI
+client = OpenAI(
+    api_key="stew_your_api_key_here",
+    base_url="https://stew-agent.onrender.com/v1"
+)
+
+response = client.chat.completions.create(
+    model="stew-default",
+    messages=[{"role": "user", "content": "Hello from Africa!"}]
+)
+print(response.choices[0].message.content)
+```
+
+### JavaScript/Node.js (OpenAI SDK)
+
+```javascript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "stew_your_api_key_here",
+  baseURL: "https://stew-agent.onrender.com/v1"
+});
+
+const response = await client.chat.completions.create({
+  model: "stew-default",
+  messages: [{ role: "user", content: "Hello from Africa!" }]
+});
+console.log(response.choices[0].message.content);
+```
+
+### Available Models
+
+| Model | Description |
+|---|---|
+| `stew-default` | Auto-failover across all 6 providers |
+| `stew-fast` | Groq (ultra low latency) |
+| `stew-mistral` | Mistral Large (flagship) |
+| `stew-nvidia` | NVIDIA NIM Llama 3.3 70B (free) |
+| `stew-openrouter` | OpenRouter (free) |
+| `stew-hf` | HuggingFace Qwen3 235B |
+| `stew-openai` | OpenAI GPT-4o-mini |
+| `gpt-4o`, `gpt-4o-mini`, etc. | OpenAI names (auto-routed via Stew) |
+
+### Stew Extensions (beyond OpenAI)
+
+Pass these in the request body for Stew-specific features:
+
+```json
+{
+  "model": "stew-default",
+  "messages": [...],
+  "web_search": true,      // enable live web search grounding
+  "fusion_mode": true       // multi-model fusion (3 providers in parallel)
+}
+```
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/chat/completions` | POST | Chat completions (streaming + non-streaming) |
+| `/v1/models` | GET | List available models |
+| `/v1/models/{id}` | GET | Get model details |
+| `/v1/embeddings` | POST | Not supported (returns 501) |
+
+### Why use Stew instead of OpenAI directly?
+
+1. **Naira billing** — Pay via Paystack, no dollar card needed
+2. **6 providers** — auto-failover means 99.9% uptime
+3. **Web search** — built-in web grounding (OpenAI charges extra for this)
+4. **12 personas** — doctor, lawyer, finance, startup, etc.
+5. **African context** — Pidgin, Yoruba, Igbo, Hausa support
+6. **Free tier** — 1,500 calls/month, no credit card
+7. **100-agent swarm** — complex multi-step tasks
+
 ## Roadmap
 
 - [x] 59 skills across 13 categories
