@@ -502,3 +502,7 @@ class WebSearch:
 
 # Singleton
 web_search = WebSearch()
+
+def get_searcher() -> WebSearch:
+    """Return the singleton WebSearch instance."""
+    return web_search
