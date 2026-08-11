@@ -172,7 +172,7 @@ class ChatRequest(BaseModel):
 
 class TaskRequest(BaseModel):
     task: str
-    api_key: str = "" = "" = "" = "" = ""
+    api_key: str = ""
     context: Optional[str] = None
 
 
@@ -185,32 +185,32 @@ class BrowseRequest(BaseModel):
 class GeneratePDFRequest(BaseModel):
     content: str
     title: str = "Document"
-    api_key: str
+    api_key: str = ""
 
 
 class GenerateDOCXRequest(BaseModel):
     content: str
     title: str = "Document"
-    api_key: str
+    api_key: str = ""
 
 
 class GenerateXLSXRequest(BaseModel):
     data: list[dict]
     sheet_name: str = "Sheet1"
     title: str = "Spreadsheet"
-    api_key: str
+    api_key: str = ""
 
 
 class GeneratePPTXRequest(BaseModel):
     slides: list[dict]
     title: str = "Presentation"
-    api_key: str
+    api_key: str = ""
 
 
 class GenerateHTMLRequest(BaseModel):
     content: str
     title: str = "Report"
-    api_key: str
+    api_key: str = ""
 
 
 class APICallRequest(BaseModel):
