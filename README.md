@@ -653,6 +653,7 @@ Pass these in the request body for Stew-specific features:
 - [x] SearXNG search fallback
 - [x] Kimi-style tool-calling agent
 - [x] npm SDK (`stew-ai` package) — github.com/emmanuelerogian723-alt/stew-ai
+- [x] OpenAI-compatible API endpoint (/v1/chat/completions) — works with OpenCode, Devin, Cursor, LangChain, AutoGen
 - [ ] WhatsApp Business API integration
 - [ ] Stew Skill Marketplace (third-party developer skills)
 - [x] Python SDK (`stew-ai` package) — github.com/emmanuelerogian723-alt/stew-python
