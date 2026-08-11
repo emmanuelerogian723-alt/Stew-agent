@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "S.T.E.W Browser Agent",
-  "version": "2.0.0",
-  "description": "AI-powered browser agent with free built-in search (DuckDuckGo, Bing, SearXNG). Browses, reads, and automates web tasks. Free & open-source.",
+  "version": "2.1.0",
+  "description": "AI-powered browser agent with free built-in search (Google, DuckDuckGo, Bing, Wikipedia). Browses, reads, fills forms, and automates web tasks. Free & open-source.",
   "permissions": [
     "tabs",
     "scripting",

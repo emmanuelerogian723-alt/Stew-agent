@@ -15,6 +15,7 @@ let agentState = {
 
 // ============ FREE SEARCH ENGINE (Built-in) ============
 // Multiple free search engines — no API key, no Google dependency
+// Runs in the USER'S BROWSER so no datacenter IP blocking
 const FREE_SEARCH_ENGINES = {
   duckduckgo: {
     name: 'DuckDuckGo',
@@ -24,15 +25,13 @@ const FREE_SEARCH_ENGINES = {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
           },
           body: `q=${encodeURIComponent(query)}`
         });
         const html = await resp.text();
-        const results = [];
-        // Parse DuckDuckGo HTML results
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
+        const results = [];
         const resultElements = doc.querySelectorAll('.result__body, .result');
         let count = 0;
         for (const el of resultElements) {
@@ -41,7 +40,6 @@ const FREE_SEARCH_ENGINES = {
           const snippetEl = el.querySelector('.result__snippet');
           if (titleEl) {
             let link = titleEl.getAttribute('href') || '';
-            // DuckDuckGo wraps links in redirect
             if (link.includes('uddg=')) {
               link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]);
             } else if (link.startsWith('//')) {
@@ -64,13 +62,105 @@ const FREE_SEARCH_ENGINES = {
     }
   },
 
+  duckduckgo_lite: {
+    name: 'DuckDuckGo Lite',
+    search: async (query, numResults = 8) => {
+      try {
+        const resp = await fetch(
+          `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`,
+          { headers: { 'Accept': 'text/html' } }
+        );
+        const html = await resp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const results = [];
+        // Lite uses table-based layout
+        const links = doc.querySelectorAll('a.result-link, a[target="_self"]');
+        let count = 0;
+        for (const a of links) {
+          if (count >= numResults) break;
+          let href = a.getAttribute('href') || '';
+          const title = a.textContent.trim();
+          if (!title || !href || href.includes('duckduckgo.com')) continue;
+          if (href.startsWith('//')) href = 'https:' + href;
+          // Find snippet in adjacent table row
+          let snippet = '';
+          const tr = a.closest('tr');
+          if (tr) {
+            const nextTr = tr.nextElementSibling;
+            if (nextTr) snippet = nextTr.textContent.trim().slice(0, 200);
+          }
+          results.push({ title, link: href, snippet, source: 'duckduckgo_lite' });
+          count++;
+        }
+        return results;
+      } catch (e) {
+        console.error('[S.T.E.W] DDG Lite error:', e);
+        return [];
+      }
+    }
+  },
+
+  google: {
+    name: 'Google',
+    search: async (query, numResults = 8) => {
+      // From a Chrome extension, Google scraping works (user's browser IP, not datacenter)
+      try {
+        const resp = await fetch(
+          `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${numResults}&hl=en`,
+          {
+            headers: {
+              'Accept': 'text/html,application/xhtml+xml',
+              'Accept-Language': 'en-US,en;q=0.9',
+            }
+          }
+        );
+        const html = await resp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const results = [];
+        // Google results are in div.g or div[data-ved] containers
+        const resultDivs = doc.querySelectorAll('div.g, div[data-ved]');
+        let count = 0;
+        for (const div of resultDivs) {
+          if (count >= numResults) break;
+          // Find the title link (usually h3 > a)
+          const h3 = div.querySelector('h3');
+          const a = h3 ? h3.closest('a') : div.querySelector('a[href]');
+          if (a && h3) {
+            let href = a.getAttribute('href') || '';
+            if (href.startsWith('/url?q=')) {
+              href = decodeURIComponent(href.split('/url?q=')[1].split('&')[0]);
+            } else if (href.startsWith('/search?')) {
+              continue; // Skip Google internal links
+            }
+            if (!href.startsWith('http')) continue;
+            // Find snippet
+            const snippetEl = div.querySelector('.VwiC3b, [data-sokoban-container], span.aCOpRe');
+            const snippet = snippetEl ? snippetEl.textContent.trim() : '';
+            results.push({
+              title: h3.textContent.trim(),
+              link: href,
+              snippet: snippet,
+              source: 'google',
+            });
+            count++;
+          }
+        }
+        return results;
+      } catch (e) {
+        console.error('[S.T.E.W] Google search error:', e);
+        return [];
+      }
+    }
+  },
+
   bing: {
     name: 'Bing',
     search: async (query, numResults = 8) => {
       try {
-        const resp = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(query)}`, {
+        const resp = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${numResults}`, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml',
             'Accept-Language': 'en-US,en;q=0.9',
           },
@@ -79,21 +169,41 @@ const FREE_SEARCH_ENGINES = {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const results = [];
-        const items = doc.querySelectorAll('li.b_algo');
+        // Bing results — try multiple selectors for different Bing layouts
+        const items = doc.querySelectorAll('li.b_algo, li.b_algo, .b_result');
         let count = 0;
         for (const li of items) {
           if (count >= numResults) break;
           const h2 = li.querySelector('h2');
-          const p = li.querySelector('p');
-          const a = h2 ? h2.querySelector('a') : null;
+          const a = h2 ? h2.querySelector('a') : li.querySelector('a[href]');
           if (a) {
+            const href = a.getAttribute('href') || '';
+            if (!href.startsWith('http')) continue;
+            // Try multiple snippet selectors
+            const snippetEl = li.querySelector('p, .b_caption p, .b_lineclamp');
             results.push({
               title: a.textContent.trim(),
-              link: a.getAttribute('href') || '',
-              snippet: p ? p.textContent.trim() : '',
+              link: href,
+              snippet: snippetEl ? snippetEl.textContent.trim() : '',
               source: 'bing',
             });
             count++;
+          }
+        }
+        // Fallback: if no results from structured parsing, try finding any links
+        if (results.length === 0) {
+          const allLinks = doc.querySelectorAll('a[href]');
+          for (const a of allLinks) {
+            if (count >= numResults) break;
+            const href = a.getAttribute('href') || '';
+            if (href.startsWith('http') && !href.includes('bing.com') && !href.includes('microsoft.com')) {
+              const h3 = a.querySelector('h3') || a.closest('h2');
+              const title = h3 ? h3.textContent.trim() : a.textContent.trim();
+              if (title && title.length > 10) {
+                results.push({ title, link: href, snippet: '', source: 'bing' });
+                count++;
+              }
+            }
           }
         }
         return results;
@@ -101,41 +211,6 @@ const FREE_SEARCH_ENGINES = {
         console.error('[S.T.E.W] Bing search error:', e);
         return [];
       }
-    }
-  },
-
-  searxng: {
-    name: 'SearXNG',
-    instances: [
-      'https://searx.be/search',
-      'https://search.mdosch.de/search',
-      'https://searx.tiekoetter.com/search',
-    ],
-    search: async (query, numResults = 8) => {
-      for (const baseUrl of this.instances) {
-        try {
-          const resp = await fetch(`${baseUrl}?q=${encodeURIComponent(query)}&format=json&categories=general&pageno=1`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-              'Accept': 'application/json',
-            },
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const results = (data.results || []).slice(0, numResults).map((r, idx) => ({
-              title: r.title || '',
-              link: r.url || r.link || '',
-              snippet: r.content || r.snippet || '',
-              source: 'searxng',
-            }));
-            if (results.length > 0) return results;
-          }
-        } catch (e) {
-          console.log(`[S.T.E.W] SearXNG instance ${baseUrl} failed:`, e);
-          continue;
-        }
-      }
-      return [];
     }
   },
 
@@ -149,13 +224,12 @@ const FREE_SEARCH_ENGINES = {
         );
         const data = await resp.json();
         const searchResults = data.query?.search || [];
-        // Fetch summary for top results
         const results = [];
         for (const r of searchResults) {
           try {
             const summaryResp = await fetch(
               `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
-              { headers: { 'Accept': 'application/json', 'User-Agent': 'S.T.E.W-Agent/1.0 (contact@erogian.com)' } }
+              { headers: { 'Accept': 'application/json' } }
             );
             if (summaryResp.ok) {
               const summary = await summaryResp.json();
@@ -174,20 +248,64 @@ const FREE_SEARCH_ENGINES = {
         return [];
       }
     }
+  },
+
+  allorigins_proxy: {
+    name: 'AllOrigins Proxy',
+    search: async (query, numResults = 8) => {
+      // Fallback: use allorigins proxy to fetch DuckDuckGo if direct fails
+      try {
+        const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(ddgUrl)}`;
+        const resp = await fetch(proxyUrl);
+        const html = await resp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const results = [];
+        const resultElements = doc.querySelectorAll('.result__body, .result');
+        let count = 0;
+        for (const el of resultElements) {
+          if (count >= numResults) break;
+          const titleEl = el.querySelector('.result__title a, .result__a');
+          const snippetEl = el.querySelector('.result__snippet');
+          if (titleEl) {
+            let link = titleEl.getAttribute('href') || '';
+            if (link.includes('uddg=')) {
+              link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]);
+            } else if (link.startsWith('//')) {
+              link = 'https:' + link;
+            }
+            results.push({
+              title: titleEl.textContent.trim(),
+              link: link,
+              snippet: snippetEl ? snippetEl.textContent.trim() : '',
+              source: 'allorigins_proxy',
+            });
+            count++;
+          }
+        }
+        return results;
+      } catch (e) {
+        console.error('[S.T.E.W] AllOrigins proxy search error:', e);
+        return [];
+      }
+    }
   }
 };
 
 // ============ MULTI-ENGINE SEARCH ============
 // Searches all free engines in parallel, merges and deduplicates results
+// Runs in the user's browser so no datacenter IP blocking
 async function freeSearch(query, numResults = 10) {
   console.log('[S.T.E.W] Free search for:', query);
+  
+  // Primary engines — run in parallel (user's browser, no IP blocking)
   const engines = [
     FREE_SEARCH_ENGINES.duckduckgo.search(query, numResults),
+    FREE_SEARCH_ENGINES.google.search(query, numResults),
     FREE_SEARCH_ENGINES.bing.search(query, numResults),
-    FREE_SEARCH_ENGINES.searxng.search(query, numResults),
   ];
 
-  // Run all in parallel
   const allResults = await Promise.allSettled(engines);
   
   // Merge and deduplicate
@@ -204,8 +322,29 @@ async function freeSearch(query, numResults = 10) {
     }
   }
 
-  // If no results from free engines, try Wikipedia
+  // If primary engines returned few results, try fallbacks
+  if (merged.length < 3) {
+    console.log('[S.T.E.W] Primary engines returned few results, trying fallbacks...');
+    const fallbacks = [
+      FREE_SEARCH_ENGINES.duckduckgo_lite.search(query, numResults),
+      FREE_SEARCH_ENGINES.allorigins_proxy.search(query, numResults),
+    ];
+    const fallbackResults = await Promise.allSettled(fallbacks);
+    for (const result of fallbackResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        for (const r of result.value) {
+          if (r.link && !seenUrls.has(r.link)) {
+            seenUrls.add(r.link);
+            merged.push(r);
+          }
+        }
+      }
+    }
+  }
+
+  // If still no results, try Wikipedia
   if (merged.length === 0) {
+    console.log('[S.T.E.W] No results from search engines, trying Wikipedia...');
     const wikiResults = await FREE_SEARCH_ENGINES.wikipedia.search(query, 5);
     merged.push(...wikiResults);
   }

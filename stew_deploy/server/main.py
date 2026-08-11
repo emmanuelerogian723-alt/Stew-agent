@@ -40,7 +40,8 @@ from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
-    record_device_fingerprint, log_security_event, get_security_dashboard
+    record_device_fingerprint, log_security_event, get_security_dashboard,
+    RISK_THRESHOLD_BLOCK, RISK_THRESHOLD_FLAG
 )
 from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
 from server.search import get_searcher
