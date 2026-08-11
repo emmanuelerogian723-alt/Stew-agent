@@ -64,6 +64,11 @@ class WebSearch:
         if result.get("organic"):
             return result
 
+        # Try 2b: DuckDuckGo via allorigins proxy (for blocked IPs like Render free tier)
+        result = self._duckduckgo_proxy_search(query, num_results)
+        if result.get("organic"):
+            return result
+
         # Try 3: DuckDuckGo Lite (different endpoint, free)
         result = self._duckduckgo_lite_search(query, num_results)
         if result.get("organic"):
@@ -230,6 +235,52 @@ class WebSearch:
             }
         except Exception as e:
             logger.warning(f"DuckDuckGo HTML error: {e}")
+            return {"organic": []}
+
+    # ── DuckDuckGo via Allorigins Proxy (for blocked IPs like Render) ──
+
+    def _duckduckgo_proxy_search(self, query: str, num_results: int) -> dict:
+        """Search via DuckDuckGo HTML through allorigins.win proxy.
+        Works from datacenter IPs that DuckDuckGo blocks directly (e.g. Render free tier)."""
+        import urllib.parse as _up
+        try:
+            ddg_url = f"https://html.duckduckgo.com/html/?q={_up.quote(query)}"
+            proxy_url = f"https://api.allorigins.win/raw?url={_up.quote(ddg_url)}"
+            resp = requests.get(proxy_url, timeout=15, headers={**BROWSER_HEADERS, **DDG_REFERER})
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            results = []
+            for r in soup.select(".result__body")[:num_results]:
+                title_tag = r.select_one(".result__title a")
+                snippet_tag = r.select_one(".result__snippet")
+                if not title_tag:
+                    continue
+                link = title_tag.get("href", "")
+                if "uddg=" in link:
+                    link = _up.unquote(link.split("uddg=")[-1].split("&")[0])
+                elif link.startswith("//"):
+                    link = "https:" + link
+                title = title_tag.get_text(strip=True)
+                snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
+                if title and link:
+                    results.append({
+                        "title": title,
+                        "link": link,
+                        "snippet": snippet,
+                        "position": len(results) + 1,
+                    })
+            logger.info(f"DuckDuckGo proxy returned {len(results)} results for: {query}")
+            return {
+                "organic": results,
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": len(results) > 0,
+                "source": "duckduckgo_proxy",
+            }
+        except Exception as e:
+            logger.warning(f"DuckDuckGo proxy error: {e}")
             return {"organic": []}
 
     # ── DuckDuckGo Lite ─────────────────────────────────────────────
