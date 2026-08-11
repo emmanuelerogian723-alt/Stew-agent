@@ -72,4 +72,4 @@ pymupdf>=1.24.0,<2.0.0
 
 # Optional: chromadb for advanced vector memory (falls back to numpy if not installed)
 # pip install chromadb
-crawl4ai>=0.9.0
+# crawl4ai removed — too heavy for Render free tier (code has graceful fallback)
