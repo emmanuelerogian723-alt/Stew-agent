@@ -13,6 +13,17 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+# Crawl4AI — LLM-friendly content extraction (works without Playwright browser)
+try:
+    from crawl4ai.content_scraping_strategy import WebScrapingStrategy
+    from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+    from crawl4ai.content_filter_strategy import PruningContentFilter
+    CRAWL4AI_AVAILABLE = True
+    logger.info("Crawl4AI available — LLM-friendly content extraction enabled")
+except ImportError:
+    CRAWL4AI_AVAILABLE = False
+    logger.info("Crawl4AI not available — using basic BeautifulSoup extraction")
+
 logger = logging.getLogger(__name__)
 
 # Detect Playwright availability
@@ -52,14 +63,15 @@ class StewBrowser:
         self.current_html: Optional[str] = None
 
     async def fetch(self, url: str, timeout: int = 20) -> dict:
-        """Fetch URL — tries Jina AI reader (free, bypasses blocks), then Playwright, then httpx."""
+        """Fetch URL with multi-fallback: Jina AI → httpx+Crawl4AI → httpx+BeautifulSoup.
+        Crawl4AI extracts LLM-friendly markdown without needing a browser."""
         # Special case: Wikipedia blocks datacenter IPs, use REST API instead
         if "wikipedia.org" in url:
             wiki_result = await self._wikipedia_fetch(url, timeout)
             if wiki_result.get("content"):
                 return wiki_result
 
-        # Method 1: Jina AI free reader — reads any URL, bypasses blocks
+        # Method 1: Jina AI reader — bypasses blocks, renders JS, works for most sites
         try:
             jina_result = await self._jina_fetch(url, timeout)
             if jina_result.get("content"):
@@ -67,15 +79,13 @@ class StewBrowser:
         except Exception as e:
             logger.warning(f"Jina reader failed for {url}: {e}")
 
-        # Method 2: Playwright (full JS rendering)
-        if PLAYWRIGHT_AVAILABLE:
-            try:
-                return await self._playwright_fetch(url, timeout)
-            except Exception as e:
-                logger.warning(f"Playwright fetch failed, falling back to httpx: {e}")
-        
-        # Method 3: httpx direct fetch
-        return await self._httpx_fetch(url, timeout)
+        # Method 2: httpx fetch + Crawl4AI content extraction (no browser needed)
+        result = await self._httpx_fetch(url, timeout)
+        if result.get("content") and CRAWL4AI_AVAILABLE:
+            enhanced = self._crawl4ai_enhance(result)
+            if enhanced:
+                return enhanced
+        return result
 
     async def _jina_fetch(self, url: str, timeout: int = 20) -> dict:
         """Fetch URL via Jina AI reader API — bypasses blocks and renders JS.
@@ -303,6 +313,55 @@ class StewBrowser:
                 return self._parse_page(html, page.url, 200)
             finally:
                 await browser.close()
+
+    def _crawl4ai_enhance(self, result: dict) -> dict | None:
+        """Enhance httpx result with Crawl4AI markdown extraction.
+        Converts raw HTML into clean, LLM-friendly markdown with proper structure."""
+        try:
+            html = result.get("content", "")
+            url = result.get("url", "")
+            if not html or len(html) < 200:
+                return None
+            
+            scraper = WebScrapingStrategy()
+            scraped = scraper.scrap(url=url, html=html)
+            
+            md_gen = DefaultMarkdownGenerator()
+            md_result = md_gen.generate_markdown(
+                input_html=scraped.cleaned_html,
+                base_url=url,
+                content_filter=PruningContentFilter(),
+            )
+            
+            # Use fit_markdown (pruned/filtered) if available, fall back to raw
+            markdown_content = md_result.fit_markdown or md_result.raw_markdown
+            if not markdown_content or len(markdown_content) < 50:
+                return None
+            
+            # Extract links from Crawl4AI result
+            links = []
+            for link in (scraped.links.internal + scraped.links.external)[:20]:
+                links.append({
+                    "text": link.text[:80] if link.text else "",
+                    "url": link.href,
+                })
+            
+            return {
+                "url": url,
+                "status": result.get("status", 200),
+                "title": result.get("title", ""),
+                "description": result.get("description", ""),
+                "content": markdown_content[:8000],
+                "markdown": markdown_content[:8000],
+                "links": links,
+                "forms": result.get("forms", []),
+                "word_count": len(markdown_content.split()),
+                "rendered": False,
+                "source": "crawl4ai",
+            }
+        except Exception as e:
+            logger.warning(f"Crawl4AI enhance error: {e}")
+            return None
 
     def _parse_page(self, html: str, url: str, status: int) -> dict:
         """Extract structured content from HTML."""
