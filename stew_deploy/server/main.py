@@ -2227,8 +2227,8 @@ async def deep_research(
 
     if user.plan == "free":
         # Check API quota
-        today_count = await _count_today_calls(db, user.id)
-        if today_count >= 500:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
             raise HTTPException(429, "Daily free-tier limit reached (500 calls)")
 
     searcher = get_searcher()
