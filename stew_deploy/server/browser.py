@@ -52,19 +52,77 @@ class StewBrowser:
         self.current_html: Optional[str] = None
 
     async def fetch(self, url: str, timeout: int = 20) -> dict:
-        """Fetch URL — uses Playwright if available, else httpx."""
+        """Fetch URL — tries Jina AI reader (free, bypasses blocks), then Playwright, then httpx."""
         # Special case: Wikipedia blocks datacenter IPs, use REST API instead
         if "wikipedia.org" in url:
             wiki_result = await self._wikipedia_fetch(url, timeout)
             if wiki_result.get("content"):
                 return wiki_result
 
+        # Method 1: Jina AI free reader — reads any URL, bypasses blocks
+        try:
+            jina_result = await self._jina_fetch(url, timeout)
+            if jina_result.get("content"):
+                return jina_result
+        except Exception as e:
+            logger.warning(f"Jina reader failed for {url}: {e}")
+
+        # Method 2: Playwright (full JS rendering)
         if PLAYWRIGHT_AVAILABLE:
             try:
                 return await self._playwright_fetch(url, timeout)
             except Exception as e:
                 logger.warning(f"Playwright fetch failed, falling back to httpx: {e}")
+        
+        # Method 3: httpx direct fetch
         return await self._httpx_fetch(url, timeout)
+
+    async def _jina_fetch(self, url: str, timeout: int = 20) -> dict:
+        """Fetch URL via Jina AI free reader API — bypasses blocks and renders JS."""
+        import httpx as _httpx
+        jina_url = f"https://r.jina.ai/{url}"
+        headers = {
+            "Accept": "text/plain",
+            "User-Agent": "S.T.E.W-Agent/6.0 (https://stew-agent.onrender.com; contact@erogian.com)",
+        }
+        async with _httpx.AsyncClient(timeout=timeout + 10, follow_redirects=True) as client:
+            resp = await client.get(jina_url, headers=headers)
+            if resp.status_code == 200 and len(resp.text) > 100:
+                text = resp.text
+                # Extract title from Jina's format
+                title_match = re.search(r'^Title:\s*(.+)', text, re.MULTILINE)
+                title = title_match.group(1).strip() if title_match else url
+                
+                # Clean up Jina metadata
+                lines = text.split('\n')
+                content_lines = []
+                skip_metadata = True
+                for line in lines:
+                    if skip_metadata:
+                        if line.strip() == '' and len(content_lines) == 0:
+                            continue
+                        if line.startswith('Title:') or line.startswith('URL:') or line.startswith('Markdown Content:'):
+                            continue
+                        skip_metadata = False
+                    content_lines.append(line)
+                
+                content = '\n'.join(content_lines).strip()
+                if not content:
+                    content = text[:8000]
+                
+                return {
+                    "url": url,
+                    "status": 200,
+                    "title": title,
+                    "description": "",
+                    "content": content[:8000],
+                    "links": [],
+                    "forms": [],
+                    "word_count": len(content.split()),
+                    "rendered": True,
+                    "source": "jina_ai_reader",
+                }
+        return {}
 
     async def _wikipedia_fetch(self, url: str, timeout: int = 20) -> dict:
         """Fetch Wikipedia content via REST API (bypasses IP blocks)."""

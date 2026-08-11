@@ -1389,8 +1389,13 @@ async def gen_pdf(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
     result = generate_pdf(body.content, body.title)
-    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/pdf", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/pdf", "POST", 0, 200)
     return result
 
 
@@ -1401,8 +1406,13 @@ async def gen_docx(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
     result = generate_docx(body.content, body.title)
-    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/docx", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/docx", "POST", 0, 200)
     return result
 
 
@@ -1413,8 +1423,13 @@ async def gen_xlsx(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
     result = generate_xlsx(body.data, body.sheet_name, body.title)
-    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/xlsx", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/xlsx", "POST", 0, 200)
     return result
 
 
@@ -1425,8 +1440,13 @@ async def gen_pptx(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
     result = generate_pptx(body.slides, body.title)
-    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/pptx", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/pptx", "POST", 0, 200)
     return result
 
 
@@ -1437,8 +1457,13 @@ async def gen_html(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
     result = generate_html(body.content, body.title)
-    background_tasks.add_task(_log_call, db, user.id if user else None, "/generate/html", "POST", 0, 200)
+    background_tasks.add_task(_log_call, db, user.id, "/generate/html", "POST", 0, 200)
     return result
 
 
@@ -2322,6 +2347,8 @@ SEARCH CONTEXT:
 
 # ── Telegram Webhook ───────────────────────────────────────────────────────────
 
+# ── Telegram Webhook ───────────────────────────────────────────────────────────
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Receive Telegram messages and reply via S.T.E.W."""
@@ -2339,6 +2366,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     chat_id = msg["chat_id"]
     user_text = msg["text"]
     username = msg.get("username") or msg.get("first_name", "User")
+    user_lower = user_text.lower()
 
     # Show typing
     await bot.send_typing(chat_id)
@@ -2364,7 +2392,6 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             logger.warning(f"Telegram DB attempt {_attempt+1} failed: {db_err}")
             await db.rollback()
             if _attempt == 2:
-                # Last attempt failed — send error to user
                 await bot.send_message(chat_id, "I'm experiencing high traffic. Please try again in a moment.")
                 return {"ok": True}
             await asyncio.sleep(0.5)
@@ -2372,20 +2399,248 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     # Handle /start command
     if user_text.startswith("/start"):
         welcome = (
-            f"👋 Hello {username}! I'm *S.T.E.W* — Smart Thinking Executive Worker.\n\n"
+            f"Hello {username}! I'm S.T.E.W — Smart Thinking Executive Worker.\n\n"
             "I can:\n"
-            "🔍 Search the web\n"
-            "📄 Generate PDF, Word, Excel, PowerPoint\n"
-            "💻 Write & review code\n"
-            "🤖 Automate tasks\n"
-            "📊 Analyze data\n\n"
-            f"Your API key: `{tg_user.api_key}`\n\n"
+            "1. Search the web (real Google results)\n"
+            "2. Generate images (just say 'generate image of...')\n"
+            "3. Create PDF, Word, Excel, PowerPoint documents\n"
+            "4. Write and review code\n"
+            "5. Browse any URL and summarize it\n"
+            "6. Analyze data\n\n"
+            f"Your API key: {tg_user.api_key}\n\n"
             "Just send me any message or question to get started!"
         )
         await bot.send_message(chat_id, welcome)
         return {"ok": True}
 
-    # Regular message — run through S.T.E.W with LIVE status updates
+    # Handle /help command
+    if user_text.startswith("/help"):
+        help_text = (
+            "S.T.E.W Commands:\n\n"
+            "1. Search: just ask any question\n"
+            "2. Generate image: 'generate image of a sunset over Lagos'\n"
+            "3. Create PDF: 'make a PDF about business plan for bakery'\n"
+            "4. Create Word: 'create a Word document about marketing strategy'\n"
+            "5. Create Excel: 'make a spreadsheet of monthly expenses'\n"
+            "6. Create PowerPoint: 'create a presentation about AI trends'\n"
+            "7. Browse URL: 'browse https://example.com'\n"
+            "8. Research: 'research the latest AI news'\n\n"
+            "Just talk to me naturally — I understand what you need!"
+        )
+        await bot.send_message(chat_id, help_text)
+        return {"ok": True}
+
+    # ── IMAGE GENERATION ──────────────────────────────────────────────────────
+    image_keywords = ["generate image", "create image", "draw", "make an image",
+                      "generate an image", "create an image", "make a picture",
+                      "generate a picture", "create a picture", "ai image",
+                      "image of", "picture of"]
+    is_image_request = any(kw in user_lower for kw in image_keywords)
+
+    if is_image_request:
+        # Extract the actual prompt from the message
+        image_prompt = user_text
+        for kw in image_keywords:
+            if kw in user_lower:
+                idx = user_lower.index(kw) + len(kw)
+                image_prompt = user_text[idx:].strip()
+                break
+        if not image_prompt or len(image_prompt) < 3:
+            image_prompt = user_text  # fallback to full text
+
+        await bot.send_message(chat_id, f"Generating image: {image_prompt[:100]}...")
+        await bot.send_chat_action(chat_id, "upload_photo")
+
+        try:
+            import httpx as _httpx
+            import urllib.parse as _urlparse
+            import random as _random
+            encoded = _urlparse.quote(image_prompt, safe='')
+            image_bytes = None
+            async with _httpx.AsyncClient(timeout=90, follow_redirects=True) as http:
+                for attempt in range(3):
+                    seed = _random.randint(1, 999999)
+                    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
+                    try:
+                        resp = await http.get(url)
+                        if resp.status_code == 200 and len(resp.content) > 2000:
+                            image_bytes = resp.content
+                            break
+                        else:
+                            logger.warning(f"TG image gen attempt {attempt+1}: status={resp.status_code} size={len(resp.content)}")
+                    except Exception as e:
+                        logger.warning(f"TG image gen attempt {attempt+1} error: {e}")
+
+            if image_bytes:
+                await bot.send_photo(chat_id, image_bytes,
+                    caption=f"Generated by S.T.E.W\nPrompt: {image_prompt[:200]}")
+            else:
+                await bot.send_message(chat_id, "Sorry, image generation failed after 3 attempts. The free image service may be busy. Please try again in a moment.")
+        except Exception as e:
+            logger.error(f"Telegram image generation error: {e}")
+            await bot.send_message(chat_id, f"Image generation error: {str(e)[:200]}")
+        return {"ok": True}
+
+    # ── DOCUMENT GENERATION ───────────────────────────────────────────────────
+    doc_keywords = {
+        "pdf": ["make a pdf", "create a pdf", "generate a pdf", "make pdf", "create pdf",
+                "generate pdf", "pdf of", "pdf about", "pdf for", "convert to pdf"],
+        "docx": ["make a word", "create a word", "generate a word", "make word",
+                 "create word", "generate word", "word document", "word doc",
+                 "docx of", "docx about", "make a docx", "create a docx"],
+        "xlsx": ["make a spreadsheet", "create a spreadsheet", "generate a spreadsheet",
+                 "make an excel", "create an excel", "generate an excel",
+                 "make excel", "create excel", "xlsx of", "make a xlsx",
+                 "create a xlsx", "spreadsheet of"],
+        "pptx": ["make a powerpoint", "create a powerpoint", "generate a powerpoint",
+                 "make a presentation", "create a presentation", "generate a presentation",
+                 "make presentation", "create presentation", "pptx of",
+                 "slides about", "slides for"],
+    }
+
+    doc_type = None
+    doc_topic = ""
+    for dtype, keywords in doc_keywords.items():
+        for kw in keywords:
+            if kw in user_lower:
+                doc_type = dtype
+                idx = user_lower.index(kw) + len(kw)
+                doc_topic = user_text[idx:].strip().rstrip(".")
+                if not doc_topic:
+                    # Try extracting "about X" or "of X" pattern
+                    for prefix in ["about ", "of ", "for ", "on "]:
+                        if user_lower.startswith(prefix):
+                            doc_topic = user_text[len(prefix):].strip()
+                break
+        if doc_type:
+            break
+
+    if doc_type:
+        if not doc_topic or len(doc_topic) < 3:
+            doc_topic = user_text  # fallback
+
+        await bot.send_message(chat_id, f"Creating {doc_type.upper()} about: {doc_topic[:100]}...")
+        await bot.send_chat_action(chat_id, "upload_document")
+
+        try:
+            llm = get_llm_client()
+            # Generate content with LLM first
+            if doc_type == "xlsx":
+                # For spreadsheets, ask LLM for structured data
+                system_prompt = "You are a data analyst. Generate structured spreadsheet data as a JSON array of objects. Return ONLY valid JSON, no explanation."
+                user_msg = f"Create spreadsheet data about: {doc_topic}. Return an array of 5-15 row objects with appropriate column names. Return ONLY the JSON array."
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages)
+                content = clean_response(result["content"])
+
+                # Parse JSON from response
+                import json as _json
+                import re as _re
+                json_match = _re.search(r'\[.*\]', content, _re.DOTALL)
+                if json_match:
+                    try:
+                        data = _json.loads(json_match.group())
+                    except:
+                        data = [{"Info": "Could not parse data", "Topic": doc_topic}]
+                else:
+                    data = [{"Topic": doc_topic, "Status": "Generated by S.T.E.W", "Date": datetime.now().strftime("%Y-%m-%d")}]
+
+                doc_result = generate_xlsx(data, "Sheet1", doc_topic)
+            elif doc_type == "pptx":
+                # For presentations, ask LLM for slide structure
+                system_prompt = "You are a presentation designer. Generate slides as a JSON array. Each slide has 'title' and 'content' fields. Return ONLY valid JSON."
+                user_msg = f"Create a 5-8 slide presentation about: {doc_topic}. Return as JSON array of slides with title and content fields."
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages)
+                content = clean_response(result["content"])
+
+                import json as _json
+                import re as _re
+                json_match = _re.search(r'\[.*\]', content, _re.DOTALL)
+                if json_match:
+                    try:
+                        slides = _json.loads(json_match.group())
+                    except:
+                        slides = [{"title": doc_topic, "content": "Generated by S.T.E.W"}]
+                else:
+                    slides = [{"title": doc_topic, "content": "Generated by S.T.E.W Agent"}]
+
+                doc_result = generate_pptx(slides, doc_topic)
+            else:
+                # For PDF and DOCX, generate text content
+                system_prompt = f"You are a professional writer. Create a well-structured, detailed document about: {doc_topic}. Use markdown formatting with # for headings, ## for subheadings, - for bullet points. Make it comprehensive and professional."
+                user_msg = f"Write a complete, detailed document about: {doc_topic}. Include an introduction, main sections with headings, and a conclusion."
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages)
+                content = clean_response(result["content"])
+
+                if doc_type == "pdf":
+                    doc_result = generate_pdf(content, doc_topic)
+                elif doc_type == "docx":
+                    doc_result = generate_docx(content, doc_topic)
+                else:
+                    doc_result = generate_html(content, doc_topic)
+
+            # Decode base64 and send the file
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                filename = doc_result.get("filename", f"stew_{doc_type}_{datetime.now().strftime('%Y%m%d')}.{doc_type}")
+                caption = f"S.T.E.W generated {doc_type.upper()}\nTopic: {doc_topic[:200]}"
+                await bot.send_document(chat_id, file_bytes, filename, caption)
+            else:
+                await bot.send_message(chat_id, f"Failed to generate {doc_type.upper()}. Please try again.")
+        except Exception as e:
+            logger.error(f"Telegram document generation error: {e}")
+            await bot.send_message(chat_id, f"Document generation error: {str(e)[:200]}")
+        return {"ok": True}
+
+    # ── BROWSE URL REQUEST ─────────────────────────────────────────────────────
+    browse_keywords = ["browse ", "open ", "read ", "visit ", "summarize this url", "check this site"]
+    is_browse_request = any(user_lower.startswith(kw) for kw in browse_keywords) and "http" in user_lower
+
+    if is_browse_request:
+        # Extract URL
+        import re as _re
+        url_match = _re.search(r'https?://[^\s]+', user_text)
+        if url_match:
+            target_url = url_match.group()
+            await bot.send_message(chat_id, f"Reading: {target_url}")
+            await bot.send_typing(chat_id)
+            try:
+                from server.browser import get_browser
+                browser = get_browser()
+                page = await browser.fetch(target_url, timeout=25)
+                if page.get("content"):
+                    # Summarize the page
+                    llm = get_llm_client()
+                    system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Summarize the browsed page concisely for mobile."
+                    page_content = page.get("content", "")[:6000]
+                    page_title = page.get("title", "Unknown")
+                    messages = [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": f"Summarize this page:\n\nTitle: {page_title}\nURL: {target_url}\n\nContent:\n{page_content}"},
+                    ]
+                    result = await asyncio.to_thread(llm.chat, messages)
+                    reply = clean_response(result["content"])
+                    await bot.send_message(chat_id, f"Page: {page_title}\n\n{reply}")
+                else:
+                    await bot.send_message(chat_id, f"Could not read {target_url}. The site may be blocking automated access.")
+            except Exception as e:
+                logger.error(f"Telegram browse error: {e}")
+                await bot.send_message(chat_id, f"Error browsing: {str(e)[:200]}")
+            return {"ok": True}
+
+    # ── REGULAR CHAT WITH SEARCH + RESEARCH ────────────────────────────────────
     llm = get_llm_client()
     searcher = get_searcher()
 
@@ -2393,60 +2648,59 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
 
     # Detect if search is needed
-    needs_search = any(kw in user_text.lower() for kw in [
+    needs_search = any(kw in user_lower for kw in [
         "latest", "current", "today", "news", "score", "price",
         "weather", "stock", "search", "find", "what is", "who is",
-        "best", "top", "how to", "when", "where", "which", "compare"
+        "best", "top", "how to", "when", "where", "which", "compare",
+        "happened", "update", "recent", "2024", "2025", "2026",
+        "naira", "dollar", "bitcoin", "crypto", "exchange rate",
     ])
     # Detect research requests
     tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze", "deep dive"]
-    needs_research = any(kw in user_text.lower() for kw in tg_research_kw)
+    needs_research = any(kw in user_lower for kw in tg_research_kw)
 
     if needs_research:
-        # LIVE STATUS: Research mode
-        await bot.send_message(chat_id, f"🔬 *Starting deep research on:* {user_text[:100]}")
+        await bot.send_message(chat_id, f"Starting deep research on: {user_text[:100]}")
         await bot.send_typing(chat_id)
         try:
-            await bot.send_message(chat_id, "🔍 Searching multiple sources...")
+            await bot.send_message(chat_id, "Searching multiple sources...")
             await bot.send_typing(chat_id)
             research_results = await asyncio.to_thread(searcher.stew_extension_research, user_text, 3)
             if research_results.get("grounded") and research_results.get("report"):
                 num_sources = len(research_results.get("organic", []))
-                await bot.send_message(chat_id, f"📊 Found {num_sources} sources. Analyzing content...")
+                await bot.send_message(chat_id, f"Found {num_sources} sources. Analyzing content...")
                 await bot.send_typing(chat_id)
-                # Fetch and show source pages
                 pages = research_results.get("pages", [])
                 if pages:
                     for i, page in enumerate(pages[:3], 1):
                         title = page.get("title", "Source")[:60]
-                        await bot.send_message(chat_id, f"📄 Reading source {i}/{min(len(pages),3)}: {title}")
+                        await bot.send_message(chat_id, f"Reading source {i}/{min(len(pages),3)}: {title}")
                         await bot.send_typing(chat_id)
                 system += f"\n\nRESEARCH CONTEXT:\n{research_results['report']}"
                 web_grounded = True
-                await bot.send_message(chat_id, "✍️ Generating comprehensive response...")
+                await bot.send_message(chat_id, "Generating comprehensive response...")
                 await bot.send_typing(chat_id)
         except Exception as e:
             logger.warning(f"Telegram research failed: {e}")
-            await bot.send_message(chat_id, "⚠️ Research encountered an issue, proceeding with available data...")
+            await bot.send_message(chat_id, "Research encountered an issue, proceeding with available data...")
             await bot.send_typing(chat_id)
     elif needs_search:
-        # LIVE STATUS: Search mode
-        await bot.send_message(chat_id, f"🔍 Searching the web for: {user_text[:80]}")
+        await bot.send_message(chat_id, f"Searching the web for: {user_text[:80]}")
         await bot.send_typing(chat_id)
         try:
             search_results = await asyncio.to_thread(searcher.search, user_text, 5)
             if not search_results.get("grounded"):
-                await bot.send_message(chat_id, "🔄 Trying browser extension fallback...")
+                await bot.send_message(chat_id, "Trying alternative search...")
                 await bot.send_typing(chat_id)
                 search_results = await asyncio.to_thread(searcher.stew_extension_search, user_text, 5)
             if search_results.get("grounded"):
                 num_results = len(search_results.get("organic", []))
-                await bot.send_message(chat_id, f"📊 Found {num_results} results. Analyzing...")
+                await bot.send_message(chat_id, f"Found {num_results} results. Analyzing...")
                 await bot.send_typing(chat_id)
                 context = searcher.format_results_for_llm(search_results)
                 system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
                 web_grounded = True
-                await bot.send_message(chat_id, "✍️ Generating response...")
+                await bot.send_message(chat_id, "Generating response...")
                 await bot.send_typing(chat_id)
         except Exception as e:
             logger.warning(f"Telegram search failed: {e}")
@@ -2459,7 +2713,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             except Exception as e2:
                 logger.warning(f"Telegram browser extension search failed: {e2}")
 
-    # Reuse the most recent conversation for this Telegram user (persists chat context)
+    # Reuse the most recent conversation for this Telegram user
     from sqlalchemy import select as _sel
     _conv_q = await db.execute(
         _sel(Conversation).where(Conversation.user_id == tg_user.id)
@@ -2468,24 +2722,20 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     _existing_conv = _conv_q.scalar_one_or_none()
     conv = _existing_conv if _existing_conv else await get_or_create_conversation(db, tg_user.id, None)
 
-    # Retrieve relevant past memories across all Telegram sessions
     recalled_tg = await get_relevant_context(tg_user.id, user_text, platform="telegram")
     await append_message(db, conv, "user", user_text, platform="telegram")
     messages = build_llm_messages(conv, system, recalled_tg)
 
     try:
-        # Run LLM in a thread so we don't block the event loop = faster responses
         result = await asyncio.to_thread(llm.chat, messages)
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
-        # Send as plain text (not Markdown) to avoid Telegram formatting errors
         await bot.send_message(chat_id, reply, parse_mode="")
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
         await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")
 
     return {"ok": True}
-
 
 
 @app.get("/telegram/status")

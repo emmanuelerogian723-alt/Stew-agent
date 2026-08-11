@@ -1,9 +1,6 @@
 // S.T.E.W Browser Agent — Popup Script
 document.addEventListener('DOMContentLoaded', async () => {
-  // Check server status
   checkStatus();
-  
-  // Load settings
   loadSettings();
   
   // Tab switching
@@ -41,39 +38,40 @@ document.addEventListener('DOMContentLoaded', async () => {
             chrome.tabs.sendMessage(tabs[0].id, { type: 'inject_sidebar' });
           });
         });
-      } else if (action === 'google_search') {
-        // Prompt for search query
-        const query = prompt('Enter your Google search query:');
+      } else if (action === 'search') {
+        const query = prompt('Enter your search query:');
         if (query) {
-          addChatMessage('user', `🔍 Google: ${query}`);
+          addChatMessage('user', '🔍 Search: ' + query);
           chrome.runtime.sendMessage({
-            type: 'agent_action',
-            action: 'google_search',
-            params: { query },
-            tabId: null
+            type: 'search',
+            query: query,
+            num: 10
           }, (response) => {
-            if (response?.success) {
-              addChatMessage('agent', response.result?.slice(0, 1000) || 'Search complete');
+            if (response && response.success && response.results) {
+              let text = 'Found ' + response.results.length + ' results:\n\n';
+              response.results.forEach((r, i) => {
+                text += (i+1) + '. ' + (r.title || 'Untitled') + '\n   ' + (r.link || '') + '\n   ' + (r.snippet || '') + '\n\n';
+              });
+              addChatMessage('agent', text.slice(0, 3000));
             } else {
-              addChatMessage('agent', 'Search failed. Make sure S.T.E.W server is running.');
+              addChatMessage('agent', 'Search failed or returned no results.');
             }
           });
         }
       } else if (action === 'browse') {
-        // Prompt for URL
         const url = prompt('Enter URL to browse:');
         if (url) {
-          addChatMessage('user', `🌐 Browsing: ${url}`);
+          addChatMessage('user', '🌐 Browsing: ' + url);
           chrome.runtime.sendMessage({
             type: 'browse_page',
             url: url
           }, (response) => {
-            if (response?.success) {
+            if (response && response.success) {
               const title = response.title || 'Untitled';
               const content = response.content || '';
-              addChatMessage('agent', `📄 ${title}\n\n${content.slice(0, 800)}`);
+              addChatMessage('agent', '📄 ' + title + '\n\n' + content.slice(0, 1500));
             } else {
-              addChatMessage('agent', 'Browse failed. Check the URL and try again.');
+              addChatMessage('agent', 'Browse failed: ' + (response?.error || 'Could not read the page. The site may be blocking automated access.'));
             }
           });
         }
@@ -86,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Clear memory
   document.getElementById('clear-memory').addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'clear_memory' }, (response) => {
-      if (response?.success) {
+      if (response && response.success) {
         loadMemory();
       }
     });
@@ -102,7 +100,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
   
-  // Load memory initially
   loadMemory();
 });
 
@@ -122,20 +119,17 @@ async function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   
-  // Show user message
   addChatMessage('user', text);
   input.value = '';
   
-  // Send to S.T.E.W
   chrome.runtime.sendMessage({
     type: 'chat',
-    message: text,
-    userId: 'stew_extension'
+    message: text
   }, (response) => {
-    if (response?.success) {
+    if (response && response.success) {
       addChatMessage('agent', response.response);
     } else {
-      addChatMessage('agent', 'Error: Could not get response from S.T.E.W server.');
+      addChatMessage('agent', 'Error: Could not get response. Check that the S.T.E.W server is running and your API key is set in Settings.');
     }
   });
 }
@@ -153,7 +147,7 @@ function addChatMessage(role, text) {
 }
 
 function executeAction(action) {
-  addChatMessage('user', `Executing: ${action}`);
+  addChatMessage('user', 'Executing: ' + action);
   
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.runtime.sendMessage({
@@ -162,17 +156,17 @@ function executeAction(action) {
       tabId: tabs[0].id,
       params: {}
     }, (response) => {
-      if (response?.success) {
-        addChatMessage('agent', response.result?.slice(0, 500) || 'Done');
+      if (response && response.success) {
+        addChatMessage('agent', (response.result || 'Done').toString().slice(0, 800));
       } else {
-        addChatMessage('agent', 'Action failed. Check console for details.');
+        addChatMessage('agent', 'Action failed. Check that the S.T.E.W server is running.');
       }
     });
   });
 }
 
 function displayResult(message) {
-  addChatMessage('agent', `[${message.action}] ${message.result?.slice(0, 500) || 'Done'}`);
+  addChatMessage('agent', '[' + message.action + '] ' + (message.result || 'Done').toString().slice(0, 800));
 }
 
 async function loadSettings() {
@@ -180,6 +174,7 @@ async function loadSettings() {
     const s = result.stew_settings || {};
     document.getElementById('setting-server').value = s.serverUrl || 'https://stew-agent.onrender.com';
     document.getElementById('setting-apikey').value = s.apiKey || '';
+    document.getElementById('setting-freesearch').checked = s.useFreeSearch !== false;
     document.getElementById('setting-autosummarize').checked = s.autoSummarize || false;
     document.getElementById('setting-memory').checked = s.memoryEnabled !== false;
     document.getElementById('setting-delay').checked = s.humanLikeDelay !== false;
@@ -190,7 +185,8 @@ async function loadSettings() {
 async function saveSettings() {
   const settings = {
     serverUrl: document.getElementById('setting-server').value || 'https://stew-agent.onrender.com',
-    apiKey: document.getElementById('setting-apikey').value || 'stew_extension_default',
+    apiKey: document.getElementById('setting-apikey').value || '',
+    useFreeSearch: document.getElementById('setting-freesearch').checked,
     autoSummarize: document.getElementById('setting-autosummarize').checked,
     memoryEnabled: document.getElementById('setting-memory').checked,
     humanLikeDelay: document.getElementById('setting-delay').checked,
@@ -210,18 +206,17 @@ async function saveSettings() {
 async function loadMemory() {
   chrome.runtime.sendMessage({ type: 'get_memory', limit: 20 }, (response) => {
     const list = document.getElementById('memory-list');
-    if (!response?.memory || response.memory.length === 0) return;
+    if (!response || !response.memory || response.memory.length === 0) return;
     
     list.innerHTML = '';
     for (const item of response.memory) {
       const div = document.createElement('div');
       div.className = 'memory-item';
       const date = new Date(item.timestamp).toLocaleString();
-      div.innerHTML = `
-        <div class="memory-item-title">${item.type}: ${item.key?.slice(0, 60) || 'Untitled'}</div>
-        <div class="memory-item-desc">${JSON.stringify(item.value).slice(0, 120)}...</div>
-        <div class="memory-item-time">${date}</div>
-      `;
+      div.innerHTML = 
+        '<div class="memory-item-title">' + (item.type || 'general') + ': ' + (item.key || 'Untitled').toString().slice(0, 60) + '</div>' +
+        '<div class="memory-item-desc">' + JSON.stringify(item.value).slice(0, 120) + '...</div>' +
+        '<div class="memory-item-time">' + date + '</div>';
       list.appendChild(div);
     }
   });

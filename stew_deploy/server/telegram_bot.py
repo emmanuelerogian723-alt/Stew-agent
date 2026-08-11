@@ -43,11 +43,32 @@ class TelegramBot:
     async def send_document(self, chat_id: int, file_bytes: bytes,
                             filename: str, caption: str = "") -> dict:
         """Send a file to a Telegram chat."""
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
                 f"{self.base}/sendDocument",
-                data={"chat_id": str(chat_id), "caption": caption},
+                data={"chat_id": str(chat_id), "caption": caption[:1024]},
                 files={"document": (filename, file_bytes)},
+            )
+            return resp.json()
+
+    async def send_photo(self, chat_id: int, photo_bytes: bytes,
+                         caption: str = "", filename: str = "image.jpg") -> dict:
+        """Send a photo (raw bytes) to a Telegram chat."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.base}/sendPhoto",
+                data={"chat_id": str(chat_id), "caption": caption[:1024]},
+                files={"photo": (filename, photo_bytes, "image/jpeg")},
+            )
+            return resp.json()
+
+    async def send_photo_url(self, chat_id: int, photo_url: str,
+                             caption: str = "") -> dict:
+        """Send a photo by URL to a Telegram chat."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{self.base}/sendPhoto",
+                json={"chat_id": chat_id, "photo": photo_url, "caption": caption[:1024]},
             )
             return resp.json()
 
@@ -76,6 +97,14 @@ class TelegramBot:
             await client.post(
                 f"{self.base}/sendChatAction",
                 json={"chat_id": chat_id, "action": "typing"},
+            )
+
+    async def send_chat_action(self, chat_id: int, action: str = "typing"):
+        """Send a chat action (typing, upload_photo, upload_document)."""
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"{self.base}/sendChatAction",
+                json={"chat_id": chat_id, "action": action},
             )
 
     def parse_update(self, data: dict) -> Optional[dict]:

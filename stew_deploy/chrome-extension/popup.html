@@ -27,30 +27,40 @@
 
   <div class="tab-content" id="tab-chat">
     <div class="chat-history" id="chat-history">
-      <div class="chat-empty">Ask S.T.E.W anything or describe a task to automate on the current page.</div>
+      <div class="chat-empty">Ask S.T.E.W anything, search the web, or describe a task to automate on the current page.</div>
     </div>
     <div class="chat-input-area">
-      <textarea id="chat-input" placeholder="Type your message or task..." rows="2"></textarea>
+      <textarea id="chat-input" placeholder="Type your message, search query, or task..." rows="2"></textarea>
       <button id="chat-send" class="btn-primary">Send</button>
     </div>
   </div>
 
   <div class="tab-content hidden" id="tab-actions">
     <div class="action-grid">
+      <button class="action-card" data-action="search">
+        <div class="action-icon">🔍</div>
+        <div class="action-title">Web Search</div>
+        <div class="action-desc">Search DuckDuckGo, Bing, SearXNG (free)</div>
+      </button>
+      <button class="action-card" data-action="browse">
+        <div class="action-icon">🌐</div>
+        <div class="action-title">Browse URL</div>
+        <div class="action-desc">Read any web page and extract content</div>
+      </button>
       <button class="action-card" data-action="summarize">
         <div class="action-icon">📄</div>
         <div class="action-title">Summarize Page</div>
         <div class="action-desc">Get an AI summary of the current page</div>
       </button>
       <button class="action-card" data-action="extract">
-        <div class="action-icon">🔍</div>
+        <div class="action-icon">📊</div>
         <div class="action-title">Extract Info</div>
         <div class="action-desc">Pull key facts, contacts, and data</div>
       </button>
       <button class="action-card" data-action="research">
         <div class="action-icon">🔬</div>
-        <div class="action-title">Research Topic</div>
-        <div class="action-desc">Deep-dive on a selected topic</div>
+        <div class="action-title">Deep Research</div>
+        <div class="action-desc">Multi-source deep dive on any topic</div>
       </button>
       <button class="action-card" data-action="automate">
         <div class="action-icon">🤖</div>
@@ -85,8 +95,13 @@
       <input type="text" id="setting-server" placeholder="https://stew-agent.onrender.com">
     </div>
     <div class="setting-row">
-      <label>API Key</label>
-      <input type="password" id="setting-apikey" placeholder="stew_extension_default">
+      <label>API Key (optional — for AI features)</label>
+      <input type="password" id="setting-apikey" placeholder="Enter your stew_ API key">
+    </div>
+    <div class="setting-row">
+      <label>Use built-in free search</label>
+      <input type="checkbox" id="setting-freesearch" checked>
+      <small style="display:block;color:#888;font-size:11px;margin-top:4px;">Search works without API key using DuckDuckGo + Bing + SearXNG</small>
     </div>
     <div class="setting-row">
       <label>Auto-summarize pages</label>

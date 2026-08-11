@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "S.T.E.W Browser Agent",
-  "version": "1.0.0",
-  "description": "AI-powered browser agent that browses, understands, and automates web tasks like a human. Free & open-source.",
+  "version": "2.0.0",
+  "description": "AI-powered browser agent with free built-in search (DuckDuckGo, Bing, SearXNG). Browses, reads, and automates web tasks. Free & open-source.",
   "permissions": [
     "tabs",
     "scripting",
@@ -30,9 +30,15 @@
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -43,8 +49,14 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sidebar.html", "sidebar.js", "sidebar.css"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "sidebar.html",
+        "sidebar.js",
+        "sidebar.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
