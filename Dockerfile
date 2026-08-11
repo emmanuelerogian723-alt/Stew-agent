@@ -18,14 +18,12 @@ COPY stew_deploy/requirements.txt .
 RUN pip install --upgrade pip --quiet && \
     pip install --no-cache-dir -r requirements.txt --quiet
 
-# No Playwright — using BeautifulSoup + trafilatura for web scraping instead
-
+# stew_deploy/ is the SINGLE SOURCE OF TRUTH for all HTML/static assets.
+# Do NOT add COPY lines from the repo root — that previously caused stale
+# root-level landing.html/dashboard.html (missing Google Sign-In + device
+# fingerprinting) to silently overwrite the correct files on every deploy.
 COPY stew_deploy/ .
-COPY landing.html /app/landing.html
-COPY dashboard.html /app/dashboard.html
-COPY robots.txt /app/robots.txt
-COPY sitemap.xml /app/sitemap.xml
-COPY stew_playground.html /app/stew_playground.html
+COPY stew_deploy/playground.html /app/stew_playground.html
 
 RUN mkdir -p memory/data output logs workspace screenshots uploads
 

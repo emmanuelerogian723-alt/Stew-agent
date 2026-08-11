@@ -301,6 +301,15 @@ const fbAuth = firebase.auth();
       <button class="auth-btn" id="regBtn" onclick="doRegister()">Create Free Account →</button>
       <div class="auth-err" id="regErr"></div>
     </div>
+    <div style="display:flex;align-items:center;gap:10px;margin:12px 0">
+      <div style="flex:1;height:1px;background:rgba(255,255,255,.1)"></div>
+      <span style="font-size:11px;color:var(--p);font-weight:600">OR</span>
+      <div style="flex:1;height:1px;background:rgba(255,255,255,.1)"></div>
+    </div>
+    <button class="auth-btn" id="googleBtn" onclick="doGoogleLogin()" style="background:#fff;color:#333;display:flex;align-items:center;justify-content:center;gap:8px">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
+      Continue with Google
+    </button>
     <div class="auth-hint">By signing in, you agree to the S.T.E.W Terms of Service and Privacy Policy.</div>
   </div>
 </div>
@@ -878,7 +887,7 @@ async function doLogin(){
     // Step 2: Backend auth with Firebase token
     const resp = await fetch(API+'/auth/firebase',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id_token:idToken,name:fbUser.displayName||email.split('@')[0],email:email})
+      body:JSON.stringify({id_token:idToken,name:fbUser.displayName||email.split('@')[0],email:email,...collectFingerprint()})
     });
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Login failed');
@@ -886,6 +895,7 @@ async function doLogin(){
     user = {id:data.user_id,email,plan:data.plan,api_key:data.api_key,name:data.name||fbUser.displayName||''};
     saveSession(data.access_token,user,data.api_key);
     localStorage.setItem('stew_firebase_uid',fbUser.uid);
+    submitFingerprint(apiKey);
     showDashboard();
     toast('Welcome back!');
   }catch(e){
@@ -918,7 +928,7 @@ async function doRegister(){
     // Step 2: Register with backend using Firebase token
     const resp = await fetch(API+'/auth/firebase',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id_token:idToken,name:name,email:email})
+      body:JSON.stringify({id_token:idToken,name:name,email:email,...collectFingerprint()})
     });
     const data = await resp.json();
     if(!data.success) throw new Error(data.detail||'Registration failed');
@@ -937,6 +947,101 @@ async function doRegister(){
   }finally{
     btn.disabled=false; btn.textContent='Create Free Account →';
   }
+}
+
+// ── Google Sign-In ──
+async function doGoogleLogin(){
+  const btn = document.getElementById('googleBtn');
+  btn.disabled = true; btn.textContent = 'Connecting...';
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const result = await fbAuth.signInWithPopup(provider);
+    const fbUser = result.user;
+    const idToken = await fbUser.getIdToken();
+
+    // Collect device fingerprint
+    const fpData = collectFingerprint();
+
+    const resp = await fetch(API + '/auth/firebase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id_token: idToken,
+        email: fbUser.email,
+        name: fbUser.displayName || fbUser.email.split('@')[0],
+        ...fpData
+      })
+    });
+    const data = await resp.json();
+    if (!data.success) throw new Error(data.detail || 'Google sign-in failed');
+
+    apiKey = data.api_key;
+    user = { id: data.user_id, email: fbUser.email, plan: data.plan, api_key: data.api_key, name: data.name || fbUser.displayName || '' };
+    saveSession(data.access_token, user, data.api_key);
+    localStorage.setItem('stew_firebase_uid', fbUser.uid);
+
+    // Submit fingerprint
+    submitFingerprint(apiKey);
+
+    showDashboard();
+    toast('Welcome, ' + (data.name || 'user') + '!');
+  } catch(e) {
+    if (e.code === 'auth/popup-closed-by-user') {
+      // User closed popup, silently ignore
+    } else {
+      alert('Google sign-in failed: ' + (e.message || 'Unknown error'));
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg> Continue with Google';
+  }
+}
+
+// ── Device Fingerprint Collection ──
+function collectFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 200; canvas.height = 50;
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(125, 1, 62, 20);
+    ctx.fillStyle = '#069';
+    ctx.fillText('S.T.E.W fingerprint', 2, 15);
+    const canvasHash = canvas.toDataURL().substring(0, 100);
+
+    const gl = document.createElement('canvas').getContext('webgl');
+    let webglHash = '';
+    if (gl) {
+      const dbgInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbgInfo) {
+        webglHash = gl.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) || '';
+      }
+    }
+
+    return {
+      canvas_hash: btoa(canvasHash).substring(0, 64),
+      webgl_hash: btoa(webglHash).substring(0, 64),
+      screen_resolution: screen.width + 'x' + screen.height,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+      language: navigator.language || '',
+    };
+  } catch(e) {
+    return { canvas_hash: '', webgl_hash: '', screen_resolution: '', timezone: '', language: '' };
+  }
+}
+
+async function submitFingerprint(key) {
+  try {
+    const fpData = collectFingerprint();
+    await fetch(API + '/security/fingerprint', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key, ...fpData })
+    });
+  } catch(e) { console.warn('Fingerprint submission failed:', e); }
 }
 
 // Dashboard

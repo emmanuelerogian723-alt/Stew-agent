@@ -78,13 +78,17 @@ class StewBrowser:
         return await self._httpx_fetch(url, timeout)
 
     async def _jina_fetch(self, url: str, timeout: int = 20) -> dict:
-        """Fetch URL via Jina AI free reader API — bypasses blocks and renders JS."""
+        """Fetch URL via Jina AI reader API — bypasses blocks and renders JS.
+        Works without key for most URLs. API key (from env) enables higher rate limits."""
         import httpx as _httpx
         jina_url = f"https://r.jina.ai/{url}"
+        jina_key = os.environ.get("JINA_API_KEY", os.environ.get("JINA_SEARCH_KEY", ""))
         headers = {
             "Accept": "text/plain",
             "User-Agent": "S.T.E.W-Agent/6.0 (https://stew-agent.onrender.com; contact@erogian.com)",
         }
+        if jina_key:
+            headers["Authorization"] = f"Bearer {jina_key}"
         async with _httpx.AsyncClient(timeout=timeout + 10, follow_redirects=True) as client:
             resp = await client.get(jina_url, headers=headers)
             if resp.status_code == 200 and len(resp.text) > 100:
@@ -371,27 +375,39 @@ class StewBrowser:
             return {"error": str(e), "url": url}
 
     async def search_web_fallback(self, query: str) -> dict:
-        """DuckDuckGo HTML search — no API key required."""
-        ddg_url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
+        """DuckDuckGo HTML search — no API key required, reliable from cloud IPs."""
+        import urllib.parse as _up
+        ddg_url = "https://html.duckduckgo.com/html/"
+        ddg_headers = {
+            **HEADERS,
+            "Referer": "https://duckduckgo.com/",
+            "Accept": "text/html,application/xhtml+xml",
+        }
         try:
-            async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+            async with httpx.AsyncClient(headers=ddg_headers, follow_redirects=True, timeout=15) as client:
                 resp = await client.post(ddg_url, data={"q": query})
                 soup = BeautifulSoup(resp.text, "html.parser")
                 results = []
-                for r in soup.select(".result")[:8]:
-                    title_el = r.select_one(".result__title")
-                    snippet_el = r.select_one(".result__snippet")
-                    link_el = r.select_one(".result__url")
-                    if title_el:
-                        results.append({
-                            "title": title_el.get_text(strip=True),
-                            "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
-                            "url": "https://" + link_el.get_text(strip=True) if link_el else "",
-                        })
-                return {"source": "duckduckgo_fallback", "query": query,
+                for r in soup.select(".result__body")[:8]:
+                    title_tag = r.select_one(".result__title a")
+                    snippet_tag = r.select_one(".result__snippet")
+                    if not title_tag:
+                        continue
+                    link = title_tag.get("href", "")
+                    if "uddg=" in link:
+                        link = _up.unquote(link.split("uddg=")[-1].split("&")[0])
+                    elif link.startswith("//"):
+                        link = "https:" + link
+                    results.append({
+                        "title": title_tag.get_text(strip=True),
+                        "snippet": snippet_tag.get_text(strip=True) if snippet_tag else "",
+                        "url": link,
+                    })
+                return {"source": "duckduckgo", "query": query,
                         "results": results, "count": len(results)}
         except Exception as e:
-            return await self._bing_fallback(query)
+            logger.warning(f"DuckDuckGo fallback error: {e}")
+            return {"source": "none", "query": query, "results": [], "error": str(e)}
 
     async def _bing_fallback(self, query: str) -> dict:
         bing_url = f"https://www.bing.com/search?q={query.replace(' ', '+')}"
