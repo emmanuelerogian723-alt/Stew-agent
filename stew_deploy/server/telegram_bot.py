@@ -107,18 +107,74 @@ class TelegramBot:
                 json={"chat_id": chat_id, "action": action},
             )
 
+
+    async def get_file_path(self, file_id: str) -> str | None:
+        """Get the file path for a Telegram file_id."""
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{self.base}/getFile", params={"file_id": file_id})
+            data = resp.json()
+            if data.get("ok"):
+                return data["result"]["file_path"]
+            return None
+
+    async def download_file(self, file_id: str) -> bytes | None:
+        """Download a file from Telegram by file_id. Returns raw bytes."""
+        file_path = await self.get_file_path(file_id)
+        if not file_path:
+            return None
+        download_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(download_url)
+            if resp.status_code == 200:
+                return resp.content
+            return None
+
     def parse_update(self, data: dict) -> Optional[dict]:
-        """Extract message info from Telegram update."""
+        """Extract message info from Telegram update.
+        Handles text, photos, and documents."""
         msg = data.get("message") or data.get("edited_message")
         if not msg:
             return None
+
+        text = msg.get("text", "")
+        caption = msg.get("caption", "")
+        has_photo = "photo" in msg and msg["photo"]
+        has_document = "document" in msg and msg["document"]
+
+        # Determine file info
+        file_id = None
+        file_name = None
+        file_type = None
+        file_size = None
+
+        if has_photo:
+            # Get the largest photo (last in array)
+            photo = msg["photo"][-1]
+            file_id = photo.get("file_id")
+            file_name = f"photo_{msg['message_id']}.jpg"
+            file_type = "image"
+            file_size = photo.get("file_size", 0)
+        elif has_document:
+            doc = msg["document"]
+            file_id = doc.get("file_id")
+            file_name = doc.get("file_name", "document")
+            file_type = "document"
+            file_size = doc.get("file_size", 0)
+
         return {
             "update_id": data.get("update_id"),
             "chat_id": msg["chat"]["id"],
             "user_id": msg["from"]["id"],
             "username": msg["from"].get("username", ""),
             "first_name": msg["from"].get("first_name", ""),
-            "text": msg.get("text", ""),
+            "text": text,
+            "caption": caption,
             "message_id": msg["message_id"],
             "is_bot": msg["from"].get("is_bot", False),
+            "has_photo": has_photo,
+            "has_document": has_document,
+            "file_id": file_id,
+            "file_name": file_name,
+            "file_type": file_type,
+            "file_size": file_size,
         }

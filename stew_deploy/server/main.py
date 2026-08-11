@@ -2387,7 +2387,135 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
     msg = bot.parse_update(data)
 
-    if not msg or not msg["text"] or msg["is_bot"]:
+    if not msg or msg["is_bot"]:
+        return {"ok": True}
+
+    # ── HANDLE INCOMING PHOTOS (OCR / Vision) ──────────────────────────────────
+    if msg.get("has_photo") and msg.get("file_id"):
+        await bot.send_chat_action(chat_id, "typing")
+        caption = msg.get("caption", "")
+        try:
+            file_bytes = await bot.download_file(msg["file_id"])
+            if not file_bytes:
+                await bot.send_message(chat_id, "I couldn't download the image. Please try again.")
+                return {"ok": True}
+
+            await bot.send_message(chat_id, "Processing image with OCR...")
+            await bot.send_typing(chat_id)
+
+            # Run OCR on the image
+            from server.ocr_engine import ocr_file, ocr_and_reason
+            ocr_result = await asyncio.to_thread(
+                ocr_file, file_bytes, msg.get("file_name", "photo.jpg"), "eng", False, True
+            )
+
+            extracted_text = ocr_result.get("text", "").strip()
+            confidence = ocr_result.get("avg_confidence", 0)
+            word_count = ocr_result.get("word_count", 0)
+
+            if not extracted_text:
+                await bot.send_message(chat_id, "I couldn't extract any text from this image. It might be blurry or contain no readable text.")
+                return {"ok": True}
+
+            # If user asked a question in the caption, answer it about the image
+            if caption:
+                await bot.send_message(chat_id, f"Found {word_count} words (confidence: {confidence}%). Analyzing...")
+                await bot.send_typing(chat_id)
+                result = await ocr_and_reason(
+                    content=file_bytes,
+                    filename=msg.get("file_name", "photo.jpg"),
+                    question=caption,
+                    lang="eng",
+                    task="answer",
+                )
+                reply = result.get("answer", result.get("response", ""))
+                if reply:
+                    await bot.send_message(chat_id, reply)
+                else:
+                    await bot.send_message(chat_id, "Extracted text:\n\n" + extracted_text[:3000])
+            else:
+                # No question — just return the extracted text
+                preview = extracted_text[:3500]
+                if len(extracted_text) > 3500:
+                    preview += "\n\n... (truncated)"
+                await bot.send_message(chat_id, f"*OCR Result* (confidence: {confidence}%, {word_count} words)\n\n{preview}")
+            return {"ok": True}
+
+        except Exception as e:
+            logger.error(f"Telegram photo OCR error: {e}", exc_info=True)
+            await bot.send_message(chat_id, f"Error processing image: {str(e)[:100]}. Please try again.")
+            return {"ok": True}
+
+    # ── HANDLE INCOMING DOCUMENTS (Text Extraction) ───────────────────────────
+    if msg.get("has_document") and msg.get("file_id"):
+        await bot.send_chat_action(chat_id, "upload_document")
+        caption = msg.get("caption", "")
+        file_name = msg.get("file_name", "document")
+        try:
+            file_bytes = await bot.download_file(msg["file_id"])
+            if not file_bytes:
+                await bot.send_message(chat_id, "I couldn't download the file. Please try again.")
+                return {"ok": True}
+
+            await bot.send_message(chat_id, f"Reading {file_name}...")
+            await bot.send_typing(chat_id)
+
+            ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+
+            # Route to appropriate processor
+            if ext in ("png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif", "pdf"):
+                # OCR for images and PDFs
+                from server.ocr_engine import ocr_file, ocr_and_reason
+                ocr_result = await asyncio.to_thread(
+                    ocr_file, file_bytes, file_name, "eng", False, True
+                )
+                extracted_text = ocr_result.get("text", "").strip()
+                confidence = ocr_result.get("avg_confidence", 0)
+            else:
+                # Text extraction for DOCX, TXT, CSV, JSON
+                from server.document_processor import _extract_pdf, _extract_docx, _extract_csv, _extract_json, _extract_txt
+                if ext == "pdf":
+                    extracted = _extract_pdf(file_bytes, file_name)
+                elif ext == "docx":
+                    extracted = _extract_docx(file_bytes, file_name)
+                elif ext == "csv":
+                    extracted = _extract_csv(file_bytes, file_name)
+                elif ext == "json":
+                    extracted = _extract_json(file_bytes, file_name)
+                else:
+                    extracted = _extract_txt(file_bytes, file_name)
+                extracted_text = extracted.get("text", "").strip()
+                confidence = 100
+
+            if not extracted_text:
+                await bot.send_message(chat_id, "I couldn't extract any text from this file.")
+                return {"ok": True}
+
+            # If user asked a question, answer it about the document
+            if caption:
+                await bot.send_message(chat_id, f"Extracted {len(extracted_text)} chars. Analyzing...")
+                await bot.send_typing(chat_id)
+                llm = get_llm_client()
+                reply = llm.complete(
+                    f"Document content:\n{extracted_text[:8000]}\n\nQuestion: {caption}",
+                    system="Answer the question based on the document. Be concise and accurate.",
+                )
+                await bot.send_message(chat_id, clean_response(reply))
+            else:
+                # Just return extracted text
+                preview = extracted_text[:3500]
+                if len(extracted_text) > 3500:
+                    preview += "\n\n... (truncated)"
+                await bot.send_message(chat_id, f"*Extracted text from {file_name}*\n\n{preview}")
+            return {"ok": True}
+
+        except Exception as e:
+            logger.error(f"Telegram document error: {e}", exc_info=True)
+            await bot.send_message(chat_id, f"Error processing file: {str(e)[:100]}. Please try again.")
+            return {"ok": True}
+
+    # If no text and no file, ignore
+    if not msg.get("text"):
         return {"ok": True}
 
     chat_id = msg["chat_id"]
