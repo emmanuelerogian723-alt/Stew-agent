@@ -2276,19 +2276,31 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     # Show typing
     await bot.send_typing(chat_id)
 
-    # Get or create a stew user for this telegram user
+    # Get or create a stew user for this telegram user (with retry for SQLite locks)
     tg_email = f"tg_{msg['user_id']}@telegram.stew"
-    result_q = await db.execute(select(User).where(User.email == tg_email))
-    tg_user = result_q.scalar_one_or_none()
-    if not tg_user:
-        from server.auth import generate_api_key
-        tg_user = User(
-            name=username, email=tg_email,
-            plan="free", api_key=generate_api_key()
-        )
-        db.add(tg_user)
-        await db.flush()
-        await db.refresh(tg_user)
+    tg_user = None
+    for _attempt in range(3):
+        try:
+            result_q = await db.execute(select(User).where(User.email == tg_email))
+            tg_user = result_q.scalar_one_or_none()
+            if not tg_user:
+                from server.auth import generate_api_key
+                tg_user = User(
+                    name=username, email=tg_email,
+                    plan="free", api_key=generate_api_key()
+                )
+                db.add(tg_user)
+                await db.flush()
+                await db.refresh(tg_user)
+            break
+        except Exception as db_err:
+            logger.warning(f"Telegram DB attempt {_attempt+1} failed: {db_err}")
+            await db.rollback()
+            if _attempt == 2:
+                # Last attempt failed — send error to user
+                await bot.send_message(chat_id, "I'm experiencing high traffic. Please try again in a moment.")
+                return {"ok": True}
+            await asyncio.sleep(0.5)
 
     # Handle /start command
     if user_text.startswith("/start"):
