@@ -172,7 +172,7 @@ class ChatRequest(BaseModel):
 
 class TaskRequest(BaseModel):
     task: str
-    api_key: str
+    api_key: str = "" = "" = "" = "" = ""
     context: Optional[str] = None
 
 
