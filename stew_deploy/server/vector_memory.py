@@ -37,16 +37,10 @@ def _get_or_create_client():
         os.makedirs(DB_PATH, exist_ok=True)
         _chroma_client = chromadb.PersistentClient(path=DB_PATH)
 
-        # Use sentence-transformers for free, local embeddings
-        # Falls back to chromadb's default ONNX embedder if sentence-transformers not available
-        try:
-            _embed_func = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2"
-            )
-            logger.info("Using sentence-transformers for embeddings (all-MiniLM-L6-v2)")
-        except Exception as e:
-            logger.warning(f"sentence-transformers unavailable, using default: {e}")
-            _embed_func = embedding_functions.DefaultEmbeddingFunction()
+        # Use ChromaDB's default ONNX embedder (no sentence-transformers/PyTorch needed)
+        # This is lightweight and works on Render free tier
+        _embed_func = embedding_functions.DefaultEmbeddingFunction()
+        logger.info("Using ChromaDB default ONNX embedder (lightweight, no PyTorch)")
 
         _collection = _chroma_client.get_or_create_collection(
             name=COLLECTION_NAME,
