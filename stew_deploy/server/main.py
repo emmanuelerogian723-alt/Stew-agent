@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 from server.system_prompt import STEW_MASTER_PROMPT
-from server.clean_output import clean_response as STEW_SYSTEM_PROMPT
+from server.clean_output import clean_response
 from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
 from server.auth import create_reset_token, consume_reset_token
 from server.keepalive import start_keepalive, stop_keepalive
@@ -1032,7 +1032,7 @@ async def chat(
             tokens = result["tokens"].get("total", 0)
     else:
         result = llm.chat(messages)
-        response_text = result["content"]
+        response_text = clean_response(result["content"])
         tokens = result["tokens"].get("total", 0)
 
     if user:
