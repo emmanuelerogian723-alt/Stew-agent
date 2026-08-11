@@ -3,6 +3,7 @@ S.T.E.W Web Search — REAL Serper API calls only.
 Anti-hallucination: NEVER return fabricated results.
 """
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -232,6 +233,98 @@ class WebSearch:
                 "grounded": False,
                 "error": f"Both Serper and DuckDuckGo failed: {e}",
             }
+
+
+    def stew_extension_search(self, query: str, num_results: int = 8) -> dict:
+        """
+        Search via the S.T.E.W Browser Extension (Vercel, free, no API key).
+        Uses DuckDuckGo + Wikipedia + SearXNG + page content extraction.
+        """
+        ext_url = os.getenv("STEW_BROWSER_EXTENSION_URL", "https://stew-browser-extension.vercel.app")
+        try:
+            resp = requests.get(
+                f"{ext_url}/api/search",
+                params={"q": query, "depth": 2, "fetch": "false"},
+                headers={"Accept": "application/json"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            organic = [
+                {
+                    "title": r.get("title", ""),
+                    "link": r.get("url", ""),
+                    "snippet": r.get("snippet", ""),
+                    "position": idx + 1,
+                }
+                for idx, r in enumerate(data.get("results", [])[:num_results])
+            ]
+
+            return {
+                "organic": organic,
+                "answer_box": {},
+                "knowledge_graph": {},
+                "pages": data.get("pages", []),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": len(organic) > 0,
+                "source": "stew_browser_extension",
+            }
+        except Exception as e:
+            logger.warning(f"Stew Browser Extension search failed: {e}")
+            return {
+                "organic": [],
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": False,
+                "error": str(e),
+            }
+
+    def stew_extension_research(self, query: str, depth: int = 3) -> dict:
+        """
+        Deep research via the S.T.E.W Browser Extension.
+        Fetches pages, extracts content, and returns comprehensive results.
+        """
+        ext_url = os.getenv("STEW_BROWSER_EXTENSION_URL", "https://stew-browser-extension.vercel.app")
+        try:
+            resp = requests.post(
+                f"{ext_url}/api/research",
+                json={"query": query, "depth": depth},
+                headers={"Content-Type": "application/json"},
+                timeout=25,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            return {
+                "report": data.get("report", ""),
+                "organic": [
+                    {"title": s.get("title", ""), "link": s.get("url", ""), "snippet": ""}
+                    for s in data.get("sources", [])
+                ],
+                "pages": data.get("pages", []),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": data.get("grounded", False),
+                "source": "stew_browser_extension_research",
+                "queries_used": data.get("queries_used", []),
+                "total_results": data.get("total_results", 0),
+            }
+        except Exception as e:
+            logger.warning(f"Stew Browser Extension research failed: {e}")
+            return {
+                "report": "",
+                "organic": [],
+                "pages": [],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": False,
+                "error": str(e),
+            }
+
 
     def format_results_for_llm(self, results: dict) -> str:
         """Format search results as context for the LLM prompt."""

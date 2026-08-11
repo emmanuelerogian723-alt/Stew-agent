@@ -34,7 +34,7 @@ from server.document_processor import extract_text
 from server.llm_client import get_llm_client
 from server.orchestrator import orchestrate_text, orchestrate_image
 from server.memory import (
-    append_message, build_llm_messages, get_or_create_conversation,
+    append_message, build_llm_messages, get_or_create_conversation, get_relevant_context,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User
@@ -914,6 +914,10 @@ async def chat(
         if should_search:
             try:
                 search_results = await asyncio.to_thread(searcher.search, body.message, 5)
+                if not search_results.get("grounded"):
+                    # Try Stew Browser Extension as fallback
+                    logger.info("Serper/SearXNG failed, trying Stew Browser Extension...")
+                    search_results = await asyncio.to_thread(searcher.stew_extension_search, body.message, 5)
                 if search_results.get("grounded"):
                     web_grounded = True
                     sources = [
@@ -921,7 +925,40 @@ async def chat(
                         for r in search_results.get("organic", [])
                     ]
             except Exception as e:
-                logger.warning(f"Search failed, continuing without: {e}")
+                logger.warning(f"Search failed, trying Stew Browser Extension: {e}")
+                try:
+                    search_results = await asyncio.to_thread(searcher.stew_extension_search, body.message, 5)
+                    if search_results.get("grounded"):
+                        web_grounded = True
+                        sources = [
+                            {"title": r["title"], "url": r["link"], "snippet": r["snippet"]}
+                            for r in search_results.get("organic", [])
+                        ]
+                except Exception as e2:
+                    logger.warning(f"All search methods failed: {e2}")
+
+    # Detect explicit research requests
+    research_keywords = ["research", "investigate", "deep dive", "analyze this", "study on", "report on", "look into"]
+    is_research = any(kw in msg_lower for kw in research_keywords)
+
+    if is_research and not should_search:
+        should_search = True
+
+    # For research requests, use the browser extension for deeper results
+    if is_research:
+        try:
+            research_results = await asyncio.to_thread(searcher.stew_extension_research, body.message, 3)
+            if research_results.get("grounded") and research_results.get("report"):
+                # Use the research report as context
+                context = f"[S.T.E.W Research Report for: {body.message}]\n\n{research_results['report']}\n\nSources: {', '.join([s['link'] for s in research_results.get('organic', [])[:5]])}"
+                system += f"\n\nRESEARCH CONTEXT (from Stew Browser Extension):\n{context}"
+                web_grounded = True
+                sources = [
+                    {"title": r["title"], "url": r["link"], "snippet": ""}
+                    for r in research_results.get("organic", [])
+                ]
+        except Exception as e:
+            logger.warning(f"Research via browser extension failed: {e}")
 
     # Build messages
     # Build persona-aware system prompt
@@ -950,8 +987,10 @@ async def chat(
 
     if user:
         conv = await get_or_create_conversation(db, user.id, body.conversation_id)
-        await append_message(db, conv, "user", body.message)
-        messages = build_llm_messages(conv, system)
+        # Retrieve relevant past memories across all sessions
+        recalled = await get_relevant_context(user.id, body.message, platform="api")
+        await append_message(db, conv, "user", body.message, platform="api")
+        messages = build_llm_messages(conv, system, recalled)
     else:
         messages = [
             {"role": "system", "content": system},
@@ -996,7 +1035,7 @@ async def chat(
         tokens = result["tokens"].get("total", 0)
 
     if user:
-        await append_message(db, conv, "assistant", response_text)
+        await append_message(db, conv, "assistant", response_text, platform="api")
 
     if user:
         background_tasks.add_task(_log_call, db, user.id if user else None, "/chat", "POST", tokens, 200)
@@ -2027,6 +2066,212 @@ async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
     return {"success": True, "question": body.question, **result}
 
 
+# ── Memory Management Endpoints ──────────────────────────────────────────────
+@app.get("/memory/{user_id}")
+async def get_memory_summary(
+    user_id: str,
+    api_key: str = Header(None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get summary of stored vector memories for a user."""
+    user = await _safe_get_user(api_key, db)
+    if not user or user.id != user_id:
+        raise HTTPException(403, "Access denied")
+    from server.vector_memory import get_user_memory_summary
+    return get_user_memory_summary(user_id)
+
+
+@app.delete("/memory/{user_id}")
+async def clear_memory(
+    user_id: str,
+    api_key: str = Header(None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear all vector memories for a user."""
+    user = await _safe_get_user(api_key, db)
+    if not user or user.id != user_id:
+        raise HTTPException(403, "Access denied")
+    from server.vector_memory import clear_user_memories
+    count = clear_user_memories(user_id)
+    return {"cleared": count, "message": f"Cleared {count} memories"}
+
+
+@app.post("/memory/search")
+async def search_memory(
+    body: dict,
+    api_key: str = Header(None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Search past memories semantically."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    from server.vector_memory import recall_relevant, format_memories_for_prompt
+    query = body.get("query", "")
+    platform = body.get("platform")
+    n = body.get("n_results", 8)
+    memories = recall_relevant(user.id, query, platform=platform, n_results=n)
+    return {
+        "query": query,
+        "memories": memories,
+        "formatted": format_memories_for_prompt(memories),
+        "count": len(memories),
+    }
+
+
+# ── Deep Research Endpoint ──────────────────────────────────────────────────
+class ResearchRequest(BaseModel):
+    query: str
+    depth: int = 3  # 1=quick, 2=standard, 3=deep
+    api_key: str = Header(None, alias="X-API-Key")
+
+@app.post("/research")
+async def deep_research(
+    body: ResearchRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Deep research endpoint — searches multiple sources, fetches page content,
+    and synthesizes a comprehensive answer with citations.
+    Returns ACTUAL research output, not instructions.
+    """
+    user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+
+    if user.plan == "free":
+        # Check API quota
+        today_count = await _count_today_calls(db, user.id)
+        if today_count >= 500:
+            raise HTTPException(429, "Daily free-tier limit reached (500 calls)")
+
+    searcher = get_searcher()
+    llm = get_llm_client()
+
+    # Step 1: Multi-query search
+    queries = [body.query]
+    if body.depth >= 2:
+        # Generate sub-queries for broader coverage
+        sub_query_prompt = [
+            {"role": "system", "content": "Generate 2-3 alternative search queries for this research topic. Return ONLY the queries, one per line, no numbering or explanation."},
+            {"role": "user", "content": body.query},
+        ]
+        try:
+            sub_result = llm.chat(sub_query_prompt)
+            sub_queries = [q.strip() for q in sub_result["content"].strip().split("\n") if q.strip()][:3]
+            queries.extend(sub_queries)
+        except Exception:
+            pass
+
+    all_sources = []
+    all_snippets = []
+    search_raw = []
+
+    for q in queries[:4]:
+        try:
+            results = await asyncio.to_thread(searcher.search, q, 5)
+            if results.get("grounded"):
+                for r in results.get("organic", []):
+                    if r not in all_sources:
+                        all_sources.append(r)
+                        all_snippets.append(f"[{r['title']}]({r['link']}): {r['snippet']}")
+                search_raw.append(results)
+        except Exception as e:
+            logger.warning(f"Research search error for query '{q}': {e}")
+
+    # Step 2: Fetch top pages for deeper content (depth >= 2)
+    page_contents = []
+    if body.depth >= 2 and all_sources:
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as client:
+            for source in all_sources[:5]:
+                try:
+                    resp = await client.get(source["link"], headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+                    if resp.status_code == 200:
+                        from bs4 import BeautifulSoup
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        # Remove scripts and styles
+                        for tag in soup(["script", "style", "nav", "footer", "header"]):
+                            tag.decompose()
+                        text = soup.get_text(separator=" ", strip=True)[:3000]
+                        if len(text) > 200:
+                            page_contents.append({
+                                "title": source["title"],
+                                "url": source["link"],
+                                "content": text,
+                            })
+                except Exception as e:
+                    logger.warning(f"Failed to fetch {source['link']}: {e}")
+
+    # Step 3: Synthesize with LLM
+    context_parts = []
+    context_parts.append(f"[Search Results for: {body.query}]")
+    for i, s in enumerate(all_snippets[:15], 1):
+        context_parts.append(f"{i}. {s}")
+
+    if page_contents:
+        context_parts.append("\n[Deep page content:]")
+        for pc in page_contents:
+            context_parts.append(f"\n--- {pc['title']} ({pc['url']}) ---\n{pc['content'][:2000]}")
+
+    full_context = "\n".join(context_parts)
+
+    research_prompt = f"""You are S.T.E.W Research Agent. Conduct thorough research on: "{body.query}"
+
+Use the web search results and page content below. Synthesize a comprehensive, well-structured research report.
+
+Requirements:
+- Start with a direct answer / summary
+- Include key findings with citations [source name]
+- Note any conflicting information
+- Include data points, statistics, and specific numbers where available
+- End with a "Sources" section listing all URLs
+- Be factual — only use information from the provided search results
+- If information is insufficient, say what's missing
+
+SEARCH CONTEXT:
+{full_context}
+"""
+
+    try:
+        research_messages = [{"role": "system", "content": "You are S.T.E.W Research Agent. Produce a comprehensive research report with citations."}, {"role": "user", "content": research_prompt}]
+        result = llm.chat(research_messages)
+        report = result["content"]
+    except Exception as e:
+        raise HTTPException(500, f"Research synthesis failed: {e}")
+
+    # Store the research in memory
+    try:
+        from server.vector_memory import store_memory
+        store_memory(
+            user_id=user.id,
+            role="user",
+            content=f"Research request: {body.query}",
+            platform="api",
+        )
+        store_memory(
+            user_id=user.id,
+            role="assistant",
+            content=report[:2000],
+            platform="api",
+        )
+    except Exception:
+        pass
+
+    return {
+        "query": body.query,
+        "depth": body.depth,
+        "report": report,
+        "sources": [{"title": s["title"], "url": s["link"]} for s in all_sources],
+        "pages_fetched": len(page_contents),
+        "queries_used": queries,
+        "grounded": len(all_sources) > 0,
+        "provider": "stew_research",
+    }
+
+
+
 # ── Telegram Webhook ───────────────────────────────────────────────────────────
 
 @app.post("/telegram/webhook")
@@ -2091,24 +2336,54 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         "latest", "current", "today", "news", "score", "price",
         "weather", "stock", "search", "find", "what is", "who is"
     ])
-    if needs_search and searcher._is_available():
+    if needs_search:
         try:
             search_results = await asyncio.to_thread(searcher.search, user_text, 4)
+            if not search_results.get("grounded"):
+                # Fallback: Stew Browser Extension
+                search_results = await asyncio.to_thread(searcher.stew_extension_search, user_text, 5)
             if search_results.get("grounded"):
                 context = searcher.format_results_for_llm(search_results)
                 system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
                 web_grounded = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Telegram search failed: {e}")
+            try:
+                search_results = await asyncio.to_thread(searcher.stew_extension_search, user_text, 5)
+                if search_results.get("grounded"):
+                    context = searcher.format_results_for_llm(search_results)
+                    system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
+                    web_grounded = True
+            except Exception as e2:
+                logger.warning(f"Telegram browser extension search failed: {e2}")
+    # Also detect research requests on Telegram
+    tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze"]
+    if any(kw in user_text.lower() for kw in tg_research_kw):
+        try:
+            research_results = await asyncio.to_thread(searcher.stew_extension_research, user_text, 2)
+            if research_results.get("grounded") and research_results.get("report"):
+                system += f"\n\nRESEARCH CONTEXT:\n{research_results['report']}"
+        except Exception as e:
+            logger.warning(f"Telegram research failed: {e}")
 
-    conv = await get_or_create_conversation(db, tg_user.id, None)
-    await append_message(db, conv, "user", user_text)
-    messages = build_llm_messages(conv, system)
+    # Reuse the most recent conversation for this Telegram user (persists chat context)
+    from sqlalchemy import select as _sel
+    _conv_q = await db.execute(
+        _sel(Conversation).where(Conversation.user_id == tg_user.id)
+        .order_by(Conversation.updated_at.desc()).limit(1)
+    )
+    _existing_conv = _conv_q.scalar_one_or_none()
+    conv = _existing_conv if _existing_conv else await get_or_create_conversation(db, tg_user.id, None)
+
+    # Retrieve relevant past memories across all Telegram sessions
+    recalled_tg = await get_relevant_context(tg_user.id, user_text, platform="telegram")
+    await append_message(db, conv, "user", user_text, platform="telegram")
+    messages = build_llm_messages(conv, system, recalled_tg)
 
     try:
         result = llm.chat(messages)
         reply = result["content"]
-        await append_message(db, conv, "assistant", reply)
+        await append_message(db, conv, "assistant", reply, platform="telegram")
         await bot.send_message(chat_id, reply, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")

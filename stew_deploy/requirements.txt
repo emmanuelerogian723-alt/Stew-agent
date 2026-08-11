@@ -66,3 +66,7 @@ firebase-admin>=6.5.0
 
 # ── OCR ───────────────────────────────────────────────────────────────────────
 pymupdf>=1.24.0,<2.0.0
+
+# ── Vector memory (ChromaDB + embeddings) ──────────────────────────────────────
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
