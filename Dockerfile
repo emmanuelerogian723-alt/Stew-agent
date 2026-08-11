@@ -1,7 +1,7 @@
-# S.T.E.W 5.0 — Fixed Render Dockerfile
+# S.T.E.W 5.0 — Fixed Render Dockerfile (lightweight for free tier)
 FROM python:3.11-slim-bookworm
 
-# ALL required system dependencies
+# System dependencies (no Playwright browser deps — too heavy for free tier)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc g++ curl ca-certificates \
     libpq-dev \
@@ -9,10 +9,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdk-pixbuf2.0-0 libcairo2 libffi-dev \
     libxml2-dev libxslt1-dev shared-mime-info \
     tesseract-ocr tesseract-ocr-eng \
-    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libxkbcommon0 libxcomposite1 libxdamage1 \
-    libxfixes3 libxrandr2 libgbm1 libasound2 \
-    libx11-6 libx11-xcb1 libxcb1 libxext6 \
     fonts-liberation fontconfig \
     && apt-get clean
 
@@ -22,7 +18,7 @@ COPY stew_deploy/requirements.txt .
 RUN pip install --upgrade pip --quiet && \
     pip install --no-cache-dir -r requirements.txt --quiet
 
-RUN playwright install chromium
+# No Playwright — using BeautifulSoup + trafilatura for web scraping instead
 
 COPY stew_deploy/ .
 COPY landing.html /app/landing.html
