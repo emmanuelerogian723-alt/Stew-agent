@@ -897,6 +897,9 @@ async def chat(
     sources = []
     web_grounded = False
 
+    msg_lower = body.message.lower()
+    should_search = False
+
     if body.web_search and searcher._is_available():
         # Decide if query needs fresh data — broadened keyword set
         needs_search_keywords = [
@@ -907,7 +910,6 @@ async def chat(
             "result", "match", "game", "election", "release", "launch",
             "announce", "dead", "born", "happen", "live",
         ]
-        msg_lower = body.message.lower()
         should_search = any(kw in msg_lower for kw in needs_search_keywords)
         # Also search if the message looks like a question about real-world facts
         if not should_search and any(q in msg_lower for q in ["who is", "where is", "how much", "how many"]):
@@ -1355,9 +1357,10 @@ async def browse_navigate(
 
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (compatible; STEWBot/5.0; +https://stew-agent.onrender.com)"
-                )
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Upgrade-Insecure-Requests": "1",
             }
             resp = await client.get(body.url, headers=headers)
             resp.raise_for_status()

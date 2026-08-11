@@ -237,42 +237,118 @@ class WebSearch:
 
     def stew_extension_search(self, query: str, num_results: int = 8) -> dict:
         """
-        Search via the S.T.E.W Browser Extension (Vercel, free, no API key).
-        Uses DuckDuckGo + Wikipedia + SearXNG + page content extraction.
+        Search via S.T.E.W Browser Extension (external) with internal fallback.
+        Falls back to direct DuckDuckGo + Bing search if extension is unavailable.
         """
         ext_url = os.getenv("STEW_BROWSER_EXTENSION_URL", "https://stew-browser-extension.vercel.app")
+        
+        # Try external extension first
         try:
             resp = requests.get(
                 f"{ext_url}/api/search",
                 params={"q": query, "depth": 2, "fetch": "false"},
                 headers={"Accept": "application/json"},
-                timeout=15,
+                timeout=12,
             )
-            resp.raise_for_status()
-            data = resp.json()
+            if resp.status_code == 200:
+                data = resp.json()
+                organic = [
+                    {
+                        "title": r.get("title", ""),
+                        "link": r.get("url", ""),
+                        "snippet": r.get("snippet", ""),
+                        "position": idx + 1,
+                    }
+                    for idx, r in enumerate(data.get("results", [])[:num_results])
+                ]
+                if organic:
+                    return {
+                        "organic": organic,
+                        "answer_box": {},
+                        "knowledge_graph": {},
+                        "pages": data.get("pages", []),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "query": query,
+                        "grounded": True,
+                        "source": "stew_browser_extension",
+                    }
+        except Exception as e:
+            logger.warning(f"Stew Browser Extension search failed, using internal fallback: {e}")
+        
+        # Internal fallback: direct DuckDuckGo search
+        return self._internal_search(query, num_results)
 
-            organic = [
-                {
-                    "title": r.get("title", ""),
-                    "link": r.get("url", ""),
-                    "snippet": r.get("snippet", ""),
-                    "position": idx + 1,
+    def _internal_search(self, query: str, num_results: int = 8) -> dict:
+        """Direct DuckDuckGo HTML search — no external dependency needed."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        }
+        try:
+            import urllib.parse
+            ddg_url = "https://html.duckduckgo.com/html/"
+            resp = requests.post(ddg_url, data={"q": query}, headers=headers, timeout=15)
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(resp.text, "html.parser")
+            organic = []
+            for idx, r in enumerate(soup.select(".result")[:num_results]):
+                title_el = r.select_one(".result__title")
+                snippet_el = r.select_one(".result__snippet")
+                a_tag = r.select_one(".result__a")
+                if title_el:
+                    link = a_tag.get("href", "") if a_tag else ""
+                    if link and not link.startswith("http"):
+                        link = "https://" + link
+                    organic.append({
+                        "title": title_el.get_text(strip=True),
+                        "link": link,
+                        "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
+                        "position": idx + 1,
+                    })
+            if organic:
+                return {
+                    "organic": organic,
+                    "answer_box": {},
+                    "knowledge_graph": {},
+                    "pages": [],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "query": query,
+                    "grounded": True,
+                    "source": "stew_internal_search",
                 }
-                for idx, r in enumerate(data.get("results", [])[:num_results])
-            ]
-
+        except Exception as e:
+            logger.warning(f"Internal DuckDuckGo search failed: {e}")
+        
+        # Last resort: Bing
+        try:
+            import urllib.parse
+            bing_url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}"
+            resp = requests.get(bing_url, headers=headers, timeout=15)
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(resp.text, "html.parser")
+            organic = []
+            for idx, li in enumerate(soup.select("li.b_algo")[:num_results]):
+                h2 = li.find("h2")
+                p = li.find("p")
+                a = h2.find("a") if h2 else None
+                if a:
+                    organic.append({
+                        "title": a.get_text(strip=True),
+                        "link": a.get("href", ""),
+                        "snippet": p.get_text(strip=True) if p else "",
+                        "position": idx + 1,
+                    })
             return {
                 "organic": organic,
                 "answer_box": {},
                 "knowledge_graph": {},
-                "pages": data.get("pages", []),
+                "pages": [],
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "query": query,
                 "grounded": len(organic) > 0,
-                "source": "stew_browser_extension",
+                "source": "stew_internal_bing",
             }
         except Exception as e:
-            logger.warning(f"Stew Browser Extension search failed: {e}")
+            logger.error(f"All search methods failed: {e}")
             return {
                 "organic": [],
                 "answer_box": {},
@@ -338,10 +414,12 @@ class WebSearch:
 
     def stew_extension_research(self, query: str, depth: int = 3) -> dict:
         """
-        Deep research via the S.T.E.W Browser Extension.
+        Deep research via S.T.E.W Browser Extension with internal fallback.
         Fetches pages, extracts content, and returns comprehensive results.
         """
         ext_url = os.getenv("STEW_BROWSER_EXTENSION_URL", "https://stew-browser-extension.vercel.app")
+        
+        # Try external extension first
         try:
             resp = requests.post(
                 f"{ext_url}/api/research",
@@ -349,34 +427,52 @@ class WebSearch:
                 headers={"Content-Type": "application/json"},
                 timeout=25,
             )
-            resp.raise_for_status()
-            data = resp.json()
-
-            return {
-                "report": data.get("report", ""),
-                "organic": [
-                    {"title": s.get("title", ""), "link": s.get("url", ""), "snippet": ""}
-                    for s in data.get("sources", [])
-                ],
-                "pages": data.get("pages", []),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "query": query,
-                "grounded": data.get("grounded", False),
-                "source": "stew_browser_extension_research",
-                "queries_used": data.get("queries_used", []),
-                "total_results": data.get("total_results", 0),
-            }
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("grounded") and data.get("sources"):
+                    return {
+                        "report": data.get("report", ""),
+                        "organic": [
+                            {"title": s.get("title", ""), "link": s.get("url", ""), "snippet": s.get("snippet", "")}
+                            for s in data.get("sources", [])
+                        ],
+                        "pages": data.get("pages", []),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "query": query,
+                        "grounded": True,
+                        "source": "stew_browser_extension_research",
+                        "queries_used": data.get("queries_used", []),
+                        "total_results": data.get("total_results", 0),
+                    }
         except Exception as e:
-            logger.warning(f"Stew Browser Extension research failed: {e}")
-            return {
-                "report": "",
-                "organic": [],
-                "pages": [],
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "query": query,
-                "grounded": False,
-                "error": str(e),
-            }
+            logger.warning(f"Stew Browser Extension research failed, using internal fallback: {e}")
+        
+        # Internal fallback: search + fetch pages
+        search_result = self._internal_search(query, 5)
+        pages = []
+        report_parts = [f"Research: {query}\n"]
+        for r in search_result.get("organic", [])[:3]:
+            url = r.get("link", "")
+            if url:
+                page = self.fetch_page_content(url, 2000)
+                if page.get("content"):
+                    pages.append({"url": url, "title": r.get("title", ""), "content": page["content"]})
+                    report_parts.append(f"\n--- {r.get('title', '')} ({url}) ---\n{page['content'][:1500]}\n")
+        
+        return {
+            "report": "\n".join(report_parts),
+            "organic": [
+                {"title": r.get("title", ""), "link": r.get("link", ""), "snippet": r.get("snippet", "")}
+                for r in search_result.get("organic", [])
+            ],
+            "pages": pages,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "query": query,
+            "grounded": search_result.get("grounded", False),
+            "source": "stew_internal_research",
+            "queries_used": [query],
+            "total_results": len(search_result.get("organic", [])),
+        }
 
 
     def format_results_for_llm(self, results: dict) -> str:
