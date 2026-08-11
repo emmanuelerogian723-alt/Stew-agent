@@ -69,4 +69,6 @@ firebase-admin>=6.5.0
 pymupdf>=1.24.0,<2.0.0
 
 # ── Vector memory (ChromaDB + embeddings) ──────────────────────────────────────
-chromadb>=0.5.0
+
+# Optional: chromadb for advanced vector memory (falls back to numpy if not installed)
+# pip install chromadb

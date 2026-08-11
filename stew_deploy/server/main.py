@@ -54,7 +54,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-from server.system_prompt import STEW_MASTER_PROMPT as STEW_SYSTEM_PROMPT
+from server.system_prompt import STEW_MASTER_PROMPT
+from server.clean_output import clean_response as STEW_SYSTEM_PROMPT
 from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
 from server.auth import create_reset_token, consume_reset_token
 from server.keepalive import start_keepalive, stop_keepalive
@@ -1022,12 +1023,12 @@ async def chat(
                 "model": "mixture-of-agents",
                 "tokens": {"total": sum(r.get("tokens", {}).get("total", 0) for r in fusion_result.get("raw_worker_outputs", []))},
             }
-            response_text = result["content"]
+            response_text = clean_response(result["content"])
             tokens = result["tokens"].get("total", 0)
         except Exception as fusion_err:
             logger.warning(f"Fusion failed, falling back to single model: {fusion_err}")
             result = llm.chat(messages)
-            response_text = result["content"]
+            response_text = clean_response(result["content"])
             tokens = result["tokens"].get("total", 0)
     else:
         result = llm.chat(messages)
@@ -2221,15 +2222,19 @@ Requirements:
 - End with a "Sources" section listing all URLs
 - Be factual — only use information from the provided search results
 - If information is insufficient, say what's missing
+- DO NOT use ## or ### markdown headers — use plain text section titles
+- DO NOT use **bold** or *italic* markers — use plain text
+- Use numbered lists (1. 2. 3.) for structured content
+- Keep output clean, professional, and readable on any platform
 
 SEARCH CONTEXT:
 {full_context}
 """
 
     try:
-        research_messages = [{"role": "system", "content": "You are S.T.E.W Research Agent. Produce a comprehensive research report with citations."}, {"role": "user", "content": research_prompt}]
+        research_messages = [{"role": "system", "content": "You are S.T.E.W Research Agent. Produce a comprehensive research report with citations. Use clean plain text — NO ## markdown headers, NO **bold** markers. Use numbered lists and plain section titles."}, {"role": "user", "content": research_prompt}]
         result = llm.chat(research_messages)
-        report = result["content"]
+        report = clean_response(result["content"])
     except Exception as e:
         raise HTTPException(500, f"Research synthesis failed: {e}")
 

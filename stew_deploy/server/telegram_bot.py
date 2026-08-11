@@ -6,6 +6,7 @@ and sends replies back via Telegram Bot API.
 import asyncio
 import logging
 import httpx
+from server.clean_output import clean_response
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,10 @@ class TelegramBot:
         self.token = token
         self.base = f"https://api.telegram.org/bot{token}"
 
-    async def send_message(self, chat_id: int, text: str, parse_mode: str = "Markdown") -> dict:
-        """Send a message to a Telegram chat."""
+    async def send_message(self, chat_id: int, text: str, parse_mode: str = "HTML") -> dict:
+        """Send a message to a Telegram chat. Clean markdown before sending."""
+        # Clean ## markdown from output
+        text = clean_response(text)
         # Telegram message limit is 4096 chars
         chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
         results = []
