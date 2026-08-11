@@ -420,6 +420,85 @@ class WebSearch:
         """
         return self.search(query, num_results)
 
+    def stew_extension_research(self, query: str, num_pages: int = 3) -> dict:
+        """
+        Deep research: search, read top pages, and compile a report.
+        Uses the same search chain but also fetches page content.
+        """
+        import httpx
+        from bs4 import BeautifulSoup
+        
+        # Step 1: Search
+        search_result = self.search(query, num_results=8)
+        organic = search_result.get("organic", [])
+        
+        if not organic:
+            return {
+                "grounded": False,
+                "report": "",
+                "organic": [],
+                "pages": [],
+                "query": query,
+            }
+        
+        # Step 2: Read top N pages
+        pages = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+        }
+        
+        for result in organic[:num_pages]:
+            url = result.get("link", "")
+            if not url:
+                continue
+            # Try Jina AI reader first (free, bypasses blocks)
+            try:
+                jina_url = f"https://r.jina.ai/{url}"
+                resp = httpx.get(jina_url, timeout=20, headers={"Accept": "text/plain"})
+                if resp.status_code == 200 and len(resp.text) > 100:
+                    pages.append({
+                        "title": result.get("title", ""),
+                        "url": url,
+                        "content": resp.text[:5000],
+                        "source": "jina_reader",
+                    })
+                    continue
+            except Exception:
+                pass
+            # Fallback: direct fetch
+            try:
+                resp = httpx.get(url, timeout=15, headers=headers, follow_redirects=True)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    soup.select("script, style, nav, footer, aside").extract()
+                    text = soup.get_text(separator=" ", strip=True)[:5000]
+                    pages.append({
+                        "title": result.get("title", ""),
+                        "url": url,
+                        "content": text,
+                        "source": "direct_fetch",
+                    })
+            except Exception:
+                pass
+        
+        # Step 3: Build report from search results + page content
+        report_parts = []
+        for r in organic[:5]:
+            report_parts.append(f"- {r.get('title','')}: {r.get('snippet','')}")
+        for p in pages:
+            report_parts.append(f"\n[Full page: {p['title']}]\n{p['content'][:2000]}")
+        
+        report = "\n".join(report_parts)
+        
+        return {
+            "grounded": True,
+            "report": report,
+            "organic": organic,
+            "pages": pages,
+            "query": query,
+        }
+
 
 # Singleton
 web_search = WebSearch()

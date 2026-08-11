@@ -2350,6 +2350,25 @@ SEARCH CONTEXT:
 
 # ── Telegram Webhook ───────────────────────────────────────────────────────────
 
+
+@app.get("/search/test")
+async def search_test():
+    """Test if web search is working. Returns provider status."""
+    try:
+        searcher = get_searcher()
+        result = await asyncio.to_thread(searcher.search, "test query python", 3)
+        organic = result.get("organic", [])
+        return {
+            "success": True,
+            "grounded": result.get("grounded", False),
+            "source": result.get("source", "unknown"),
+            "num_results": len(organic),
+            "first_result": organic[0] if organic else None,
+            "has_allorigins": "duckduckgo_proxy" in str(result.get("source", "")),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)[:300]}
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Receive Telegram messages and reply via S.T.E.W."""
