@@ -1618,7 +1618,7 @@ function finishOnboard(){
 
 // ── FIREBASE ──
 const fbConfig={
-  apiKey:"AIzaSy_FIREBASE_KEY_HERE",
+  apiKey:"AIzaSyDLSQudDbSSAEeKa-BKgLESmNAztlwjJH0",
   authDomain:"ominiassist-ai.firebaseapp.com",
   projectId:"ominiassist-ai",
   storageBucket:"ominiassist-ai.firebasestorage.app",
@@ -1751,7 +1751,7 @@ function friendlyAuthErr(e){
 function showAuthErr(msg){const el=document.getElementById('authErr');if(el){el.textContent=msg;el.style.display='block';}}
 function clearAuthErr(){const el=document.getElementById('authErr');if(el)el.style.display='none';}
 
-function handleSignedIn(user){
+async function handleSignedIn(user){
   setTimeout(() => checkAndSendWelcome(user), 3000);
   setTimeout(loadUserPlanAndCoins, 1000);
   if(_signedInOnce&&currentUser&&currentUser.uid===user.uid)return; // prevent duplicate
@@ -1772,7 +1772,45 @@ function handleSignedIn(user){
   try{if(Notification.permission==='default')Notification.requestPermission();}catch(e){}
   // Save to Firestore (non-blocking)
   if(fbDb){fbDb.collection('users').doc(user.uid).set({name,email,lastSeen:new Date().toISOString()},{merge:true}).catch(e=>HEALER.log(e));}
+  // ── Register/login with backend (get API key) ──
+  try{
+    const idToken=await user.getIdToken();
+    const fp=getFingerprint();
+    const res=await fetch(API_BASE+'/auth/firebase',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        id_token:idToken,
+        email:email,
+        name:name,
+        canvas_hash:fp.canvas,
+        webgl_hash:fp.webgl,
+        screen_resolution:fp.screen,
+        timezone:fp.tz,
+        language:fp.lang
+      })
+    });
+    if(res.ok){
+      const data=await res.json();
+      if(data.api_key){localStorage.setItem('stew_api_key',data.api_key);window.STEW_API_KEY=data.api_key;}
+      if(data.access_token){localStorage.setItem('stew_token',data.access_token);}
+      if(data.plan){localStorage.setItem('stew_plan',data.plan);}
+      HEALER.log('Backend auth successful: plan='+data.plan);
+    }else{
+      HEALER.log('Backend auth failed: '+res.status);
+    }
+  }catch(e){HEALER.log('Backend auth error: '+e);}
   setTimeout(triggerAICursorSurprise,35000);
+}
+
+function getFingerprint(){
+  return{
+    canvas:localStorage.getItem('fp_canvas')||'',
+    webgl:localStorage.getItem('fp_webgl')||'',
+    screen:(screen.width+'x'+screen.height)||'',
+    tz:Intl.DateTimeFormat().resolvedOptions().timeZone||'',
+    lang:navigator.language||''
+  };
 }
 
 async function doSignOut(){
@@ -1815,7 +1853,7 @@ const K={
   serper:'1867df2e3c379ba68185b39b64f2b986fba9e78e',
   ocr:'K84380170288957',
   el:'sk_3f547a1bb551d12118e597c7c5424efbfdd1e1e3d31afc4c',
-  yt:'AIzaSy_FIREBASE_KEY_HERE',
+  yt:'',
   acrcloud:'',// Add your ACRCloud API key here
   paystack_pub:'pk_live_YOUR_PAYSTACK_PUBLIC_KEY' // Add your Paystack public key
 };

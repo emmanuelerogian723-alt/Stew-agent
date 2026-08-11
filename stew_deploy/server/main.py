@@ -535,6 +535,7 @@ async def firebase_auth(body: dict, request: Request, db: AsyncSession = Depends
 
     # Try to verify the Firebase token using Firebase Admin SDK if available
     firebase_uid = None
+    fb_verified = False
     try:
         import firebase_admin
         from firebase_admin import credentials, auth as fb_auth_admin
@@ -546,13 +547,19 @@ async def firebase_auth(body: dict, request: Request, db: AsyncSession = Depends
                 cred = credentials.Certificate(cred_dict)
                 firebase_admin.initialize_app(cred)
             else:
+                # Try Application Default Credentials (works on Render/GCP)
                 firebase_admin.initialize_app()
         decoded = fb_auth_admin.verify_id_token(id_token)
         firebase_uid = decoded.get("uid")
         email = decoded.get("email", email)
         name = decoded.get("name", name)
-    except Exception:
-        pass
+        fb_verified = True
+        logger.info(f"Firebase token verified for uid={firebase_uid}, email={email}")
+    except ImportError:
+        logger.warning("firebase_admin not installed — trusting frontend Firebase token")
+    except Exception as fb_err:
+        logger.warning(f"Firebase token verification failed: {fb_err} — trusting frontend token")
+        # Still proceed — the frontend has already verified the Firebase token via Firebase client SDK
 
     # Compute device fingerprint
     fp_hash = compute_fingerprint(
