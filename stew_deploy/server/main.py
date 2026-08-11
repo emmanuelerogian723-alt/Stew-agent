@@ -1027,11 +1027,11 @@ async def chat(
             tokens = result["tokens"].get("total", 0)
         except Exception as fusion_err:
             logger.warning(f"Fusion failed, falling back to single model: {fusion_err}")
-            result = llm.chat(messages)
+            result = await asyncio.to_thread(llm.chat, messages)
             response_text = clean_response(result["content"])
             tokens = result["tokens"].get("total", 0)
     else:
-        result = llm.chat(messages)
+        result = await asyncio.to_thread(llm.chat, messages)
         response_text = clean_response(result["content"])
         tokens = result["tokens"].get("total", 0)
 
@@ -1292,7 +1292,7 @@ async def task(
         except Exception as e:
             logger.warning(f"Task search failed: {e}")
 
-    system = STEW_SYSTEM_PROMPT
+    system = STEW_MASTER_PROMPT
     if search_context:
         system += f"\n\nWEB CONTEXT:\n{search_context}"
     if body.context:
@@ -2327,7 +2327,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     searcher = get_searcher()
 
     web_grounded = False
-    system = STEW_SYSTEM_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
+    system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
 
     needs_search = any(kw in user_text.lower() for kw in [
         "latest", "current", "today", "news", "score", "price",
@@ -2378,13 +2378,15 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     messages = build_llm_messages(conv, system, recalled_tg)
 
     try:
-        result = llm.chat(messages)
-        reply = result["content"]
+        # Run LLM in a thread so we don't block the event loop = faster responses
+        result = await asyncio.to_thread(llm.chat, messages)
+        reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
-        await bot.send_message(chat_id, reply, parse_mode="Markdown")
+        # Send as plain text (not Markdown) to avoid Telegram formatting errors
+        await bot.send_message(chat_id, reply, parse_mode="")
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
-        await bot.send_message(chat_id, "⚠️ I encountered an error. Please try again in a moment.")
+        await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")
 
     return {"ok": True}
 
