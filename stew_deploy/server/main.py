@@ -1352,48 +1352,29 @@ async def browse_navigate(
     llm = get_llm_client()
 
     try:
-        import httpx
-        from bs4 import BeautifulSoup
-
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Upgrade-Insecure-Requests": "1",
-            }
-            resp = await client.get(body.url, headers=headers)
-            resp.raise_for_status()
-            html = resp.text
-            title = resp.url
-
-        soup = BeautifulSoup(html, "html.parser")
-        page_title = soup.title.string.strip() if soup.title else str(title)
-
-        # Remove script/style noise
-        for tag in soup(["script", "style", "nav", "footer", "aside"]):
-            tag.decompose()
-        text = soup.get_text(separator=" ", strip=True)[:8000]  # cap context
+        from server.browser import StewBrowser
+        browser = StewBrowser()
+        result = await browser.fetch(body.url)
 
         visual_analysis = ""
-        if body.question:
-            result = llm.complete(
-                f"Page content:\n{text}\n\nQuestion: {body.question}",
+        if body.question and result.get("content"):
+            result_llm = await asyncio.to_thread(
+                llm.complete,
+                f"Page content:\n{result['content']}\n\nQuestion: {body.question}",
                 system="You are analyzing a webpage. Answer the question based ONLY on the page content provided.",
             )
-            visual_analysis = result
+            visual_analysis = result_llm
 
         background_tasks.add_task(_log_call, db, user.id if user else None, "/browse/navigate", "POST", 0, 200)
 
         return {
             "url": body.url,
-            "title": page_title,
-            "content": text,
+            "title": result.get("title", ""),
+            "content": result.get("content", ""),
             "visual_analysis": visual_analysis,
             "success": True,
+            **{k: v for k, v in result.items() if k not in ("title", "content", "url")},
         }
-    except ImportError:
-        raise HTTPException(500, "httpx or beautifulsoup4 not installed")
     except Exception as e:
         logger.error(f"Browse error: {e}")
         raise HTTPException(502, f"Could not fetch URL: {e}")

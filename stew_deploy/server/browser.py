@@ -32,7 +32,6 @@ HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Sec-Fetch-Dest": "document",
@@ -54,12 +53,95 @@ class StewBrowser:
 
     async def fetch(self, url: str, timeout: int = 20) -> dict:
         """Fetch URL — uses Playwright if available, else httpx."""
+        # Special case: Wikipedia blocks datacenter IPs, use REST API instead
+        if "wikipedia.org" in url:
+            wiki_result = await self._wikipedia_fetch(url, timeout)
+            if wiki_result.get("content"):
+                return wiki_result
+
         if PLAYWRIGHT_AVAILABLE:
             try:
                 return await self._playwright_fetch(url, timeout)
             except Exception as e:
                 logger.warning(f"Playwright fetch failed, falling back to httpx: {e}")
         return await self._httpx_fetch(url, timeout)
+
+    async def _wikipedia_fetch(self, url: str, timeout: int = 20) -> dict:
+        """Fetch Wikipedia content via REST API (bypasses IP blocks)."""
+        import re
+        # Extract article title from URL
+        match = re.search(r'/wiki/(.+?)(?:\?|#|$)', url)
+        if not match:
+            return {"error": "Could not parse Wikipedia URL", "url": url}
+        article = match.group(1)
+        title = article.replace("_", " ")
+        
+        # Wikipedia requires a proper User-Agent for API access
+        wiki_headers = {
+            "User-Agent": "S.T.E.W-Agent/6.0 (https://stew-agent.onrender.com; contact@erogian.com)",
+            "Accept": "application/json",
+        }
+        
+        # Try REST API first (summary), then action API (full extract)
+        try:
+            api_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{article}"
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                resp = await client.get(api_url, headers=wiki_headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    extract = data.get("extract", "")
+                    if extract and len(extract) > 50:
+                        return {
+                            "url": url,
+                            "status": 200,
+                            "title": data.get("title", title),
+                            "description": data.get("description", ""),
+                            "content": extract[:8000],
+                            "links": [],
+                            "forms": [],
+                            "word_count": len(extract.split()),
+                            "rendered": False,
+                            "source": "wikipedia_api",
+                        }
+        except Exception as e:
+            logger.warning(f"Wikipedia REST API failed: {e}")
+        
+        # Fallback: Action API with full text extraction
+        try:
+            action_url = "https://en.wikipedia.org/w/api.php"
+            params = {
+                "action": "query",
+                "titles": title,
+                "prop": "extracts",
+                "explaintext": "true",
+                "format": "json",
+                "exintro": "false",
+            }
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                resp = await client.get(action_url, params=params, headers=wiki_headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    pages = data.get("query", {}).get("pages", {})
+                    for page_id, page in pages.items():
+                        extract = page.get("extract", "")
+                        if extract and len(extract) > 50:
+                            return {
+                                "url": url,
+                                "status": 200,
+                                "title": page.get("title", title),
+                                "description": "",
+                                "content": extract[:8000],
+                                "links": [],
+                                "forms": [],
+                                "word_count": len(extract.split()),
+                                "rendered": False,
+                                "source": "wikipedia_action_api",
+                            }
+        except Exception as e:
+            logger.warning(f"Wikipedia action API failed: {e}")
+        
+        # Fall through to normal fetch
+        return {}
 
     async def _playwright_fetch(self, url: str, timeout: int = 20) -> dict:
         """Full browser fetch with JS rendering via Playwright."""
