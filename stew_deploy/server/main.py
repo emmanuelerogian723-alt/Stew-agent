@@ -2039,16 +2039,83 @@ async def run_skill_endpoint(body: SkillRequest, db: AsyncSession = Depends(get_
 
 @app.post("/browse")
 async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
-    """Browse any URL and extract content. Falls back to DuckDuckGo if Serper is down."""
+    """Browse any URL and extract content. Uses Serper for search queries, httpx for direct URLs."""
     user = await _safe_get_user(body.api_key, db)
     from server.browser import StewBrowser
     browser = StewBrowser()
-    if body.url.startswith("http"):
-        result = await browser.fetch(body.url)
+    
+    url = body.url.strip()
+    
+    # Detect search queries (Google URLs or plain text queries)
+    is_google_search = "google.com/search" in url or "google.com/search?" in url
+    is_search_query = not url.startswith("http") or is_google_search
+    
+    if is_search_query:
+        # Extract query from Google URL or use as-is
+        if is_google_search:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            query = params.get("q", [""])[0]
+        else:
+            query = url  # plain text query
+        
+        # Use Serper API (real Google results) first
+        searcher = get_searcher()
+        try:
+            search_results = await asyncio.to_thread(searcher.search, query, 8)
+            if search_results.get("grounded"):
+                organic = search_results.get("organic", [])
+                return {
+                    "success": True,
+                    "question": body.question,
+                    "title": f"Search: {query}",
+                    "url": url if url.startswith("http") else f"https://google.com/search?q={query}",
+                    "content": "\n".join([f"{r['title']}\n{r['link']}\n{r['snippet']}\n" for r in organic]),
+                    "links": [{"text": r["title"][:80], "url": r["link"]} for r in organic[:10]],
+                    "word_count": sum(len(r.get("snippet", "").split()) for r in organic),
+                    "rendered": True,
+                    "source": "serper_google_search",
+                    "search_results": organic,
+                    "answer_box": search_results.get("answer_box", {}),
+                    "knowledge_graph": search_results.get("knowledge_graph", {}),
+                    "grounded": True,
+                }
+        except Exception as e:
+            logger.warning(f"Browse Serper search failed: {e}")
+        
+        # Fallback: DuckDuckGo HTML search (no JS needed)
+        result = await browser.search_web_fallback(query)
+        result["success"] = True
+        result["question"] = body.question
+        result["source"] = "duckduckgo_fallback"
+        return result
     else:
-        # Treat as search query
-        result = await browser.search_web_fallback(body.url)
-    return {"success": True, "question": body.question, **result}
+        # Direct URL fetch
+        result = await browser.fetch(url)
+        # Detect Google JS-required page (httpx can't render JS)
+        if "enable" in result.get("title", "").lower() if isinstance(result.get("title"), str) else False:
+            # Google returned a JS-required page, try Serper instead
+            logger.warning(f"Google returned JS-required page for {url}, trying Serper")
+            searcher = get_searcher()
+            try:
+                search_results = await asyncio.to_thread(searcher.search, url, 8)
+                if search_results.get("grounded"):
+                    return {
+                        "success": True,
+                        "question": body.question,
+                        "title": f"Search results",
+                        "url": url,
+                        "content": "\n".join([f"{r['title']}\n{r['link']}\n{r['snippet']}\n" for r in search_results.get("organic", [])]),
+                        "links": [{"text": r["title"][:80], "url": r["link"]} for r in search_results.get("organic", [])[:10]],
+                        "word_count": sum(len(r.get("snippet", "").split()) for r in search_results.get("organic", [])),
+                        "rendered": False,
+                        "source": "serper_fallback",
+                        "grounded": True,
+                    }
+            except Exception as e:
+                logger.warning(f"Serper fallback failed: {e}")
+        return {"success": True, "question": body.question, **result}
 
 
 # ── Memory Management Endpoints ──────────────────────────────────────────────
@@ -2318,27 +2385,69 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         await bot.send_message(chat_id, welcome)
         return {"ok": True}
 
-    # Regular message — run through S.T.E.W
+    # Regular message — run through S.T.E.W with LIVE status updates
     llm = get_llm_client()
     searcher = get_searcher()
 
     web_grounded = False
     system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
 
+    # Detect if search is needed
     needs_search = any(kw in user_text.lower() for kw in [
         "latest", "current", "today", "news", "score", "price",
-        "weather", "stock", "search", "find", "what is", "who is"
+        "weather", "stock", "search", "find", "what is", "who is",
+        "best", "top", "how to", "when", "where", "which", "compare"
     ])
-    if needs_search:
+    # Detect research requests
+    tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze", "deep dive"]
+    needs_research = any(kw in user_text.lower() for kw in tg_research_kw)
+
+    if needs_research:
+        # LIVE STATUS: Research mode
+        await bot.send_message(chat_id, f"🔬 *Starting deep research on:* {user_text[:100]}")
+        await bot.send_typing(chat_id)
         try:
-            search_results = await asyncio.to_thread(searcher.search, user_text, 4)
+            await bot.send_message(chat_id, "🔍 Searching multiple sources...")
+            await bot.send_typing(chat_id)
+            research_results = await asyncio.to_thread(searcher.stew_extension_research, user_text, 3)
+            if research_results.get("grounded") and research_results.get("report"):
+                num_sources = len(research_results.get("organic", []))
+                await bot.send_message(chat_id, f"📊 Found {num_sources} sources. Analyzing content...")
+                await bot.send_typing(chat_id)
+                # Fetch and show source pages
+                pages = research_results.get("pages", [])
+                if pages:
+                    for i, page in enumerate(pages[:3], 1):
+                        title = page.get("title", "Source")[:60]
+                        await bot.send_message(chat_id, f"📄 Reading source {i}/{min(len(pages),3)}: {title}")
+                        await bot.send_typing(chat_id)
+                system += f"\n\nRESEARCH CONTEXT:\n{research_results['report']}"
+                web_grounded = True
+                await bot.send_message(chat_id, "✍️ Generating comprehensive response...")
+                await bot.send_typing(chat_id)
+        except Exception as e:
+            logger.warning(f"Telegram research failed: {e}")
+            await bot.send_message(chat_id, "⚠️ Research encountered an issue, proceeding with available data...")
+            await bot.send_typing(chat_id)
+    elif needs_search:
+        # LIVE STATUS: Search mode
+        await bot.send_message(chat_id, f"🔍 Searching the web for: {user_text[:80]}")
+        await bot.send_typing(chat_id)
+        try:
+            search_results = await asyncio.to_thread(searcher.search, user_text, 5)
             if not search_results.get("grounded"):
-                # Fallback: Stew Browser Extension
+                await bot.send_message(chat_id, "🔄 Trying browser extension fallback...")
+                await bot.send_typing(chat_id)
                 search_results = await asyncio.to_thread(searcher.stew_extension_search, user_text, 5)
             if search_results.get("grounded"):
+                num_results = len(search_results.get("organic", []))
+                await bot.send_message(chat_id, f"📊 Found {num_results} results. Analyzing...")
+                await bot.send_typing(chat_id)
                 context = searcher.format_results_for_llm(search_results)
                 system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
                 web_grounded = True
+                await bot.send_message(chat_id, "✍️ Generating response...")
+                await bot.send_typing(chat_id)
         except Exception as e:
             logger.warning(f"Telegram search failed: {e}")
             try:
@@ -2349,15 +2458,6 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     web_grounded = True
             except Exception as e2:
                 logger.warning(f"Telegram browser extension search failed: {e2}")
-    # Also detect research requests on Telegram
-    tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze"]
-    if any(kw in user_text.lower() for kw in tg_research_kw):
-        try:
-            research_results = await asyncio.to_thread(searcher.stew_extension_research, user_text, 2)
-            if research_results.get("grounded") and research_results.get("report"):
-                system += f"\n\nRESEARCH CONTEXT:\n{research_results['report']}"
-        except Exception as e:
-            logger.warning(f"Telegram research failed: {e}")
 
     # Reuse the most recent conversation for this Telegram user (persists chat context)
     from sqlalchemy import select as _sel

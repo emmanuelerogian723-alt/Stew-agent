@@ -208,6 +208,11 @@ async function executeAgentAction(tabId, action, params) {
         return await actionExtract(tabId, params, settings);
       case 'research':
         return await actionResearch(tabId, params, settings);
+      case 'google_search':
+        return await actionGoogleSearch(tabId, params, settings);
+      case 'browse':
+      case 'browse_page':
+        return await actionBrowsePage(tabId, params, settings);
       case 'automate':
         return await actionAutomate(tabId, params, settings);
       case 'navigate':
@@ -308,7 +313,7 @@ async function actionExtract(tabId, params, settings) {
 async function actionResearch(tabId, params, settings) {
   const query = params.query;
   
-  // Use S.T.E.W search
+  // Use S.T.E.W search (Serper API = real Google results)
   const searchResp = await fetch(`${settings.serverUrl}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -316,19 +321,28 @@ async function actionResearch(tabId, params, settings) {
   });
   
   const searchData = await searchResp.json();
+  // Handle both 'organic' and 'results' field names
+  const searchResults = searchData.organic || searchData.results || [];
   
   // Fetch top results' content
   const pages = [];
-  for (const result of (searchData.results || []).slice(0, 3)) {
+  for (const result of searchResults.slice(0, 4)) {
     try {
+      const pageUrl = result.link || result.url || '';
+      if (!pageUrl) continue;
       const browseResp = await fetch(`${settings.serverUrl}/browse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: result.url, api_key: settings.apiKey })
+        body: JSON.stringify({ url: pageUrl, api_key: settings.apiKey })
       });
       if (browseResp.ok) {
         const browseData = await browseResp.json();
-        pages.push({ url: result.url, title: result.title, content: browseData.content || '' });
+        pages.push({ 
+          url: pageUrl, 
+          title: result.title || browseData.title || '', 
+          content: browseData.content || browseData.text || '',
+          snippet: result.snippet || ''
+        });
       }
     } catch (e) { /* skip */ }
   }
@@ -361,6 +375,104 @@ async function actionResearch(tabId, params, settings) {
   
   showNotification('S.T.E.W Research Complete', `Found ${pages.length} sources`);
   return report;
+}
+
+// ============ GOOGLE SEARCH ACTION ============
+async function actionGoogleSearch(tabId, params, settings) {
+  const query = params.query || params.text || '';
+  if (!query) return 'No query provided';
+  
+  showNotification('S.T.E.W Search', `Searching Google for: ${query}`);
+  
+  // Use S.T.E.W server's Serper API for real Google results
+  const searchResp = await fetch(`${settings.serverUrl}/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, num: 10 })
+  });
+  
+  const searchData = await searchResp.json();
+  const results = searchData.organic || searchData.results || [];
+  const answerBox = searchData.answer_box || {};
+  const knowledgeGraph = searchData.knowledge_graph || {};
+  
+  // Format results for display
+  let summary = '';
+  if (answerBox && (answerBox.answer || answerBox.snippet)) {
+    summary += `💡 Answer: ${answerBox.answer || answerBox.snippet}\n\n`;
+  }
+  if (knowledgeGraph && knowledgeGraph.title) {
+    summary += `📊 ${knowledgeGraph.title}: ${knowledgeGraph.description || ''}\n\n`;
+  }
+  summary += `Found ${results.length} Google results:\n\n`;
+  results.forEach((r, i) => {
+    summary += `${i+1}. ${r.title || 'Untitled'}\n   ${r.link || r.url || ''}\n   ${r.snippet || ''}\n\n`;
+  });
+  
+  // Save to memory
+  await saveToMemory(`search:${query}`, { query, results: results.slice(0, 5) }, 'search');
+  
+  // Send result to popup
+  chrome.runtime.sendMessage({
+    type: 'agent_result',
+    action: 'google_search',
+    result: summary,
+    results: results,
+    answerBox: answerBox,
+    knowledgeGraph: knowledgeGraph,
+    query
+  }).catch(() => {});
+  
+  showNotification('S.T.E.W Search Complete', `Found ${results.length} results`);
+  return summary;
+}
+
+// ============ BROWSE PAGE ACTION ============
+async function actionBrowsePage(tabId, params, settings) {
+  const url = params.url;
+  if (!url) return 'No URL provided';
+  
+  showNotification('S.T.E.W Browser', `Browsing: ${url}`);
+  
+  // First try to get content from the current tab (if it's the same URL)
+  let pageContent = null;
+  if (tabId) {
+    try {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: extractPageContent
+      });
+      pageContent = result.result;
+    } catch (e) { /* fall back to server */ }
+  }
+  
+  // Also get server-side content (for pages that need JS rendering)
+  const resp = await fetch(`${settings.serverUrl}/browse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, api_key: settings.apiKey })
+  });
+  
+  const data = await resp.json();
+  
+  // Combine local and server content
+  const title = pageContent?.title || data.title || '';
+  const content = pageContent?.text || data.content || '';
+  const links = data.links || [];
+  
+  await saveToMemory(url, { title, content: content.slice(0, 5000), links: links.slice(0, 10) }, 'browse');
+  
+  chrome.runtime.sendMessage({
+    type: 'agent_result',
+    action: 'browse',
+    result: `Title: ${title}\nURL: ${url}\n\nContent:\n${content.slice(0, 2000)}`,
+    title,
+    url,
+    links
+  }).catch(() => {});
+  
+  showNotification('S.T.E.W Browser', `Loaded: ${title}`);
+  return content;
 }
 
 // ============ AUTOMATE ACTION (Multi-step task execution) ============
@@ -575,13 +687,71 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
         
       case 'search':
-        const searchResp = await fetch(`${settings.serverUrl}/search`, {
+        const searchResp2 = await fetch(`${settings.serverUrl}/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: message.query })
         });
-        const searchData = await searchResp.json();
-        sendResponse({ success: true, results: searchData.results, grounded: searchData.grounded });
+        const searchData2 = await searchResp2.json();
+        sendResponse({ 
+          success: true, 
+          results: searchData2.organic || searchData2.results || [],
+          answerBox: searchData2.answer_box || {},
+          knowledgeGraph: searchData2.knowledge_graph || {},
+          grounded: searchData2.grounded || false,
+          source: searchData2.source || 'serper'
+        });
+        break;
+      
+      case 'google_search':
+        // Use S.T.E.W server to search Google via Serper
+        const googleSearchResp = await fetch(`${settings.serverUrl}/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: message.query, num: message.num || 10 })
+        });
+        const googleSearchData = await googleSearchResp.json();
+        const googleResults = googleSearchData.organic || googleSearchData.results || [];
+        // Also browse the top result for full content
+        let topPage = null;
+        if (googleResults.length > 0) {
+          const topUrl = googleResults[0].link || googleResults[0].url || '';
+          if (topUrl) {
+            try {
+              const topResp = await fetch(`${settings.serverUrl}/browse`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: topUrl, api_key: settings.apiKey })
+              });
+              if (topResp.ok) {
+                topPage = await topResp.json();
+              }
+            } catch (e) { /* skip */ }
+          }
+        }
+        sendResponse({
+          success: true,
+          results: googleResults,
+          answerBox: googleSearchData.answer_box || {},
+          knowledgeGraph: googleSearchData.knowledge_graph || {},
+          topPage: topPage,
+          grounded: googleSearchData.grounded || false
+        });
+        break;
+      
+      case 'browse_page':
+        // Browse a specific URL and extract content
+        const browsePageResp = await fetch(`${settings.serverUrl}/browse`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            url: message.url, 
+            api_key: settings.apiKey,
+            question: message.question || ''
+          })
+        });
+        const browsePageData = await browsePageResp.json();
+        sendResponse({ success: true, ...browsePageData });
         break;
         
       case 'settings_update':

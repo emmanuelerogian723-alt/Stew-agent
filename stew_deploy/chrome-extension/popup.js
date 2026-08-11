@@ -41,6 +41,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             chrome.tabs.sendMessage(tabs[0].id, { type: 'inject_sidebar' });
           });
         });
+      } else if (action === 'google_search') {
+        // Prompt for search query
+        const query = prompt('Enter your Google search query:');
+        if (query) {
+          addChatMessage('user', `🔍 Google: ${query}`);
+          chrome.runtime.sendMessage({
+            type: 'agent_action',
+            action: 'google_search',
+            params: { query },
+            tabId: null
+          }, (response) => {
+            if (response?.success) {
+              addChatMessage('agent', response.result?.slice(0, 1000) || 'Search complete');
+            } else {
+              addChatMessage('agent', 'Search failed. Make sure S.T.E.W server is running.');
+            }
+          });
+        }
+      } else if (action === 'browse') {
+        // Prompt for URL
+        const url = prompt('Enter URL to browse:');
+        if (url) {
+          addChatMessage('user', `🌐 Browsing: ${url}`);
+          chrome.runtime.sendMessage({
+            type: 'browse_page',
+            url: url
+          }, (response) => {
+            if (response?.success) {
+              const title = response.title || 'Untitled';
+              const content = response.content || '';
+              addChatMessage('agent', `📄 ${title}\n\n${content.slice(0, 800)}`);
+            } else {
+              addChatMessage('agent', 'Browse failed. Check the URL and try again.');
+            }
+          });
+        }
       } else {
         executeAction(action);
       }
