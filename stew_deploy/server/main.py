@@ -3502,7 +3502,11 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         "pptx": ["make a powerpoint", "create a powerpoint", "generate a powerpoint",
                  "make a presentation", "create a presentation", "generate a presentation",
                  "make presentation", "create presentation", "pptx of",
-                 "slides about", "slides for"],
+                 "slides about", "slides for", "make a slide", "create a slide",
+                 "make slides", "create slides", "generate slides",
+                 "slide for", "slide about", "pitch deck", "create a deck",
+                 "make a deck", "generate a deck", "presentation about",
+                 "presentation for", "deck for"],
     }
 
     doc_type = None
@@ -3752,6 +3756,17 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         "run code", "python", "code", "program", "algorithm",
         "make a document", "create a document", "generate report",
         "business plan", "financial projection", "cash flow",
+        # Document generation triggers (broader)
+        "make a pdf", "create a pdf", "generate a pdf",
+        "make a word", "create a word", "generate a word",
+        "make a spreadsheet", "create a spreadsheet",
+        "make a powerpoint", "create a powerpoint",
+        "make a presentation", "create a presentation", "generate a presentation",
+        "make a slide", "create a slide", "make slides", "create slides",
+        "generate slides", "slide for", "slides for", "slides about",
+        "pitch deck", "make a deck", "create a deck", "generate a deck",
+        "make a report", "create a report", "generate a report",
+        "make a document", "create a document", "generate a document",
     ])
 
     if needs_tools:
