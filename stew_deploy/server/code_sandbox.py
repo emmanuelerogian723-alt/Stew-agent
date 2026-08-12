@@ -3,32 +3,19 @@ S.T.E.W Code Execution Sandbox — Safe Python execution for agentic tasks.
 
 Inspired by Kimi's code execution: the LLM writes Python code, we run it
 in a restricted sandbox with no network, no file system access, limited
-built-ins, and a strict timeout. Output (text, data, charts) is returned
-to the LLM for the next reasoning step.
-
-Safety:
-  - No imports of os, sys, subprocess, socket, shutil, pathlib, etc.
-  - Only whitelisted modules: math, json, re, datetime, statistics, collections,
-    itertools, random, string, textwrap, decimal, fractions, hashlib (non-crypto)
-  - No __builtins__ access to open, exec, eval, compile, __import__
-  - 10-second CPU timeout
-  - 50KB max output
-  - Captures stdout + the value of the last expression
-  - matplotlib for charts (saved as base64 PNG)
+built-ins, and a strict timeout. Output is returned to the LLM.
 """
 import io
-import sys
 import ast
 import base64
 import logging
-import signal
+import threading
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Modules the sandbox is allowed to import
 ALLOWED_MODULES = {
     "math", "json", "re", "datetime", "statistics", "collections",
     "itertools", "random", "string", "textwrap", "decimal", "fractions",
@@ -36,7 +23,6 @@ ALLOWED_MODULES = {
     "copy", "pprint", "csv", "io",
 }
 
-# Modules that need special setup
 OPTIONAL_MODULES = {}
 try:
     import matplotlib
@@ -53,7 +39,6 @@ try:
 except ImportError:
     pass
 
-# Built-ins available in the sandbox (name -> actual builtin function)
 import builtins as _builtins
 
 _BUILTIN_NAMES = [
@@ -79,8 +64,7 @@ for name in _BUILTIN_NAMES:
 
 
 class _SafeImporter:
-    """Restricts imports to whitelisted modules only."""
-    def __init__(self, allowed: set, optional: dict):
+    def __init__(self, allowed, optional):
         self.allowed = allowed
         self.optional = optional
 
@@ -92,15 +76,14 @@ class _SafeImporter:
             try:
                 return __import__(name, *args, **kwargs)
             except ImportError:
-                raise ImportError(f"Module '{name}' is not available in the sandbox")
+                raise ImportError(f"Module '{name}' is not available")
         raise ImportError(
             f"Module '{name}' is not allowed in the S.T.E.W sandbox. "
             f"Allowed: {', '.join(sorted(self.allowed))}"
         )
 
 
-def _validate_code(code: str) -> tuple:
-    """Check that code doesn't contain forbidden patterns."""
+def _validate_code(code):
     forbidden = [
         ("__import__", "Use of __import__ is not allowed"),
         ("__builtins__", "Access to __builtins__ is not allowed"),
@@ -122,42 +105,35 @@ def _validate_code(code: str) -> tuple:
     return True, ""
 
 
-class _TimeoutError(Exception):
-    pass
+class _ExecResult:
+    """Container for thread execution results."""
+    def __init__(self):
+        self.success = False
+        self.stdout = ""
+        self.result = None
+        self.error = None
+        self.traceback = None
+        self.figures = []
+        self.timed_out = False
 
 
-def _timeout_handler(signum, frame):
-    raise _TimeoutError("Code execution timed out (10 second limit)")
-
-
-def execute_code(code: str, timeout: int = 10) -> dict:
-    """
-    Execute Python code in a restricted sandbox.
-    Returns dict with success, stdout, result, error, figures, execution_time.
-    """
+def _run_in_thread(code, timeout, result_container):
+    """Actually run the code in a separate thread."""
     import time as _time
-    start = _time.time()
 
-    # Validate code
+    # Validate
     ok, msg = _validate_code(code)
     if not ok:
-        return {
-            "success": False, "stdout": "", "result": None,
-            "error": msg, "traceback": None, "figures": [],
-            "execution_time": round(_time.time() - start, 3),
-        }
+        result_container.error = msg
+        return
 
-    # Parse the code to find the last expression statement
+    # Parse
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
-        return {
-            "success": False, "stdout": "", "result": None,
-            "error": f"Syntax error: {e}", "traceback": None,
-            "figures": [], "execution_time": round(_time.time() - start, 3),
-        }
+        result_container.error = f"Syntax error: {e}"
+        return
 
-    # Split into body + last expression
     last_expr = None
     body = list(tree.body)
     if body and isinstance(body[-1], ast.Expr):
@@ -167,11 +143,8 @@ def execute_code(code: str, timeout: int = 10) -> dict:
     exec_code = ast.Module(body=body, type_ignores=[])
 
     stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
     result_val = None
-    figures = []
 
-    # Build the sandbox globals
     safe_globals = {
         "__builtins__": {
             **SAFE_BUILTINS,
@@ -180,7 +153,6 @@ def execute_code(code: str, timeout: int = 10) -> dict:
         "__name__": "__sandbox__",
     }
 
-    # Add matplotlib/numpy/pandas
     if OPTIONAL_MODULES.get("matplotlib"):
         try:
             import matplotlib.pyplot as plt
@@ -197,10 +169,7 @@ def execute_code(code: str, timeout: int = 10) -> dict:
         safe_globals["pd"] = pd
 
     try:
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(timeout)
-
-        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+        with redirect_stdout(stdout_buf), redirect_stderr(io.StringIO()):
             if body:
                 compiled_body = compile(exec_code, "<sandbox>", "exec")
                 exec(compiled_body, safe_globals)
@@ -209,10 +178,18 @@ def execute_code(code: str, timeout: int = 10) -> dict:
                 compiled_expr = compile(last_expr, "<sandbox>", "eval")
                 result_val = eval(compiled_expr, safe_globals)
 
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+        result_container.success = True
+        result_container.stdout = stdout_buf.getvalue()
 
-        # Capture matplotlib figures
+        if result_val is not None:
+            try:
+                result_container.result = repr(result_val)
+                if len(result_container.result) > 10000:
+                    result_container.result = result_container.result[:10000] + "..."
+            except:
+                result_container.result = "<unrepresentable>"
+
+        # Capture figures
         if OPTIONAL_MODULES.get("matplotlib"):
             try:
                 import matplotlib.pyplot as plt
@@ -222,7 +199,7 @@ def execute_code(code: str, timeout: int = 10) -> dict:
                     buf = io.BytesIO()
                     fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
                     buf.seek(0)
-                    figures.append({
+                    result_container.figures.append({
                         "format": "png",
                         "base64": base64.b64encode(buf.getvalue()).decode(),
                     })
@@ -230,39 +207,43 @@ def execute_code(code: str, timeout: int = 10) -> dict:
             except Exception as e:
                 logger.warning(f"Figure capture error: {e}")
 
-    except _TimeoutError as e:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
-        return {
-            "success": False, "stdout": stdout_buf.getvalue()[:50000],
-            "result": None, "error": str(e), "traceback": None,
-            "figures": figures, "execution_time": round(_time.time() - start, 3),
-        }
     except Exception as e:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
-        tb = traceback.format_exc()
-        return {
-            "success": False, "stdout": stdout_buf.getvalue()[:50000],
-            "result": None, "error": str(e), "traceback": tb[:5000],
-            "figures": figures, "execution_time": round(_time.time() - start, 3),
-        }
+        result_container.error = str(e)
+        result_container.traceback = traceback.format_exc()[:5000]
+        result_container.stdout = stdout_buf.getvalue()
 
-    stdout_text = stdout_buf.getvalue()
+
+def execute_code(code, timeout=10):
+    """Execute Python code in a restricted sandbox with thread-based timeout."""
+    import time as _time
+    start = _time.time()
+
+    container = _ExecResult()
+    thread = threading.Thread(
+        target=_run_in_thread,
+        args=(code, timeout, container),
+        daemon=True,
+    )
+    thread.start()
+    thread.join(timeout=timeout)
+
+    if thread.is_alive():
+        # Thread is still running — timed out
+        container.timed_out = True
+        container.success = False
+        container.error = f"Code execution timed out ({timeout} second limit)"
+        # Can't kill the thread, but it's a daemon so it won't block shutdown
+
+    stdout_text = container.stdout
     if len(stdout_text) > 50000:
         stdout_text = stdout_text[:50000] + "\n... (output truncated)"
 
-    result_str = ""
-    if result_val is not None:
-        try:
-            result_str = repr(result_val)
-            if len(result_str) > 10000:
-                result_str = result_str[:10000] + "..."
-        except:
-            result_str = "<unrepresentable result>"
-
     return {
-        "success": True, "stdout": stdout_text, "result": result_str,
-        "error": None, "traceback": None, "figures": figures,
+        "success": container.success,
+        "stdout": stdout_text,
+        "result": container.result or "",
+        "error": container.error,
+        "traceback": container.traceback,
+        "figures": container.figures,
         "execution_time": round(_time.time() - start, 3),
     }

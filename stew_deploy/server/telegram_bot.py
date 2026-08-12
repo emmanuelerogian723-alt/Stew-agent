@@ -42,14 +42,19 @@ class TelegramBot:
 
     async def send_document(self, chat_id: int, file_bytes: bytes,
                             filename: str, caption: str = "") -> dict:
-        """Send a file to a Telegram chat."""
-        async with httpx.AsyncClient(timeout=60) as client:
+        """Send a file to a Telegram chat with proper MIME type."""
+        import mimetypes
+        mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{self.base}/sendDocument",
                 data={"chat_id": str(chat_id), "caption": caption[:1024]},
-                files={"document": (filename, file_bytes)},
+                files={"document": (filename, file_bytes, mime_type)},
             )
-            return resp.json()
+            result = resp.json()
+            if not result.get("ok"):
+                logger.error(f"Telegram sendDocument failed: {result}")
+            return result
 
     async def send_photo(self, chat_id: int, photo_bytes: bytes,
                          caption: str = "", filename: str = "image.jpg") -> dict:
