@@ -911,20 +911,49 @@ async def chat(
     msg_lower = body.message.lower()
     should_search = False
 
+    market_or_weather_context = None
     if body.web_search and searcher._is_available():
-        # Decide if query needs fresh data — broadened keyword set
-        needs_search_keywords = [
-            "latest", "current", "today", "news", "score", "price",
-            "weather", "stock", "who won", "when is", "what is the",
-            "now", "recent", "update", "happened", "2024", "2025", "2026",
-            "bitcoin", "crypto", "naira", "dollar", "exchange", "rate",
-            "result", "match", "game", "election", "release", "launch",
-            "announce", "dead", "born", "happen", "live",
-        ]
-        should_search = any(kw in msg_lower for kw in needs_search_keywords)
-        # Also search if the message looks like a question about real-world facts
-        if not should_search and any(q in msg_lower for q in ["who is", "where is", "how much", "how many"]):
-            should_search = True
+        # Classify intent with the same NARROW classifier used by the Telegram
+        # bot. A previous version matched generic words like "what is the",
+        # "now", "when is", "how much", "how many", "who is" — which caused
+        # nearly every message to trigger a (frequently failing) web search.
+        chat_intent = classify_realtime_intent(msg_lower)
+
+        # For market/weather intents, try a direct structured lookup first —
+        # far more reliable than a generic web search for these.
+        if chat_intent == "market":
+            try:
+                from server.market_data import get_crypto_price, get_stock_price, CRYPTO_ALIASES, STOCK_ALIASES
+                # Try crypto first
+                found_crypto = next((alias for alias in CRYPTO_ALIASES if alias in msg_lower), None)
+                if found_crypto:
+                    price_data = await get_crypto_price(found_crypto)
+                    if "error" not in price_data:
+                        market_or_weather_context = f"LIVE CRYPTO PRICE DATA:\n{json.dumps(price_data)}"
+                # If no crypto match, try stock
+                if not market_or_weather_context:
+                    found_stock = next((alias for alias in STOCK_ALIASES if alias in msg_lower), None)
+                    if found_stock:
+                        price_data = await get_stock_price(found_stock)
+                        if "error" not in price_data:
+                            market_or_weather_context = f"LIVE STOCK PRICE DATA:\n{json.dumps(price_data)}"
+            except Exception as e:
+                logger.warning(f"Direct market lookup failed: {e}")
+        elif chat_intent == "weather":
+            try:
+                import re as _re_w
+                m = _re_w.search(r"weather (?:in|at|for) ([a-zA-Z ,]+)", msg_lower) or                     _re_w.search(r"temperature (?:in|at) ([a-zA-Z ,]+)", msg_lower)
+                if m:
+                    from server.skills_engine import weather as weather_skill
+                    weather_data = await weather_skill(m.group(1).strip())
+                    if "error" not in weather_data:
+                        market_or_weather_context = f"LIVE WEATHER DATA:\n{json.dumps(weather_data)}"
+            except Exception as e:
+                logger.warning(f"Direct weather lookup failed: {e}")
+
+        if market_or_weather_context:
+            web_grounded = True
+        should_search = (not market_or_weather_context) and chat_intent in ("market", "weather", "search")
         if should_search:
             try:
                 search_results = await asyncio.to_thread(searcher.search, body.message, 5)
@@ -995,6 +1024,8 @@ async def chat(
     if user and getattr(user, 'mistral_api_key', None) and settings.MISTRAL_API_KEY == "":
         import os as _os
         _os.environ["MISTRAL_API_KEY"] = user.mistral_api_key
+    if market_or_weather_context:
+        system += f"\n\n{market_or_weather_context}"
     if search_results and web_grounded:
         context = searcher.format_results_for_llm(search_results)
         system += f"\n\nWEB SEARCH CONTEXT (use ONLY this for factual claims):\n{context}"
@@ -1287,12 +1318,28 @@ async def task(
     llm = get_llm_client()
     searcher = get_searcher()
 
-    # Always try to search for task context
+    # Only search when the task actually needs real-time data
     search_context = ""
     sources = []
     web_grounded = False
 
-    if searcher._is_available():
+    task_lower = body.task.lower()
+    task_intent = classify_realtime_intent(task_lower)
+
+    # For market/weather, try direct structured lookup first (more reliable)
+    if task_intent == "market":
+        try:
+            from server.market_data import get_crypto_price, CRYPTO_ALIASES
+            found = next((alias for alias in CRYPTO_ALIASES if alias in task_lower), None)
+            if found:
+                price_data = await get_crypto_price(found)
+                if "error" not in price_data:
+                    search_context = f"LIVE CRYPTO PRICE DATA:\n{json.dumps(price_data)}"
+                    web_grounded = True
+        except Exception as e:
+            logger.warning(f"Task crypto lookup failed: {e}")
+
+    if not web_grounded and searcher._is_available() and task_intent in ("market", "weather", "search", "research"):
         try:
             sr = await asyncio.to_thread(searcher.search, body.task, 5)
             if sr.get("grounded"):
@@ -2446,6 +2493,49 @@ async def search_test():
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
 
+def classify_realtime_intent(text_lower: str) -> str:
+    """Classify whether a message needs live/real-time data, and what kind.
+    Returns one of: 'market', 'weather', 'research', 'search', 'none'.
+
+    Kept intentionally NARROW. An earlier version matched on generic words
+    like "what is", "who is", "how to", "best", "when", "where", "which",
+    "find", "search" (as substrings) — which caused nearly EVERY message to
+    trigger a (frequently failing) web search instead of a normal reply.
+    """
+    research_kw = ["research", "investigate", "deep dive", "analyze this", "study on", "report on", "look into"]
+    if any(kw in text_lower for kw in research_kw):
+        return "research"
+
+    market_kw = [
+        "bitcoin", "btc", "ethereum", "eth price", "eth to", "crypto", "cryptocurrency",
+        "dogecoin", "doge", "solana", "litecoin", "ripple", "xrp", "cardano",
+        "stock price", "share price", "stock of", "shares of", "stock market",
+        "exchange rate", "naira to", "dollar to", "usd to", "convert currency",
+        "shares", "stock of", "aapl", "tsla", "nvda", "amzn", "msft", "googl",
+        "wix stock", "tesla", "apple stock",
+    ]
+    if any(kw in text_lower for kw in market_kw):
+        return "market"
+
+    weather_kw = [
+        "weather in", "weather today", "current weather", "weather at", "weather for",
+        "temperature in", "temperature at", "forecast for", "is it raining",
+    ]
+    if any(kw in text_lower for kw in weather_kw):
+        return "weather"
+
+    search_kw = [
+        "search for", "look up", "google ", "web search", "find out about",
+        "find information on", "news", "breaking", "headline", "who won",
+        "score of", "match result", "election result", "just happened",
+        "happening now", "latest on", "latest news",
+    ]
+    if any(kw in text_lower for kw in search_kw):
+        return "search"
+
+    return "none"
+
+
 # ── Dedup cache: prevents re-processing the same update when Telegram
 # retries a webhook delivery (happens on Render cold starts / slow responses).
 # Without this, a retried update would be handled twice → duplicate replies.
@@ -2923,12 +3013,16 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return
 
     # ── TOOL-CALLING AGENT (Kimi-style) ─────────────────────────────────────────
-    # Detect requests that need tool calling: code, math, data analysis, documents
-    needs_tools = any(kw in user_lower for kw in [
+    # Detect requests that need tool calling: code, math, data analysis, documents,
+    # AND live market/weather data (crypto, stocks, forex, weather) — these now use
+    # dedicated reliable tools (CoinGecko/Yahoo Finance/wttr.in) instead of generic
+    # web search, which was flaky for structured price/weather lookups.
+    realtime_intent = classify_realtime_intent(user_lower)
+    needs_tools = realtime_intent in ("market", "weather") or any(kw in user_lower for kw in [
         "calculate", "compute", "solve", "math", "equation", "formula",
         "analyze data", "data analysis", "chart", "graph", "plot",
         "statistics", "probability", "compound", "interest",
-        "convert", "currency", "naira to", "dollar to", "exchange rate",
+        "convert", "currency",
         "budget", "loan", "mortgage", "investment", "roi",
         "run code", "python", "code", "program", "algorithm",
         "make a document", "create a document", "generate report",
@@ -2978,17 +3072,14 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     web_grounded = False
     system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
 
-    # Detect if search is needed
-    needs_search = any(kw in user_lower for kw in [
-        "latest", "current", "today", "news", "score", "price",
-        "weather", "stock", "search", "find", "what is", "who is",
-        "best", "top", "how to", "when", "where", "which", "compare",
-        "happened", "update", "recent", "2024", "2025", "2026",
-        "naira", "dollar", "bitcoin", "crypto", "exchange rate",
-    ])
-    # Detect research requests
-    tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze", "deep dive"]
-    needs_research = any(kw in user_lower for kw in tg_research_kw)
+    # Detect if a real web search is actually needed — reuses the same
+    # narrow classifier as the tool-agent routing above. Market/weather intents
+    # are excluded here on purpose: they're handled by the dedicated tools
+    # above, so if we reach this point for one of those it means the tool
+    # already failed — searching again rarely helps, so we just let the LLM
+    # answer conversationally instead of forcing another (likely failing) search.
+    needs_search = realtime_intent == "search"
+    needs_research = realtime_intent == "research"
 
     if needs_research:
         await bot.send_message(chat_id, f"Starting deep research on: {user_text[:100]}")

@@ -459,6 +459,18 @@ async def add_days(date: str, days: int) -> dict:
 
 # ─── FINANCE & CURRENCY ───────────────────────────────────────────────────────
 
+@skill("crypto_price", "Get the live price of a cryptocurrency (Bitcoin, Ethereum, Dogecoin, etc.)", "finance")
+async def crypto_price(symbol: str, vs_currency: str = "usd") -> dict:
+    from server.market_data import get_crypto_price as _get_crypto_price
+    return await _get_crypto_price(symbol, vs_currency)
+
+
+@skill("stock_price", "Get the live/delayed price of a stock by ticker or company name", "finance")
+async def stock_price(symbol: str) -> dict:
+    from server.market_data import get_stock_price as _get_stock_price
+    return await _get_stock_price(symbol)
+
+
 @skill("currency_rates", "Get live currency exchange rates", "finance")
 async def currency_rates(base: str = "USD") -> dict:
     try:
@@ -644,26 +656,44 @@ async def ip_info(ip: str = "") -> dict:
 
 @skill("weather", "Get current weather for a city", "utility")
 async def weather(city: str) -> dict:
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            # Use wttr.in — no API key needed
-            resp = await client.get(
-                f"https://wttr.in/{quote_plus(city)}?format=j1",
-                headers={"Accept": "application/json"}
-            )
-            data = resp.json()
-            current = data["current_condition"][0]
-            return {
-                "city": city,
-                "temp_c": current["temp_C"],
-                "temp_f": current["temp_F"],
-                "description": current["weatherDesc"][0]["value"],
-                "humidity": current["humidity"],
-                "wind_kmph": current["windspeedKmph"],
-                "feels_like_c": current["FeelsLikeC"],
-            }
-    except Exception as e:
-        return {"error": str(e), "city": city, "note": "Weather service unavailable"}
+    # wttr.in often has no data for very small/hyper-local place names
+    # (e.g. a village or ward). Try the given name first, then fall back to
+    # progressively broader parts of the name (splitting on commas) so a
+    # request like "Obukpa, Nsukka" still returns something useful.
+    candidates = [city]
+    if "," in city:
+        parts = [p.strip() for p in city.split(",") if p.strip()]
+        # Try each broader fragment after the first, e.g. "Nsukka", then "Enugu"
+        candidates.extend(parts[1:])
+        candidates.append(parts[-1])
+
+    last_error = None
+    async with httpx.AsyncClient(timeout=10) as client:
+        for candidate in candidates:
+            try:
+                resp = await client.get(
+                    f"https://wttr.in/{quote_plus(candidate)}?format=j1",
+                    headers={"Accept": "application/json"}
+                )
+                data = resp.json()
+                current = data["current_condition"][0]
+                result = {
+                    "city": city,
+                    "resolved_location": candidate,
+                    "temp_c": current["temp_C"],
+                    "temp_f": current["temp_F"],
+                    "description": current["weatherDesc"][0]["value"],
+                    "humidity": current["humidity"],
+                    "wind_kmph": current["windspeedKmph"],
+                    "feels_like_c": current["FeelsLikeC"],
+                }
+                if candidate != city:
+                    result["note"] = f"No exact data for '{city}' — showing nearest known location '{candidate}'"
+                return result
+            except Exception as e:
+                last_error = e
+                continue
+    return {"error": str(last_error) if last_error else "Unknown error", "city": city, "note": "Weather service unavailable for this location"}
 
 
 @skill("timezone_convert", "Convert time between timezones", "datetime")

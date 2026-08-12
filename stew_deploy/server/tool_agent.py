@@ -6,11 +6,15 @@ code execution, browse, document generation), executes them, and
 returns a final answer. Like Kimi's agentic mode.
 
 Tools available:
-  1. run_python_code(code)      — Execute Python in sandbox (math, data, charts)
-  2. web_search(query)           — Search the web (Serper + DuckDuckGo fallback)
-  3. browse_url(url)             — Fetch and read any webpage
-  4. generate_document(type, topic) — Create PDF/DOCX/XLSX/PPTX
-  5. ocr_image(file_id)          — OCR on an uploaded image (called when user sends photo)
+  1. run_python_code(code)          — Execute Python in sandbox (math, data, charts)
+  2. web_search(query)               — Search the web (Serper + DuckDuckGo fallback)
+  3. browse_url(url)                 — Fetch and read any webpage
+  4. generate_document(type, topic)  — Create PDF/DOCX/XLSX/PPTX
+  5. ocr_image(file_id)              — OCR on an uploaded image (called when user sends photo)
+  6. get_crypto_price(symbol)        — Live crypto price via CoinGecko (bitcoin, eth, etc.)
+  7. get_stock_price(symbol)         — Live stock price via Yahoo Finance (AAPL, TSLA, WIX, etc.)
+  8. get_weather(city)               — Live weather via wttr.in
+  9. get_exchange_rate(base, target) — Live currency exchange rates
 """
 import json
 import re
@@ -42,17 +46,25 @@ TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "pdf", "topic": "b
 TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "pptx", "topic": "AI trends"}}
 TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "docx", "topic": "marketing strategy"}}
 TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "xlsx", "topic": "monthly expenses"}}
+TOOL_CALL: {"tool": "get_crypto_price", "args": {"symbol": "bitcoin"}}
+TOOL_CALL: {"tool": "get_stock_price", "args": {"symbol": "AAPL"}}
+TOOL_CALL: {"tool": "get_weather", "args": {"city": "Lagos"}}
+TOOL_CALL: {"tool": "get_exchange_rate", "args": {"base": "USD", "target": "NGN"}}
 
 Rules:
 1. You can call MULTIPLE tools in sequence — wait for each result before deciding the next step.
 2. After getting tool results, analyze them and provide a natural language response.
 3. For math, data analysis, charts, or calculations — ALWAYS use run_python_code first.
-4. For current information, news, prices — use web_search first.
-5. For reading a webpage — use browse_url.
-6. For documents (PDF, Word, Excel, PowerPoint) — use generate_document.
-7. Never say you can't do something — try the tool first.
-8. Be concise in explanations. Show your work when using tools.
-9. End with a clear final answer after tool use.
+4. For crypto/coin prices (bitcoin, eth, doge, etc.) — ALWAYS use get_crypto_price, NOT web_search. It's faster and always accurate.
+5. For stock prices (AAPL, TSLA, company shares) — ALWAYS use get_stock_price, NOT web_search.
+6. For weather — ALWAYS use get_weather, NOT web_search.
+7. For currency conversion / exchange rates (naira, dollar, etc.) — ALWAYS use get_exchange_rate, NOT web_search.
+8. For genuinely unpredictable real-time info (news, sports scores, general facts) — use web_search.
+9. For reading a webpage — use browse_url.
+10. For documents (PDF, Word, Excel, PowerPoint) — use generate_document.
+11. Never say you can't do something — try the tool first.
+12. Be concise in explanations. Show your work when using tools.
+13. End with a clear final answer after tool use.
 
 When you don't need a tool, just answer directly.
 Always end with a helpful, complete response."""
@@ -191,6 +203,71 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
     elif tool == "ocr_image":
         # This is handled separately in the webhook (needs file_id download)
         return {"error": "OCR is handled at the webhook level when a photo is received"}
+
+    elif tool == "get_crypto_price":
+        symbol = args.get("symbol", "bitcoin")
+        vs_currency = args.get("vs_currency", "usd")
+        from server.market_data import get_crypto_price
+        data = await get_crypto_price(symbol, vs_currency)
+        if "error" in data:
+            return {"tool": tool, "success": False, "output": data["error"]}
+        output = (
+            f"{symbol.upper()} live price:\n"
+            f"USD: ${data.get('price_usd')}\n"
+            f"NGN: ₦{data.get('price_ngn')}\n"
+            f"24h change: {data.get('change_24h_pct')}%\n"
+            f"Source: {data.get('source')} (real-time)"
+        )
+        return {"tool": tool, "success": True, "output": output, "data": data}
+
+    elif tool == "get_stock_price":
+        symbol = args.get("symbol", "")
+        if not symbol:
+            return {"error": "No stock symbol provided"}
+        from server.market_data import get_stock_price
+        data = await get_stock_price(symbol)
+        if "error" in data:
+            return {"tool": tool, "success": False, "output": data["error"]}
+        output = (
+            f"{data.get('name', data.get('symbol'))} ({data.get('symbol')}) stock price:\n"
+            f"{data.get('currency')} {data.get('price')}\n"
+            f"Day range: {data.get('day_low')} - {data.get('day_high')}\n"
+            f"Previous close: {data.get('previous_close')}\n"
+            f"Exchange: {data.get('exchange')}\n"
+            f"Source: {data.get('source')}"
+        )
+        return {"tool": tool, "success": True, "output": output, "data": data}
+
+    elif tool == "get_weather":
+        city = args.get("city", "")
+        if not city:
+            return {"error": "No city provided"}
+        from server.skills_engine import weather as weather_skill
+        data = await weather_skill(city)
+        if "error" in data:
+            return {"tool": tool, "success": False, "output": data["error"]}
+        output = (
+            f"Weather in {data.get('city')}: {data.get('description')}\n"
+            f"Temp: {data.get('temp_c')}°C ({data.get('temp_f')}°F), feels like {data.get('feels_like_c')}°C\n"
+            f"Humidity: {data.get('humidity')}%  Wind: {data.get('wind_kmph')} km/h"
+        )
+        return {"tool": tool, "success": True, "output": output, "data": data}
+
+    elif tool == "get_exchange_rate":
+        base = args.get("base", "USD")
+        target = args.get("target", "")
+        from server.skills_engine import currency_rates as currency_rates_skill
+        data = await currency_rates_skill(base)
+        if "error" in data:
+            return {"tool": tool, "success": False, "output": data["error"]}
+        rates = data.get("rates", {})
+        if target:
+            target_u = target.upper()
+            rate = rates.get(target_u)
+            output = f"1 {base.upper()} = {rate} {target_u}" if rate else f"No rate found for {target_u}"
+        else:
+            output = f"Exchange rates for {base.upper()}: " + ", ".join(f"{k}={v}" for k, v in rates.items())
+        return {"tool": tool, "success": True, "output": output, "data": data}
 
     else:
         return {"error": f"Unknown tool: {tool}"}
