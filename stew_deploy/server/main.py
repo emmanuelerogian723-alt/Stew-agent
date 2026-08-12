@@ -3562,18 +3562,18 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 doc_result = generate_xlsx(data, "Sheet1", doc_topic)
             elif doc_type == "pptx":
                 # For presentations, ask LLM for slide structure
-                system_prompt = "You are a presentation designer. Generate slides as a JSON array. Each slide has 'title' and 'content' fields. Return ONLY valid JSON."
-                user_msg = f"Create a 5-8 slide presentation about: {doc_topic}. Return as JSON array of slides with title and content fields."
+                system_prompt = "You are a presentation designer. Return ONLY a JSON array of slides. Each slide has 'title' and 'content'. Content should be bullet points separated by newlines, with '- ' prefix for each bullet. Keep bullets concise (max 10 words each). Max 6 bullets per slide."
+                user_msg = f"Create a 10-12 slide presentation about: {doc_topic}. Include: title slide, problem, solution, market, product, business model, traction, team, financials, funding ask, closing. JSON array only."
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
                 ]
                 result = await asyncio.to_thread(llm.chat, messages)
-                content = clean_response(result["content"])
+                raw_content = result["content"]
 
                 import json as _json
                 import re as _re
-                json_match = _re.search(r'\[.*\]', content, _re.DOTALL)
+                json_match = _re.search(r'\[.*\]', raw_content, _re.DOTALL)
                 if json_match:
                     try:
                         slides = _json.loads(json_match.group())
@@ -3592,12 +3592,12 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     {"role": "user", "content": user_msg},
                 ]
                 result = await asyncio.to_thread(llm.chat, messages)
-                content = clean_response(result["content"])
+                raw_content = result["content"]
 
                 if doc_type == "pdf":
-                    doc_result = generate_pdf(content, doc_topic)
+                    doc_result = generate_pdf(raw_content, doc_topic)
                 elif doc_type == "docx":
-                    doc_result = generate_docx(content, doc_topic)
+                    doc_result = generate_docx(raw_content, doc_topic)
                 else:
                     doc_result = generate_html(content, doc_topic)
 

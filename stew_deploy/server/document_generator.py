@@ -69,14 +69,18 @@ def generate_pdf(content: str, title: str = "Document") -> dict:
             if not stripped:
                 story.append(Spacer(1, 0.3 * cm))
             elif stripped.startswith("## "):
-                story.append(Paragraph(stripped[3:], styles["Heading2"]))
+                clean_h = stripped[3:].replace("**", "").replace("*", "")
+                story.append(Paragraph(clean_h, styles["Heading2"]))
             elif stripped.startswith("# "):
-                story.append(Paragraph(stripped[2:], styles["Heading1"]))
-            elif stripped.startswith("- ") or stripped.startswith("* "):
-                story.append(Paragraph(f"• {stripped[2:]}", body_style))
+                clean_h = stripped[2:].replace("**", "").replace("*", "")
+                story.append(Paragraph(clean_h, styles["Heading1"]))
+            elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
+                bullet_text = stripped.lstrip("-*• ").replace("**", "").replace("*", "")
+                story.append(Paragraph(f"• {bullet_text}", body_style))
             else:
-                # Escape HTML-like chars for reportlab
-                safe = stripped.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                # Strip **bold** and *italic* markers, escape HTML chars
+                safe = stripped.replace("**", "").replace("*", "")
+                safe = safe.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 story.append(Paragraph(safe, body_style))
 
         # Footer with timestamp
@@ -124,17 +128,18 @@ def generate_docx(content: str, title: str = "Document") -> dict:
             if not stripped:
                 doc.add_paragraph()
             elif stripped.startswith("## "):
-                doc.add_heading(stripped[3:], level=2)
+                doc.add_heading(stripped[3:].replace("**", "").replace("*", ""), level=2)
             elif stripped.startswith("# "):
-                doc.add_heading(stripped[2:], level=1)
+                doc.add_heading(stripped[2:].replace("**", "").replace("*", ""), level=1)
             elif stripped.startswith("### "):
-                doc.add_heading(stripped[4:], level=3)
-            elif stripped.startswith("- ") or stripped.startswith("* "):
-                doc.add_paragraph(stripped[2:], style="List Bullet")
+                doc.add_heading(stripped[4:].replace("**", "").replace("*", ""), level=3)
+            elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
+                clean_bullet = stripped.lstrip("-*• ").replace("**", "").replace("*", "")
+                doc.add_paragraph(clean_bullet, style="List Bullet")
             elif stripped.startswith("1. ") or (len(stripped) > 2 and stripped[0].isdigit() and stripped[1] == "."):
                 doc.add_paragraph(stripped, style="List Number")
             else:
-                doc.add_paragraph(stripped)
+                doc.add_paragraph(stripped.replace("**", "").replace("*", ""))
 
         # Footer paragraph
         footer = doc.add_paragraph()
@@ -237,72 +242,136 @@ def generate_xlsx(
 # ── PPTX ──────────────────────────────────────────────────────────────────────
 
 def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
+    """Generate a clean, professional PPTX with custom dark theme slides."""
     try:
         from pptx import Presentation
         from pptx.util import Inches, Pt, Emu
         from pptx.dml.color import RGBColor
-        from pptx.enum.text import PP_ALIGN
+        from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+        from pptx.oxml.ns import qn
 
         prs = Presentation()
-        prs.slide_width = Inches(13.33)
+        prs.slide_width = Inches(13.333)
         prs.slide_height = Inches(7.5)
 
-        DARK_BG = RGBColor(0x1E, 0x29, 0x3B)
-        ACCENT = RGBColor(0x38, 0xBD, 0xF8)
+        # Color palette — clean dark theme
+        BG_DARK = RGBColor(0x0F, 0x17, 0x2A)      # deep navy
+        BG_CARD = RGBColor(0x1B, 0x25, 0x3B)      # slightly lighter
+        ACCENT = RGBColor(0xF5, 0x9E, 0x0B)       # amber gold
+        ACCENT_LIGHT = RGBColor(0xFD, 0xD8, 0x6E) # light gold
         WHITE = RGBColor(0xFF, 0xFF, 0xFF)
         LIGHT = RGBColor(0xCB, 0xD5, 0xE1)
+        MUTED = RGBColor(0x94, 0xA3, 0xB8)
+        DIVIDER = RGBColor(0x33, 0x3D, 0x52)
 
-        title_layout = prs.slide_layouts[0]   # Title slide
-        content_layout = prs.slide_layouts[1]  # Title + content
+        BLANK = prs.slide_layouts[6]  # blank layout for full control
+
+        def _add_bg(slide, color):
+            bg = slide.background
+            fill = bg.fill
+            fill.solid()
+            fill.fore_color.rgb = color
+
+        def _add_textbox(slide, left, top, width, height, text, font_size,
+                         color, bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+            txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+            tf = txBox.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = anchor
+            tf.auto_size = None
+            para = tf.paragraphs[0]
+            para.text = text
+            para.alignment = align
+            run = para.runs[0] if para.runs else para.add_run()
+            run.font.size = Pt(font_size)
+            run.font.color.rgb = color
+            run.font.bold = bold
+            run.font.name = "Segoe UI"
+            return tf
+
+        def _add_bullets(slide, left, top, width, height, bullets, font_size=16, color=LIGHT):
+            txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+            tf = txBox.text_frame
+            tf.word_wrap = True
+            for i, bullet in enumerate(bullets):
+                if i == 0:
+                    para = tf.paragraphs[0]
+                else:
+                    para = tf.add_paragraph()
+                # Clean the bullet text
+                clean = bullet.strip().lstrip("-").lstrip("•").strip()
+                para.text = clean
+                para.space_after = Pt(10)
+                para.space_before = Pt(4)
+                para.level = 0
+                run = para.runs[0] if para.runs else para.add_run()
+                run.font.size = Pt(font_size)
+                run.font.color.rgb = color
+                run.font.name = "Segoe UI"
+            return tf
+
+        def _add_accent_bar(slide, left, top, width=0.08, height=0.5):
+            """Add a small gold accent bar."""
+            from pptx.shapes.connector import Connector
+            shape = slide.shapes.add_shape(
+                1,  # MSO_SHAPE.RECTANGLE
+                Inches(left), Inches(top), Inches(width), Inches(height)
+            )
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = ACCENT
+            shape.line.fill.background()
+            return shape
 
         for i, slide_data in enumerate(slides):
             slide_title = slide_data.get("title", f"Slide {i+1}")
             slide_content = slide_data.get("content", "")
+            slide = prs.slides.add_slide(BLANK)
+            _add_bg(slide, BG_DARK)
 
-            layout = title_layout if i == 0 else content_layout
-            slide = prs.slides.add_slide(layout)
+            if i == 0:
+                # ── TITLE SLIDE ──
+                # Gold accent bar at top
+                _add_accent_bar(slide, 1.0, 2.8, width=2.5, height=0.06)
+                # Main title
+                _add_textbox(slide, 1.0, 3.0, 11.3, 1.5, slide_title,
+                            font_size=44, color=WHITE, bold=True, align=PP_ALIGN.LEFT)
+                # Subtitle (first bullet or topic)
+                subtitle = slide_content.split("\n")[0].strip().lstrip("-").lstrip("•").strip() if slide_content else title
+                if subtitle == slide_title:
+                    subtitle = title
+                _add_textbox(slide, 1.0, 4.5, 11.3, 0.8, subtitle,
+                            font_size=20, color=ACCENT_LIGHT, bold=False, align=PP_ALIGN.LEFT)
+                # Footer
+                _add_textbox(slide, 1.0, 6.5, 11.3, 0.5,
+                            "Generated by S.T.E.W Agent",
+                            font_size=11, color=MUTED, align=PP_ALIGN.LEFT)
+            else:
+                # ── CONTENT SLIDE ──
+                # Gold accent bar next to title
+                _add_accent_bar(slide, 0.8, 0.7, width=0.08, height=0.6)
+                # Title
+                _add_textbox(slide, 1.1, 0.6, 11.0, 0.9, slide_title,
+                            font_size=32, color=WHITE, bold=True, align=PP_ALIGN.LEFT)
+                # Divider line
+                divider = slide.shapes.add_shape(1, Inches(1.1), Inches(1.55), Inches(11.0), Inches(0.02))
+                divider.fill.solid()
+                divider.fill.fore_color.rgb = DIVIDER
+                divider.line.fill.background()
 
-            # Dark background
-            bg = slide.background
-            fill = bg.fill
-            fill.solid()
-            fill.fore_color.rgb = DARK_BG
-
-            # Title
-            if slide.shapes.title:
-                tf = slide.shapes.title.text_frame
-                tf.text = slide_title
-                for para in tf.paragraphs:
-                    for run in para.runs:
-                        run.font.color.rgb = ACCENT
-                        run.font.size = Pt(36 if i == 0 else 28)
-                        run.font.bold = True
-
-            # Content
-            if slide_content and len(slide.placeholders) > 1:
-                body = slide.placeholders[1]
-                tf = body.text_frame
-                tf.word_wrap = True
-                tf.clear()
-
+                # Parse content into bullets
+                bullets = []
                 for line in slide_content.split("\n"):
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    para = tf.add_paragraph()
-                    if stripped.startswith("- ") or stripped.startswith("• "):
-                        para.text = stripped[2:]
-                        para.level = 1
-                    else:
-                        para.text = stripped
-                        para.level = 0
-                    for run in para.runs:
-                        run.font.color.rgb = LIGHT
-                        run.font.size = Pt(18)
+                    clean = line.strip()
+                    if clean:
+                        bullets.append(clean)
+
+                if bullets:
+                    _add_bullets(slide, 1.3, 2.0, 10.8, 4.8, bullets, font_size=18, color=LIGHT)
 
         buf = io.BytesIO()
         prs.save(buf)
-        filename = f"{title.replace(' ', '_')}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pptx"
+        clean_title = title.replace(" ", "_").replace("/", "_")[:40]
+        filename = f"{clean_title}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pptx"
         return {
             "file": _to_base64(buf),
             "filename": filename,

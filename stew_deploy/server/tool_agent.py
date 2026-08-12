@@ -216,8 +216,8 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
                 user = f"Create spreadsheet data about: {topic}. 5-15 rows with proper column names. JSON array only."
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
                 resp = await asyncio.to_thread(llm.chat, messages)
-                content = clean_response(resp["content"])
-                json_match = re.search(r'\[.*\]', content, re.DOTALL)
+                raw = resp["content"]
+                json_match = re.search(r'\[.*\]', raw, re.DOTALL)
                 data = json.loads(json_match.group()) if json_match else [{"Topic": topic}]
                 result = generate_xlsx(data, "Sheet1", topic)
             elif doc_type == "pptx":
@@ -225,8 +225,8 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
                 user = "Create a 10-12 slide presentation about: " + topic + ". Include: title slide, problem, solution, market, product, business model, traction, team, financials, funding ask, closing. JSON array only. Format: [{\"title\": \"Slide Title\", \"content\": \"- Bullet 1\\n- Bullet 2\\n- Bullet 3\"}]"
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
                 resp = await asyncio.to_thread(llm.chat, messages)
-                content = clean_response(resp["content"])
-                json_match = re.search(r'\[.*\]', content, re.DOTALL)
+                raw = resp["content"]
+                json_match = re.search(r'\[.*\]', raw, re.DOTALL)
                 slides = json.loads(json_match.group()) if json_match else [{"title": topic, "content": "Generated"}]
                 result = generate_pptx(slides, topic)
             elif doc_type == "docx":
@@ -234,15 +234,17 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
                 user = f"Write a detailed document about: {topic}. Introduction, sections, conclusion."
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
                 resp = await asyncio.to_thread(llm.chat, messages)
-                content = clean_response(resp["content"])
-                result = generate_docx(content, topic)
+                raw = resp["content"]
+                # Keep markdown — DOCX generator parses ##, #, - for headings/lists
+                result = generate_docx(raw, topic)
             else:  # pdf
                 system = "You are a professional writer. Create a well-structured document. Use markdown."
                 user = f"Write a detailed document about: {topic}. Introduction, sections, conclusion."
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
                 resp = await asyncio.to_thread(llm.chat, messages)
-                content = clean_response(resp["content"])
-                result = generate_pdf(content, topic)
+                raw = resp["content"]
+                # Keep markdown — PDF generator parses ##, #, - for headings/lists
+                result = generate_pdf(raw, topic)
 
             return {
                 "tool": tool,
