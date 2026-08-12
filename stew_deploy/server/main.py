@@ -2446,18 +2446,25 @@ async def search_test():
         return {"success": False, "error": str(e)[:300]}
 
 @app.post("/telegram/webhook")
-async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Receive Telegram messages and reply via S.T.E.W."""
     if not settings.TELEGRAM_BOT_TOKEN:
         raise HTTPException(503, "Telegram bot not configured")
 
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": True}  # Invalid JSON, ignore
+
     from server.telegram_bot import TelegramBot
     bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
     msg = bot.parse_update(data)
 
     if not msg or msg["is_bot"]:
         return {"ok": True}
+
+    # Extract chat_id EARLY so all handlers (photo, document, text) can use it
+    chat_id = msg["chat_id"]
 
     # ── HANDLE INCOMING PHOTOS (OCR / Vision) ──────────────────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
@@ -2587,7 +2594,6 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     if not msg.get("text"):
         return {"ok": True}
 
-    chat_id = msg["chat_id"]
     user_text = msg["text"]
     username = msg.get("username") or msg.get("first_name", "User")
     user_lower = user_text.lower()
@@ -3000,10 +3006,13 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     messages = build_llm_messages(conv, system, recalled_tg)
 
     try:
-        result = await asyncio.to_thread(llm.chat, messages)
+        result = await asyncio.wait_for(asyncio.to_thread(llm.chat, messages), timeout=25)
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
         await bot.send_message(chat_id, reply, parse_mode="")
+    except asyncio.TimeoutError:
+        logger.error("Telegram LLM call timed out after 25s")
+        await bot.send_message(chat_id, "I'm taking longer than expected. The AI providers may be busy. Please try again in a moment.")
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
         await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")
