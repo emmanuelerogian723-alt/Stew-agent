@@ -3799,12 +3799,16 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
 
     # Detect if search is needed
     needs_search = any(kw in user_lower for kw in [
-        "latest", "current", "today", "news", "score", "price",
-        "weather", "stock", "search", "find", "what is", "who is",
-        "best", "top", "how to", "when", "where", "which", "compare",
-        "happened", "update", "recent", "2024", "2025", "2026",
-        "naira", "dollar", "bitcoin", "crypto", "exchange rate",
+        "latest", "current", "today", "news", "score",
+        "what is", "who is", "how to",
+        "happened", "update", "recent",
+        "compare",
     ])
+    # NOTE: weather, stock, crypto, exchange rate, price all have dedicated
+    # fast-path handlers above. Don't trigger search for those.
+    # Removed broad keywords: "search", "find", "best", "top", "when",
+    # "where", "which", "2024", "2025", "2026" — these triggered search on
+    # almost any question, causing the repeating search loop.
     # Detect research requests
     tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze", "deep dive"]
     needs_research = any(kw in user_lower for kw in tg_research_kw)
