@@ -16,7 +16,7 @@ from fastapi import (
     Request, UploadFile, BackgroundTasks
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, EmailStr, field_validator
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession

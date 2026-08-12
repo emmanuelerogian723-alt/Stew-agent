@@ -1,5 +1,11 @@
 User-agent: *
 Allow: /
+Allow: /llms.txt
+Allow: /llms-full.txt
+Allow: /docs
+Allow: /faq
+Disallow: /v1/
 Disallow: /dashboard
 Disallow: /playground
 Sitemap: https://stew-agent.onrender.com/sitemap.xml
+LLM-Sitemap: https://stew-agent.onrender.com/llms.txt
