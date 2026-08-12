@@ -61,9 +61,14 @@ NVIDIA_FALLBACKS = [
 
 # Vision-capable (multimodal) models per provider — tried in order.
 # All use the OpenAI-style content=[{"type":"image_url",...}] format.
+# NOTE: verified against live provider model lists on 2026-08-12 — Groq and
+# OpenRouter deprecate/rename vision models frequently, so if these start
+# 404ing, re-check https://api.groq.com/openai/v1/models (input_modalities
+# containing "image") and https://openrouter.ai/api/v1/models (architecture.
+# input_modalities containing "image", pricing 0 or id ending ":free").
 VISION_MODELS = {
-    "groq":       ["meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct"],
-    "openrouter": ["meta-llama/llama-3.2-11b-vision-instruct:free", "qwen/qwen2.5-vl-72b-instruct:free", "google/gemini-2.0-flash-exp:free"],
+    "openrouter": ["google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-nano-12b-v2-vl:free", "google/gemma-4-31b-it:free"],
+    "groq":       ["qwen/qwen3.6-27b"],  # reasoning model — emits <think> blocks, stripped in vision_chat
     "nvidia":     ["meta/llama-3.2-90b-vision-instruct"],
     "openai":     ["gpt-4o-mini"],
 }
@@ -380,8 +385,12 @@ class LLMClient:
                     )
                     text = response.choices[0].message.content
                     if text and text.strip():
-                        logger.info(f"Vision success via {provider_name}/{model}")
-                        return {"content": text.strip(), "provider": provider_name, "model": model}
+                        # Strip <think>...</think> reasoning blocks some vision models emit
+                        import re as _re_think
+                        clean_text = _re_think.sub(r"<think>.*?</think>", "", text, flags=_re_think.DOTALL).strip()
+                        if clean_text:
+                            logger.info(f"Vision success via {provider_name}/{model}")
+                            return {"content": clean_text, "provider": provider_name, "model": model}
                 except Exception as e:
                     errors.append(f"{provider_name}/{model}: {str(e)[:120]}")
                     logger.warning(f"Vision attempt failed ({provider_name}/{model}): {e}")
