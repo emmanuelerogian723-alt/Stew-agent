@@ -69,17 +69,65 @@ Rules:
 When you don't need a tool, just answer directly.
 Always end with a helpful, complete response."""
 
-TOOL_CALL_PATTERN = re.compile(r'TOOL_CALL:\s*(\{.*?\})', re.DOTALL)
+TOOL_CALL_MARKER = re.compile(r'TOOL_CALL:\s*')
+
+
+def _extract_balanced_json(text: str, start: int) -> Optional[str]:
+    """Starting at index `start` (which must be a '{'), scan forward counting
+    brace depth (respecting quoted strings) to find the matching closing '}'.
+    Returns the JSON substring, or None if unbalanced/malformed."""
+    if start >= len(text) or text[start] != '{':
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == '\\':
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None  # never closed — malformed/truncated
 
 
 def extract_tool_calls(text: str) -> list:
-    """Extract all TOOL_CALL JSON blocks from LLM output."""
+    """Extract all TOOL_CALL JSON blocks from LLM output.
+
+    Uses brace-balanced scanning (not a naive non-greedy regex) because
+    tool call args are frequently nested JSON objects — e.g.
+    {"tool": "generate_document", "args": {"doc_type": "docx", ...}} —
+    and a lazy `\{.*?\}` regex stops at the FIRST inner '}' it finds,
+    producing invalid/truncated JSON that silently fails to parse.
+    """
     calls = []
-    for match in TOOL_CALL_PATTERN.finditer(text):
+    for marker in TOOL_CALL_MARKER.finditer(text):
+        brace_start = marker.end()
+        # Skip any whitespace between the marker and the opening brace
+        while brace_start < len(text) and text[brace_start] != '{':
+            if not text[brace_start].isspace():
+                break
+            brace_start += 1
+        json_str = _extract_balanced_json(text, brace_start)
+        if not json_str:
+            logger.warning(f"TOOL_CALL found but JSON could not be balanced/parsed: {text[marker.start():marker.start()+200]!r}")
+            continue
         try:
-            call = json.loads(match.group(1))
+            call = json.loads(json_str)
             calls.append(call)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"TOOL_CALL JSON parse failed: {e} — raw: {json_str[:200]!r}")
             continue
     return calls
 
