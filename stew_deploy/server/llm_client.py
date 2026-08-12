@@ -59,6 +59,15 @@ NVIDIA_FALLBACKS = [
     "mistralai/mixtral-8x22b-instruct-v0.1",
 ]
 
+# Vision-capable (multimodal) models per provider — tried in order.
+# All use the OpenAI-style content=[{"type":"image_url",...}] format.
+VISION_MODELS = {
+    "groq":       ["meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct"],
+    "openrouter": ["meta-llama/llama-3.2-11b-vision-instruct:free", "qwen/qwen2.5-vl-72b-instruct:free", "google/gemini-2.0-flash-exp:free"],
+    "nvidia":     ["meta/llama-3.2-90b-vision-instruct"],
+    "openai":     ["gpt-4o-mini"],
+}
+
 
 class LLMClient:
     def __init__(self):
@@ -341,6 +350,46 @@ class LLMClient:
         raise HTTPException(
             status_code=503,
             detail="S.T.E.W is temporarily overloaded — all AI providers are rate-limited. Please retry in 30 seconds.",
+        )
+
+    def vision_chat(self, image_base64: str, prompt: str, mime_type: str = "image/jpeg") -> dict:
+        """Analyze an image with a real multimodal vision model (not OCR).
+
+        Tries each configured provider's vision-capable model in order until
+        one succeeds. Returns {"content": str, "provider": str, "model": str}.
+        Raises HTTPException(503) if no vision provider is available/working.
+        """
+        content_blocks = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}},
+        ]
+        messages = [{"role": "user", "content": content_blocks}]
+
+        errors = []
+        for provider_name, models in VISION_MODELS.items():
+            client = self.providers.get(provider_name)
+            if not client:
+                continue
+            for model in models:
+                try:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=1024,
+                        temperature=0.4,
+                    )
+                    text = response.choices[0].message.content
+                    if text and text.strip():
+                        logger.info(f"Vision success via {provider_name}/{model}")
+                        return {"content": text.strip(), "provider": provider_name, "model": model}
+                except Exception as e:
+                    errors.append(f"{provider_name}/{model}: {str(e)[:120]}")
+                    logger.warning(f"Vision attempt failed ({provider_name}/{model}): {e}")
+                    continue
+
+        raise HTTPException(
+            status_code=503,
+            detail=f"No vision-capable AI provider succeeded. Tried: {'; '.join(errors[:4]) if errors else 'none configured'}",
         )
 
     def complete(self, prompt: str,

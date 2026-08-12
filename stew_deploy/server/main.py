@@ -2609,7 +2609,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # Extract chat_id EARLY so all handlers (photo, document, text) can use it
     chat_id = msg["chat_id"]
 
-    # ── HANDLE INCOMING PHOTOS (OCR / Vision) ──────────────────────────────────
+    # ── HANDLE INCOMING PHOTOS (Real Vision + OCR) ─────────────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
         await bot.send_chat_action(chat_id, "typing")
         caption = msg.get("caption", "")
@@ -2619,27 +2619,53 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "I couldn't download the image. Please try again.")
                 return
 
-            await bot.send_message(chat_id, "Processing image with OCR...")
             await bot.send_typing(chat_id)
 
-            # Run OCR on the image
-            from server.ocr_engine import ocr_file, ocr_and_reason
+            # Run OCR first — cheap/local, useful for documents/receipts/screenshots
+            from server.ocr_engine import ocr_file
             ocr_result = await asyncio.to_thread(
                 ocr_file, file_bytes, msg.get("file_name", "photo.jpg"), "eng", False, True
             )
-
             extracted_text = ocr_result.get("text", "").strip()
             confidence = ocr_result.get("avg_confidence", 0)
             word_count = ocr_result.get("word_count", 0)
+            has_real_text = len(extracted_text) > 15 and word_count >= 3
 
+            # Decide: does this need actual VISION (image understanding) or just OCR text?
+            # Vision is used when: user asked a question (caption present) OR the image
+            # has no meaningful extractable text (e.g. a selfie/photo/scene, not a document).
+            needs_vision = bool(caption) or not has_real_text
+
+            if needs_vision:
+                await bot.send_message(chat_id, "Looking at the image...")
+                await bot.send_typing(chat_id)
+                try:
+                    import base64
+                    image_b64 = base64.b64encode(file_bytes).decode("utf-8")
+                    filename_lower = msg.get("file_name", "photo.jpg").lower()
+                    mime_type = "image/png" if filename_lower.endswith(".png") else "image/jpeg"
+
+                    vision_prompt = caption if caption else "Describe what you see in this image in detail. Be specific and natural, like a helpful friend looking at the photo."
+                    if has_real_text and caption:
+                        # Give the vision model the OCR text too — helps it read fine print accurately
+                        vision_prompt += f"\n\n(Text detected in the image via OCR, for reference: {extracted_text[:800]})"
+
+                    llm = get_llm_client()
+                    vision_result = await asyncio.to_thread(llm.vision_chat, image_b64, vision_prompt, mime_type)
+                    await bot.send_message(chat_id, vision_result["content"])
+                    return
+                except Exception as ve:
+                    logger.warning(f"Vision analysis failed, falling back to OCR-only: {ve}")
+                    # Fall through to OCR-only response below as a graceful degrade
+
+            # OCR-only path (document/receipt with no caption, or vision failed)
             if not extracted_text:
-                await bot.send_message(chat_id, "I couldn't extract any text from this image. It might be blurry or contain no readable text.")
+                await bot.send_message(chat_id, "I couldn't make out any text or details in this image clearly. Could you try sending a clearer photo?")
                 return
 
-            # If user asked a question in the caption, answer it about the image
             if caption:
-                await bot.send_message(chat_id, f"Found {word_count} words (confidence: {confidence}%). Analyzing...")
-                await bot.send_typing(chat_id)
+                # Vision failed but we have OCR text — answer using text reasoning as fallback
+                from server.ocr_engine import ocr_and_reason
                 result = await ocr_and_reason(
                     content=file_bytes,
                     filename=msg.get("file_name", "photo.jpg"),
@@ -2648,12 +2674,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     task="answer",
                 )
                 reply = result.get("answer", result.get("response", ""))
-                if reply:
-                    await bot.send_message(chat_id, reply)
-                else:
-                    await bot.send_message(chat_id, "Extracted text:\n\n" + extracted_text[:3000])
+                await bot.send_message(chat_id, reply or ("Extracted text:\n\n" + extracted_text[:3000]))
             else:
-                # No question — just return the extracted text
                 preview = extracted_text[:3500]
                 if len(extracted_text) > 3500:
                     preview += "\n\n... (truncated)"
@@ -2661,7 +2683,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return
 
         except Exception as e:
-            logger.error(f"Telegram photo OCR error: {e}", exc_info=True)
+            logger.error(f"Telegram photo processing error: {e}", exc_info=True)
             await bot.send_message(chat_id, f"Error processing image: {str(e)[:100]}. Please try again.")
             return
 
