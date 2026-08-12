@@ -55,6 +55,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# In-memory dedup for Telegram webhook retries (Telegram re-sends the same
+# update if our response is slow — this was causing duplicate bot replies,
+# e.g. weather answers appearing to "repeat" with different fake numbers).
+from collections import deque as _deque
+_TG_SEEN_UPDATES = _deque(maxlen=500)
+_TG_SEEN_SET = set()
+
+def _tg_already_processed(update_id) -> bool:
+    if update_id is None:
+        return False
+    if update_id in _TG_SEEN_SET:
+        return True
+    _TG_SEEN_UPDATES.append(update_id)
+    _TG_SEEN_SET.add(update_id)
+    if len(_TG_SEEN_UPDATES) > 480:
+        # trim the set to match the deque when it evicts old entries
+        while len(_TG_SEEN_SET) > len(_TG_SEEN_UPDATES):
+            _TG_SEEN_SET = set(_TG_SEEN_UPDATES)
+            break
+    return False
+
 from server.system_prompt import STEW_MASTER_PROMPT
 from server.clean_output import clean_response
 from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
@@ -2617,6 +2638,13 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         raise HTTPException(503, "Telegram bot not configured")
 
     data = await request.json()
+
+    # Dedup Telegram's update_id — prevents double-processing on webhook retries
+    update_id = data.get("update_id")
+    if _tg_already_processed(update_id):
+        logger.info(f"Skipping duplicate Telegram update_id={update_id}")
+        return {"ok": True}
+
     from server.telegram_bot import TelegramBot
     bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
     msg = bot.parse_update(data)
@@ -3619,6 +3647,100 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 logger.error(f"Telegram browse error: {e}")
                 await bot.send_message(chat_id, f"Error browsing: {str(e)[:200]}")
             return {"ok": True}
+
+    # ── LIVE DATA FAST PATH (weather / crypto / stock / fx) ────────────────────
+    # These MUST use real deterministic APIs, never free-form LLM + search text,
+    # because the LLM was hallucinating "I'll perform a web search..." over and
+    # over with different fake numbers each time (the reported repeating bug).
+    weather_kw = ["weather in", "weather for", "temperature in", "temperature at",
+                  "how hot is", "how cold is", "is it raining in", "forecast for", "forecast in"]
+    crypto_kw = ["bitcoin price", "btc price", "ethereum price", "eth price", "crypto price",
+                 "price of bitcoin", "price of ethereum", "price of btc", "price of eth",
+                 "dogecoin price", "price of doge"]
+    fx_kw = ["exchange rate", "naira to dollar", "dollar to naira", "usd to ngn", "ngn to usd",
+             "convert naira", "convert dollar", "how much is a dollar", "how much is 1 dollar"]
+
+    is_weather_q = any(kw in user_lower for kw in weather_kw) or (
+        user_lower.startswith("weather") or " weather " in f" {user_lower} "
+    )
+    is_crypto_q = any(kw in user_lower for kw in crypto_kw)
+    is_fx_q = any(kw in user_lower for kw in fx_kw)
+
+    if is_weather_q:
+        # Extract city name — text after "in"/"for"/"at", else fall back to whole message
+        import re as _re
+        city = None
+        m = _re.search(r'weather\s+(?:in|for|at)\s+([a-zA-Z\s]+)', user_lower)
+        if m:
+            city = m.group(1).strip().rstrip("?.! ")
+        if not city:
+            m = _re.search(r'temperature\s+(?:in|at)\s+([a-zA-Z\s]+)', user_lower)
+            if m:
+                city = m.group(1).strip().rstrip("?.! ")
+        if not city:
+            city = "Lagos"
+        await bot.send_typing(chat_id)
+        try:
+            from server.skills_engine import weather as weather_skill
+            data = await weather_skill(city)
+            if "error" not in data:
+                reply = (
+                    f"Weather in {data.get('city', city).title()}:\n"
+                    f"{data.get('description', 'N/A')}\n\n"
+                    f"Temperature: {data.get('temp_c')}°C ({data.get('temp_f')}°F)\n"
+                    f"Feels like: {data.get('feels_like_c')}°C\n"
+                    f"Humidity: {data.get('humidity')}%\n"
+                    f"Wind: {data.get('wind_kmph')} km/h"
+                )
+            else:
+                reply = f"Couldn't get live weather for {city} right now: {data['error']}"
+            await bot.send_message(chat_id, reply)
+        except Exception as e:
+            logger.error(f"Weather fast-path error: {e}")
+            await bot.send_message(chat_id, f"Couldn't fetch weather for {city} right now. Try again in a moment.")
+        return {"ok": True}
+
+    if is_crypto_q:
+        import re as _re
+        symbol = "bitcoin"
+        for coin in ["bitcoin", "btc", "ethereum", "eth", "dogecoin", "doge"]:
+            if coin in user_lower:
+                symbol = {"btc": "bitcoin", "eth": "ethereum", "doge": "dogecoin"}.get(coin, coin)
+                break
+        await bot.send_typing(chat_id)
+        try:
+            from server.market_data import get_crypto_price
+            data = await get_crypto_price(symbol, "usd")
+            if "error" not in data:
+                reply = (
+                    f"{symbol.upper()} live price:\n"
+                    f"USD: ${data.get('price_usd')}\n"
+                    f"NGN: ₦{data.get('price_ngn')}\n"
+                    f"24h change: {data.get('change_24h_pct')}%"
+                )
+            else:
+                reply = f"Couldn't get live price: {data['error']}"
+            await bot.send_message(chat_id, reply)
+        except Exception as e:
+            logger.error(f"Crypto fast-path error: {e}")
+            await bot.send_message(chat_id, "Couldn't fetch live price right now. Try again in a moment.")
+        return {"ok": True}
+
+    if is_fx_q:
+        await bot.send_typing(chat_id)
+        try:
+            from server.skills_engine import currency_rates as currency_rates_skill
+            data = await currency_rates_skill("USD")
+            rate = data.get("rates", {}).get("NGN")
+            if rate:
+                reply = f"1 USD = ₦{rate}"
+            else:
+                reply = "Couldn't get the exchange rate right now."
+            await bot.send_message(chat_id, reply)
+        except Exception as e:
+            logger.error(f"FX fast-path error: {e}")
+            await bot.send_message(chat_id, "Couldn't fetch the exchange rate right now. Try again in a moment.")
+        return {"ok": True}
 
     # ── TOOL-CALLING AGENT (Kimi-style) ─────────────────────────────────────────
     # Detect requests that need tool calling: code, math, data analysis, documents
