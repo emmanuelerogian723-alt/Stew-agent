@@ -3041,7 +3041,25 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # dedicated reliable tools (CoinGecko/Yahoo Finance/wttr.in) instead of generic
     # web search, which was flaky for structured price/weather lookups.
     realtime_intent = classify_realtime_intent(user_lower)
-    needs_tools = realtime_intent in ("market", "weather") or any(kw in user_lower for kw in [
+
+    # Broad document-generation intent detection — catches many phrasings:
+    # "create a document", "make a pdf", "give me a word file", "generate slides",
+    # "create a real document", "I need a spreadsheet", "build a presentation", etc.
+    doc_keywords = [
+        "document", "pdf", "word", "docx", "excel", "xlsx", "spreadsheet",
+        "powerpoint", "pptx", "slides", "presentation",
+        "report", "generate report", "create report", "make report",
+        "create a file", "make a file", "generate a file",
+        "downloadable", "download file",
+        "business plan", "financial projection", "cash flow",
+    ]
+    # Action verbs that signal creation intent when paired with a doc keyword
+    doc_verbs = ["create", "make", "generate", "build", "give", "need", "want", "produce", "write"]
+    has_doc_keyword = any(kw in user_lower for kw in doc_keywords)
+    has_doc_verb = any(v in user_lower for v in doc_verbs)
+    wants_document = has_doc_keyword and (has_doc_verb or "document" in user_lower or "pdf" in user_lower or "slides" in user_lower or "spreadsheet" in user_lower or "presentation" in user_lower)
+
+    needs_tools = realtime_intent in ("market", "weather") or wants_document or any(kw in user_lower for kw in [
         "calculate", "compute", "solve", "math", "equation", "formula",
         "analyze data", "data analysis", "chart", "graph", "plot",
         "statistics", "probability", "compound", "interest",
