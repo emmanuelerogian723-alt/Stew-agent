@@ -63,17 +63,16 @@ _TG_SEEN_UPDATES = _deque(maxlen=500)
 _TG_SEEN_SET = set()
 
 def _tg_already_processed(update_id) -> bool:
+    global _TG_SEEN_SET
     if update_id is None:
         return False
     if update_id in _TG_SEEN_SET:
         return True
+    if len(_TG_SEEN_UPDATES) == _TG_SEEN_UPDATES.maxlen:
+        # deque is about to evict its oldest item on next append — drop it from the set too
+        _TG_SEEN_SET.discard(_TG_SEEN_UPDATES[0])
     _TG_SEEN_UPDATES.append(update_id)
     _TG_SEEN_SET.add(update_id)
-    if len(_TG_SEEN_UPDATES) > 480:
-        # trim the set to match the deque when it evicts old entries
-        while len(_TG_SEEN_SET) > len(_TG_SEEN_UPDATES):
-            _TG_SEEN_SET = set(_TG_SEEN_UPDATES)
-            break
     return False
 
 from server.system_prompt import STEW_MASTER_PROMPT
