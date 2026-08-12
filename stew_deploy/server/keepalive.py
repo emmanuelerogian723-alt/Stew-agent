@@ -12,7 +12,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # How often to self-ping (seconds). Free tier servers sleep after 15 min.
-PING_INTERVAL = int(os.environ.get("KEEPALIVE_INTERVAL", "600"))  # 10 minutes default
+PING_INTERVAL = int(os.environ.get("KEEPALIVE_INTERVAL", "240"))  # 4 minutes (Render free sleeps at 15min)
 SELF_URL = os.environ.get("RENDER_EXTERNAL_URL") or \
            os.environ.get("RAILWAY_PUBLIC_DOMAIN") or \
            os.environ.get("KOYEB_PUBLIC_DOMAIN") or \
