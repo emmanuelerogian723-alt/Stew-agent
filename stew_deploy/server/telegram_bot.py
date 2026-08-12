@@ -134,9 +134,64 @@ class TelegramBot:
                 return resp.content
             return None
 
+
+    async def send_inline_keyboard(self, chat_id: int, text: str, keyboard: list) -> dict:
+        """Send a message with an inline keyboard (buttons).
+
+        keyboard = [[{"text": "Button 1", "callback_data": "action1"}], ...]
+        """
+        import json as _json
+        inline_keyboard = {"inline_keyboard": keyboard}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{self.base}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "reply_markup": _json.dumps(inline_keyboard),
+                },
+            )
+            return resp.json()
+
+    async def send_voice(self, chat_id: int, audio_bytes: bytes, caption: str = "") -> dict:
+        """Send a voice message (OGG format)."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.base}/sendVoice",
+                data={"chat_id": str(chat_id), "caption": caption[:1024]},
+                files={"voice": ("voice.ogg", audio_bytes, "audio/ogg")},
+            )
+            return resp.json()
+
     def parse_update(self, data: dict) -> Optional[dict]:
         """Extract message info from Telegram update.
-        Handles text, photos, and documents."""
+        Handles text, photos, documents, voice, audio, and callback queries."""
+        # Handle callback queries (inline button presses)
+        callback = data.get("callback_query")
+        if callback:
+            return {
+                "update_id": data.get("update_id"),
+                "chat_id": callback["message"]["chat"]["id"],
+                "user_id": callback["from"]["id"],
+                "username": callback["from"].get("username", ""),
+                "first_name": callback["from"].get("first_name", ""),
+                "text": "",
+                "caption": "",
+                "message_id": callback["message"]["message_id"],
+                "is_bot": callback["from"].get("is_bot", False),
+                "has_photo": False,
+                "has_document": False,
+                "has_voice": False,
+                "has_audio": False,
+                "file_id": None,
+                "file_name": None,
+                "file_type": None,
+                "file_size": 0,
+                "is_callback": True,
+                "callback_data": callback.get("data", ""),
+                "callback_id": callback.get("id", ""),
+            }
+
         msg = data.get("message") or data.get("edited_message")
         if not msg:
             return None
@@ -145,6 +200,8 @@ class TelegramBot:
         caption = msg.get("caption", "")
         has_photo = "photo" in msg and msg["photo"]
         has_document = "document" in msg and msg["document"]
+        has_voice = "voice" in msg and msg["voice"]
+        has_audio = "audio" in msg and msg["audio"]
 
         # Determine file info
         file_id = None
@@ -153,7 +210,6 @@ class TelegramBot:
         file_size = None
 
         if has_photo:
-            # Get the largest photo (last in array)
             photo = msg["photo"][-1]
             file_id = photo.get("file_id")
             file_name = f"photo_{msg['message_id']}.jpg"
@@ -165,6 +221,18 @@ class TelegramBot:
             file_name = doc.get("file_name", "document")
             file_type = "document"
             file_size = doc.get("file_size", 0)
+        elif has_voice:
+            voice = msg["voice"]
+            file_id = voice.get("file_id")
+            file_name = f"voice_{msg['message_id']}.ogg"
+            file_type = "voice"
+            file_size = voice.get("file_size", 0)
+        elif has_audio:
+            audio = msg["audio"]
+            file_id = audio.get("file_id")
+            file_name = audio.get("file_name", f"audio_{msg['message_id']}.mp3")
+            file_type = "audio"
+            file_size = audio.get("file_size", 0)
 
         return {
             "update_id": data.get("update_id"),
@@ -176,8 +244,13 @@ class TelegramBot:
             "caption": caption,
             "message_id": msg["message_id"],
             "is_bot": msg["from"].get("is_bot", False),
+            "is_callback": False,
+            "callback_data": None,
+            "callback_id": None,
             "has_photo": has_photo,
             "has_document": has_document,
+            "has_voice": has_voice,
+            "has_audio": has_audio,
             "file_id": file_id,
             "file_name": file_name,
             "file_type": file_type,

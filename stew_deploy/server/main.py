@@ -2785,38 +2785,627 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 return {"ok": True}
             await asyncio.sleep(0.5)
 
-    # Handle /start command
+
+
+
+    # ── CALLBACK QUERY HANDLER (Inline Button Presses) ─────────────────────────
+    if msg.get("is_callback"):
+        callback_data = msg.get("callback_data", "")
+        callback_id = msg.get("callback_id", "")
+
+        # Answer the callback to remove the loading state
+        async with httpx.AsyncClient(timeout=5) as cb_client:
+            await cb_client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+                json={"callback_query_id": callback_id})
+
+        callback_map = {
+            "menu_students": "students",
+            "menu_lecturers": "lecturers",
+            "menu_companies": "companies",
+            "menu_tools": "tools",
+            "menu_clear": "clear",
+            "menu_help": "help",
+        }
+        action = callback_map.get(callback_data, "")
+        if action == "students":
+            await bot.send_message(chat_id, "Student Tools: /quiz /flashcards /studyguide /summarize /translate /solve /code\n\nExample: /quiz photosynthesis")
+        elif action == "lecturers":
+            await bot.send_message(chat_id, "Lecturer Tools: /lessonplan /rubric /grade /quiz /pptx\n\nExample: /lessonplan Intro to Calculus for 100 level")
+        elif action == "companies":
+            await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN")
+        elif action == "tools":
+            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx\nGenerate images: 'generate image of...'\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
+        elif action == "clear":
+            try:
+                conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
+                conv = conv_q.scalar_one_or_none()
+                if conv:
+                    from sqlalchemy import text as _text
+                    await db.execute(_text("DELETE FROM messages WHERE conversation_id = :cid"), {"cid": conv.id})
+                    await db.commit()
+            except Exception as ce:
+                logger.warning(f"Clear error: {ce}")
+            await bot.send_message(chat_id, "Conversation cleared. Fresh start!")
+        elif action == "help":
+            # Trigger help by falling through - just send help text directly
+            help_text = (
+                "S.T.E.W Commands\n\n"
+                "Students: /quiz /flashcards /studyguide /summarize /translate /solve\n"
+                "Lecturers: /lessonplan /rubric /grade\n"
+                "Companies: /invoice /meeting /swot /businessplan /budget\n"
+                "Tools: /research /code /menu /clear\n"
+                "Documents: /pdf /docx /xlsx /pptx\n"
+                "Images: generate image of...\n"
+                "Browse: browse https://...\n"
+                "Send photos/PDFs for OCR, voice notes for transcription"
+            )
+            await bot.send_message(chat_id, help_text)
+        return {"ok": True}
+
+    # Handle /start command with inline menu
     if user_text.startswith("/start"):
+        keyboard = [
+            [
+                {"text": "Students", "callback_data": "menu_students"},
+                {"text": "Lecturers", "callback_data": "menu_lecturers"},
+            ],
+            [
+                {"text": "Companies", "callback_data": "menu_companies"},
+                {"text": "Tools", "callback_data": "menu_tools"},
+            ],
+            [
+                {"text": "Clear Chat", "callback_data": "menu_clear"},
+                {"text": "Help", "callback_data": "menu_help"},
+            ],
+        ]
         welcome = (
-            f"Hello {username}! I'm S.T.E.W — Smart Thinking Executive Worker.\n\n"
-            "I can:\n"
-            "1. Search the web (real Google results)\n"
-            "2. Generate images (just say 'generate image of...')\n"
-            "3. Create PDF, Word, Excel, PowerPoint documents\n"
-            "4. Write and review code\n"
-            "5. Browse any URL and summarize it\n"
-            "6. Analyze data\n\n"
-            f"Your API key: {tg_user.api_key}\n\n"
-            "Just send me any message or question to get started!"
+            f"Hello {username}! I'm S.T.E.W.\n\n"
+            "I help students, lecturers, and companies get things done.\n\n"
+            "Tap a button to see what I can do:"
         )
-        await bot.send_message(chat_id, welcome)
+        await bot.send_inline_keyboard(chat_id, welcome, keyboard)
+        return {"ok": True}
+
+    # Handle /menu command
+    if user_text.startswith("/menu"):
+        keyboard = [
+            [
+                {"text": "Students", "callback_data": "menu_students"},
+                {"text": "Lecturers", "callback_data": "menu_lecturers"},
+            ],
+            [
+                {"text": "Companies", "callback_data": "menu_companies"},
+                {"text": "Tools", "callback_data": "menu_tools"},
+            ],
+            [
+                {"text": "Clear Chat", "callback_data": "menu_clear"},
+                {"text": "Help", "callback_data": "menu_help"},
+            ],
+        ]
+        await bot.send_inline_keyboard(chat_id, "Main Menu - Tap a category:", keyboard)
         return {"ok": True}
 
     # Handle /help command
     if user_text.startswith("/help"):
         help_text = (
-            "S.T.E.W Commands:\n\n"
-            "1. Search: just ask any question\n"
-            "2. Generate image: 'generate image of a sunset over Lagos'\n"
-            "3. Create PDF: 'make a PDF about business plan for bakery'\n"
-            "4. Create Word: 'create a Word document about marketing strategy'\n"
-            "5. Create Excel: 'make a spreadsheet of monthly expenses'\n"
-            "6. Create PowerPoint: 'create a presentation about AI trends'\n"
-            "7. Browse URL: 'browse https://example.com'\n"
-            "8. Research: 'research the latest AI news'\n\n"
-            "Just talk to me naturally — I understand what you need!"
+            "S.T.E.W Commands\n\n"
+            "For Everyone:\n"
+            "1. /menu - Interactive menu\n"
+            "2. /summarize - Summarize text\n"
+            "3. /translate - Translate languages\n"
+            "4. /research - Deep research\n"
+            "5. /code - Run Python code\n"
+            "6. /clear - Clear chat history\n\n"
+            "For Students:\n"
+            "7. /quiz - Generate quiz questions\n"
+            "8. /flashcards - Create flashcards\n"
+            "9. /studyguide - Study guide with PDF\n"
+            "10. /solve - Solve math problems\n\n"
+            "For Lecturers:\n"
+            "11. /lessonplan - Create lesson plan PDF\n"
+            "12. /rubric - Grading rubric PDF\n"
+            "13. /grade - Calculate grades\n\n"
+            "For Companies:\n"
+            "14. /invoice - Invoice generator PDF\n"
+            "15. /meeting - Meeting minutes PDF\n"
+            "16. /swot - SWOT analysis PDF\n"
+            "17. /businessplan - Business plan PDF\n"
+            "18. /budget - Budget planner\n\n"
+            "Documents: /pdf /docx /xlsx /pptx\n"
+            "Images: generate image of...\n"
+            "Browse: browse https://...\n"
+            "Send photos/PDFs for OCR\n"
+            "Send voice notes for transcription"
         )
         await bot.send_message(chat_id, help_text)
+        return {"ok": True}
+
+    # ── VOICE MESSAGE HANDLING ─────────────────────────────────────────────────
+    if msg.get("has_voice") or msg.get("has_audio"):
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            file_bytes = await bot.download_file(msg["file_id"])
+            if not file_bytes:
+                await bot.send_message(chat_id, "Couldn't download your voice message.")
+                return {"ok": True}
+            await bot.send_message(chat_id, "Transcribing your voice message...")
+            await bot.send_typing(chat_id)
+            import os as _os
+            import tempfile
+            groq_key = _os.getenv("GROQ_API_KEY", "")
+            transcript = ""
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            try:
+                if groq_key:
+                    with open(tmp_path, "rb") as audio_file:
+                        resp = http_requests.post(
+                            "https://api.groq.com/openai/v1/audio/transcriptions",
+                            headers={"Authorization": f"Bearer {groq_key}"},
+                            files={"file": ("voice.ogg", audio_file, "audio/ogg")},
+                            data={"model": "whisper-large-v3"},
+                            timeout=30,
+                        )
+                    transcript = resp.json().get("text", "").strip()
+                else:
+                    openai_key = _os.getenv("OPENAI_API_KEY", "")
+                    if openai_key and not openai_key.startswith("sk-stew"):
+                        with open(tmp_path, "rb") as audio_file:
+                            resp = http_requests.post(
+                                "https://api.openai.com/v1/audio/transcriptions",
+                                headers={"Authorization": f"Bearer {openai_key}"},
+                                files={"file": ("voice.ogg", audio_file, "audio/ogg")},
+                                data={"model": "whisper-1"},
+                                timeout=30,
+                            )
+                        transcript = resp.json().get("text", "").strip()
+            finally:
+                _os.unlink(tmp_path)
+            if not transcript:
+                await bot.send_message(chat_id, "Couldn't transcribe. Please type your message instead.")
+                return {"ok": True}
+            await bot.send_message(chat_id, f'You said: "{transcript}"\nProcessing...')
+            await bot.send_typing(chat_id)
+            user_text = transcript
+            user_lower = user_text.lower()
+        except Exception as e:
+            logger.error(f"Voice error: {e}", exc_info=True)
+            await bot.send_message(chat_id, f"Voice error: {str(e)[:100]}. Please type instead.")
+            return {"ok": True}
+
+    # ── /summarize COMMAND ─────────────────────────────────────────────────────
+    if user_text.startswith("/summarize"):
+        text_to_summarize = user_text[10:].strip()
+        if not text_to_summarize:
+            await bot.send_message(chat_id, "Send: /summarize Your long text here...")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.complete,
+                f"Summarize with key points:\n\n{text_to_summarize[:8000]}",
+                system="Expert summarizer. Create a clear summary with bullet points.")
+            await bot.send_message(chat_id, clean_response(result))
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /translate COMMAND ─────────────────────────────────────────────────────
+    if user_text.startswith("/translate"):
+        text_to_translate = user_text[10:].strip()
+        if not text_to_translate:
+            await bot.send_message(chat_id, "Send: /translate English to French: Hello World")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.complete,
+                f"Translate: {text_to_translate}",
+                system="Professional translator. Return only the translation.")
+            await bot.send_message(chat_id, f"Translation: {clean_response(result)}")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /quiz COMMAND (Students) ───────────────────────────────────────────────
+    if user_text.startswith("/quiz"):
+        topic = user_text[5:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /quiz photosynthesis, 10 questions")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Quiz generator. Create multiple choice questions with format:\nQ1. Question\nA) Option\nB) Option\nC) Option\nD) Option\nAnswer: X\n\nInclude answer key at end."},
+                {"role": "user", "content": f"Create 10 MCQ quiz about: {topic}"},
+            ])
+            quiz_text = clean_response(result["content"])
+            doc_result = generate_pdf(quiz_text, f"Quiz: {topic}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_message(chat_id, quiz_text[:3800])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "quiz.pdf"), f"Quiz: {topic}")
+            else:
+                await bot.send_message(chat_id, quiz_text[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /flashcards COMMAND (Students) ─────────────────────────────────────────
+    if user_text.startswith("/flashcards"):
+        topic = user_text[11:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /flashcards biology chapter 5")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Flashcard generator. Format:\nCard 1\nFront: Question\nBack: Answer\n\nMake 15 cards."},
+                {"role": "user", "content": f"Create flashcards about: {topic}"},
+            ])
+            await bot.send_message(chat_id, clean_response(result["content"])[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /studyguide COMMAND (Students) ────────────────────────────────────────
+    if user_text.startswith("/studyguide"):
+        topic = user_text[11:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /studyguide Nigerian history 1960-1999")
+            return {"ok": True}
+        await bot.send_message(chat_id, f"Creating study guide: {topic}...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            searcher = get_searcher()
+            search_results = await asyncio.to_thread(searcher.search, topic, 5)
+            context = ""
+            if search_results.get("grounded"):
+                context = searcher.format_results_for_llm(search_results)
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Study guide creator. Include: key concepts, definitions, formulas, summary points, practice questions."},
+                {"role": "user", "content": f"Study guide about: {topic}\n\nContext: {context[:5000]}"},
+            ])
+            guide = clean_response(result["content"])
+            doc_result = generate_pdf(guide, f"Study Guide: {topic}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "study_guide.pdf"), f"Study Guide: {topic}")
+            else:
+                await bot.send_message(chat_id, guide[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /solve COMMAND (Math) ──────────────────────────────────────────────────
+    if user_text.startswith("/solve"):
+        problem = user_text[6:].strip()
+        if not problem:
+            await bot.send_message(chat_id, "Send: /solve 2x + 5 = 15, find x")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            from server.tool_agent import run_agent_loop
+            agent_result = await run_agent_loop(f"Solve step by step: {problem}", max_iterations=3)
+            response = agent_result.get("response", "")
+            if response:
+                await bot.send_message(chat_id, response[:3800])
+            else:
+                llm = get_llm_client()
+                result = await asyncio.to_thread(llm.complete, f"Solve: {problem}", system="Math tutor. Show all steps.")
+                await bot.send_message(chat_id, clean_response(result))
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /lessonplan COMMAND (Lecturers) ────────────────────────────────────────
+    if user_text.startswith("/lessonplan"):
+        topic = user_text[11:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /lessonplan Intro to Calculus for 100 level")
+            return {"ok": True}
+        await bot.send_message(chat_id, f"Creating lesson plan: {topic}...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Expert curriculum designer. Create detailed lesson plan with: objectives, duration, materials, activities, assessment, homework."},
+                {"role": "user", "content": f"Lesson plan for: {topic}"},
+            ])
+            plan = clean_response(result["content"])
+            doc_result = generate_pdf(plan, f"Lesson Plan: {topic}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "lesson_plan.pdf"), f"Lesson Plan: {topic}")
+            else:
+                await bot.send_message(chat_id, plan[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /rubric COMMAND (Lecturers) ────────────────────────────────────────────
+    if user_text.startswith("/rubric"):
+        topic = user_text[7:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /rubric Research paper, 100 marks")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Expert assessor. Create grading rubric with criteria, performance levels, and point allocations."},
+                {"role": "user", "content": f"Grading rubric for: {topic}"},
+            ])
+            rubric = clean_response(result["content"])
+            doc_result = generate_pdf(rubric, f"Rubric: {topic}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "rubric.pdf"), f"Rubric: {topic}")
+            else:
+                await bot.send_message(chat_id, rubric[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /grade COMMAND (Lecturers) ─────────────────────────────────────────────
+    if user_text.startswith("/grade"):
+        grade_input = user_text[6:].strip()
+        if not grade_input:
+            await bot.send_message(chat_id, "Send: /grade 85 out of 100\nOr: /grade CA=30 Exam=50 Total=100")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            from server.code_sandbox import execute_code
+            safe_input = grade_input.replace('"', "'")
+            code = 'import re\ninput_str = "' + safe_input + '"\n'
+            code += 'if "out of" in input_str.lower():\n'
+            code += '    parts = input_str.lower().split("out of")\n'
+            code += '    score = float(parts[0].strip().split()[-1])\n'
+            code += '    total = float(parts[1].strip().split()[0])\n'
+            code += '    pct = (score/total)*100\n'
+            code += '    g = "A" if pct>=70 else "B" if pct>=60 else "C" if pct>=50 else "D" if pct>=45 else "E" if pct>=40 else "F"\n'
+            code += '    print(f"Score: {score}/{total} = {pct:.1f}% Grade: {g}")\n'
+            code += 'elif "=" in input_str:\n'
+            code += '    scores = dict(re.findall(r"(\w+)=(\d+)", input_str))\n'
+            code += '    total = sum(int(v) for v in scores.values())\n'
+            code += '    print(f"Breakdown: {scores}")\n'
+            code += '    print(f"Total: {total}")\n'
+            code += 'else:\n'
+            code += '    print("Use: /grade 85 out of 100 or /grade CA=30 Exam=50")\n'
+            result = await asyncio.to_thread(execute_code, code)
+            output = result.get("stdout", "") or result.get("error", "Error")
+            await bot.send_message(chat_id, f"Grade Result:\n{output[:1000]}")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /invoice COMMAND (Companies) ───────────────────────────────────────────
+    if user_text.startswith("/invoice"):
+        details = user_text[8:].strip()
+        if not details:
+            await bot.send_message(chat_id, "Send: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Generating invoice...")
+        await bot.send_chat_action(chat_id, "upload_document")
+        try:
+            import random as _rand
+            inv_num = f"INV-{_rand.randint(10000,99999)}"
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Invoice generator. Create professional invoice with: invoice number, date, client info, service description, amount in Naira, subtotal, VAT 7.5%, total, payment terms."},
+                {"role": "user", "content": f"Invoice {inv_num}. Details: {details}. Date: {datetime.now().strftime('%Y-%m-%d')}"},
+            ])
+            invoice_text = clean_response(result["content"])
+            doc_result = generate_pdf(invoice_text, f"Invoice {inv_num}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", f"invoice_{inv_num}.pdf"), f"Invoice {inv_num}")
+            else:
+                await bot.send_message(chat_id, invoice_text[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /meeting COMMAND (Companies) ────────────────────────────────────────────
+    if user_text.startswith("/meeting"):
+        details = user_text[8:].strip()
+        if not details:
+            await bot.send_message(chat_id, "Send: /meeting Q3 Review - attendees: John, Sarah")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Creating meeting minutes...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Meeting minutes writer. Include: title, date, attendees, agenda, discussion, decisions, action items with owners, next meeting."},
+                {"role": "user", "content": f"Minutes for: {details}. Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}"},
+            ])
+            minutes = clean_response(result["content"])
+            doc_result = generate_pdf(minutes, "Meeting Minutes")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "meeting_minutes.pdf"), "Meeting Minutes")
+            else:
+                await bot.send_message(chat_id, minutes[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /swot COMMAND (Companies) ──────────────────────────────────────────────
+    if user_text.startswith("/swot"):
+        topic = user_text[5:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /swot MTN Nigeria")
+            return {"ok": True}
+        await bot.send_message(chat_id, f"SWOT analysis: {topic}...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            searcher = get_searcher()
+            search_results = await asyncio.to_thread(searcher.search, f"{topic} business analysis", 5)
+            context = ""
+            if search_results.get("grounded"):
+                context = searcher.format_results_for_llm(search_results)
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Business strategy consultant. Create SWOT (Strengths, Weaknesses, Opportunities, Threats) with 5 points each."},
+                {"role": "user", "content": f"SWOT for: {topic}\n\nResearch: {context[:5000]}"},
+            ])
+            swot = clean_response(result["content"])
+            doc_result = generate_pdf(swot, f"SWOT: {topic}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "swot.pdf"), f"SWOT: {topic}")
+            else:
+                await bot.send_message(chat_id, swot[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /businessplan COMMAND (Companies) ──────────────────────────────────────
+    if user_text.startswith("/businessplan"):
+        topic = user_text[13:].strip()
+        if not topic:
+            await bot.send_message(chat_id, "Send: /businessplan Poultry farm in Ogun State")
+            return {"ok": True}
+        await bot.send_message(chat_id, f"Creating business plan: {topic}...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            searcher = get_searcher()
+            search_results = await asyncio.to_thread(searcher.search, f"{topic} business plan Nigeria", 5)
+            context = ""
+            if search_results.get("grounded"):
+                context = searcher.format_results_for_llm(search_results)
+            llm = get_llm_client()
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "Business plan writer for African markets. Include: Executive Summary, Business Description, Market Analysis, Products, Marketing, Operations, Financial Projections (Naira), Risk Analysis."},
+                {"role": "user", "content": f"Business plan for: {topic}\n\nResearch: {context[:5000]}"},
+            ])
+            plan = clean_response(result["content"])
+            doc_result = generate_pdf(plan, f"Business Plan: {topic}")
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "business_plan.pdf"), f"Business Plan: {topic}")
+            else:
+                await bot.send_message(chat_id, plan[:3800])
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /budget COMMAND ────────────────────────────────────────────────────────
+    if user_text.startswith("/budget"):
+        details = user_text[7:].strip()
+        if not details:
+            await bot.send_message(chat_id, "Send: /budget Income: 500000, Rent: 150000, Food: 80000")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Creating budget...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            from server.code_sandbox import execute_code
+            safe = details.replace('"', "'").replace(",", "\n")
+            code = 'items = {}\n'
+            code += 'for pair in """' + safe + '""".split("\n"):\n'
+            code += '    if ":" in pair:\n'
+            code += '        k, v = pair.split(":", 1)\n'
+            code += '        try:\n'
+            code += '            items[k.strip().lower()] = float(v.strip().replace("ngn","").replace("naira","").strip())\n'
+            code += '        except: pass\n'
+            code += 'income = sum(v for k,v in items.items() if "income" in k or "salary" in k or "revenue" in k)\n'
+            code += 'expenses = sum(v for k,v in items.items() if "income" not in k and "salary" not in k and "revenue" not in k)\n'
+            code += 'savings = income - expenses\n'
+            code += 'pct = (savings/income*100) if income else 0\n'
+            code += 'print(f"INCOME: NGN {income:,.0f}")\n'
+            code += 'print(f"EXPENSES: NGN {expenses:,.0f}")\n'
+            code += 'print(f"SAVINGS: NGN {savings:,.0f} ({pct:.1f}%)")\n'
+            code += 'print()\n'
+            code += 'for k,v in items.items():\n'
+            code += '    if "income" not in k and "salary" not in k and "revenue" not in k:\n'
+            code += '        p = (v/income*100) if income else 0\n'
+            code += '        print(f"  {k:20s} NGN {v:>10,.0f} ({p:.1f}%)")\n'
+            code += 'if pct >= 20: print("\nGreat! Saving 20%+")\n'
+            code += 'elif pct >= 10: print("\nDecent. Try 20%.")\n'
+            code += 'elif savings > 0: print("\nLow savings. Reduce expenses.")\n'
+            code += 'else: print("\nDEFICIT! Cut costs!")\n'
+            result = await asyncio.to_thread(execute_code, code)
+            output = result.get("stdout", "") or result.get("error", "Error")
+            await bot.send_message(chat_id, "```\n" + output[:3000] + "\n```")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /code COMMAND ──────────────────────────────────────────────────────────
+    if user_text.startswith("/code"):
+        code = user_text[5:].strip()
+        if not code:
+            await bot.send_message(chat_id, "Send: /code print(sum(range(100)))")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            from server.code_sandbox import execute_code
+            result = await asyncio.to_thread(execute_code, code)
+            output = result.get("stdout", "")
+            if output:
+                await bot.send_message(chat_id, "```\n" + output[:3000] + "\n```")
+            elif result.get("stderr"):
+                await bot.send_message(chat_id, "Error:\n```\n" + result["stderr"][:2000] + "\n```")
+            else:
+                await bot.send_message(chat_id, "Code ran (no output)")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return {"ok": True}
+
+    # ── /clear COMMAND ──────────────────────────────────────────────────────────
+    if user_text.startswith("/clear"):
+        try:
+            conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
+            conv = conv_q.scalar_one_or_none()
+            if conv:
+                from sqlalchemy import text as _text
+                await db.execute(_text("DELETE FROM messages WHERE conversation_id = :cid"), {"cid": conv.id})
+                await db.commit()
+        except Exception as ce:
+            logger.warning(f"Clear error: {ce}")
+        await bot.send_message(chat_id, "Conversation cleared. Fresh start!")
+        return {"ok": True}
+
+    # ── /research COMMAND ──────────────────────────────────────────────────────
+    if user_text.startswith("/research"):
+        query = user_text[9:].strip()
+        if not query:
+            await bot.send_message(chat_id, "Send: /research impact of AI on African economies")
+            return {"ok": True}
+        await bot.send_message(chat_id, f"Researching: {query[:80]}...")
+        await bot.send_typing(chat_id)
+        try:
+            searcher = get_searcher()
+            research_results = await asyncio.to_thread(searcher.stew_extension_research, query, 3)
+            if research_results.get("grounded"):
+                num_sources = len(research_results.get("organic", []))
+                await bot.send_message(chat_id, f"Found {num_sources} sources. Analyzing...")
+                await bot.send_typing(chat_id)
+                llm = get_llm_client()
+                system = STEW_MASTER_PROMPT + "\n\nTelegram response. Comprehensive research report."
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": f"Research: {query}\n\nContext:\n{research_results.get('report', '')[:6000]}"},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages)
+                await bot.send_message(chat_id, clean_response(result["content"]))
+            else:
+                await bot.send_message(chat_id, "Not enough sources found. Try a different query.")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
         return {"ok": True}
 
     # ── IMAGE GENERATION ──────────────────────────────────────────────────────
