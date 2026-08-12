@@ -5,6 +5,7 @@ FastAPI Backend v5.0
 import json
 import logging
 import os
+import time
 import requests as http_requests
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -2445,9 +2446,34 @@ async def search_test():
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
 
+# ── Dedup cache: prevents re-processing the same update when Telegram
+# retries a webhook delivery (happens on Render cold starts / slow responses).
+# Without this, a retried update would be handled twice → duplicate replies.
+_processed_telegram_updates: dict = {}
+_TELEGRAM_DEDUP_TTL = 3600      # forget an update_id after 1 hour
+_TELEGRAM_DEDUP_MAX = 5000      # cap memory usage
+
+
+def _is_duplicate_telegram_update(update_id) -> bool:
+    now = time.time()
+    if len(_processed_telegram_updates) > _TELEGRAM_DEDUP_MAX:
+        cutoff = now - _TELEGRAM_DEDUP_TTL
+        for uid, ts in list(_processed_telegram_updates.items()):
+            if ts < cutoff:
+                del _processed_telegram_updates[uid]
+    if update_id in _processed_telegram_updates:
+        return True
+    _processed_telegram_updates[update_id] = now
+    return False
+
+
 @app.post("/telegram/webhook")
-async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    """Receive Telegram messages and reply via S.T.E.W."""
+async def telegram_webhook(request: Request):
+    """Receive Telegram messages. ACKs Telegram INSTANTLY, then processes
+    the update in a detached background task. This is critical: if we do
+    OCR/LLM work before responding, Render's cold start + slow AI providers
+    can push us past Telegram's delivery timeout, causing Telegram to RETRY
+    the same update — which was producing duplicate OCR/chat replies."""
     if not settings.TELEGRAM_BOT_TOKEN:
         raise HTTPException(503, "Telegram bot not configured")
 
@@ -2456,12 +2482,38 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
     except Exception:
         return {"ok": True}  # Invalid JSON, ignore
 
+    update_id = data.get("update_id")
+    if update_id is not None and _is_duplicate_telegram_update(update_id):
+        logger.info(f"Telegram: duplicate update_id={update_id} ignored (retry)")
+        return {"ok": True}
+
+    # Fire-and-forget — do NOT await. Return to Telegram immediately.
+    asyncio.create_task(_process_telegram_update_safe(data))
+    return {"ok": True}
+
+
+async def _process_telegram_update_safe(data: dict):
+    """Runs the real handler with its own DB session, detached from the
+    request/response cycle so it can take as long as it needs without
+    ever causing Telegram to time out and retry."""
+    from server.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as bg_db:
+        try:
+            await _handle_telegram_update(data, bg_db)
+            await bg_db.commit()
+        except Exception as e:
+            logger.error(f"Telegram background handler crashed: {e}", exc_info=True)
+            await bg_db.rollback()
+
+
+async def _handle_telegram_update(data: dict, db: AsyncSession):
+    """Actual Telegram message handling logic (moved out of the request path)."""
     from server.telegram_bot import TelegramBot
     bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
     msg = bot.parse_update(data)
 
     if not msg or msg["is_bot"]:
-        return {"ok": True}
+        return
 
     # Extract chat_id EARLY so all handlers (photo, document, text) can use it
     chat_id = msg["chat_id"]
@@ -2474,7 +2526,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
             file_bytes = await bot.download_file(msg["file_id"])
             if not file_bytes:
                 await bot.send_message(chat_id, "I couldn't download the image. Please try again.")
-                return {"ok": True}
+                return
 
             await bot.send_message(chat_id, "Processing image with OCR...")
             await bot.send_typing(chat_id)
@@ -2491,7 +2543,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
 
             if not extracted_text:
                 await bot.send_message(chat_id, "I couldn't extract any text from this image. It might be blurry or contain no readable text.")
-                return {"ok": True}
+                return
 
             # If user asked a question in the caption, answer it about the image
             if caption:
@@ -2515,12 +2567,12 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
                 if len(extracted_text) > 3500:
                     preview += "\n\n... (truncated)"
                 await bot.send_message(chat_id, f"*OCR Result* (confidence: {confidence}%, {word_count} words)\n\n{preview}")
-            return {"ok": True}
+            return
 
         except Exception as e:
             logger.error(f"Telegram photo OCR error: {e}", exc_info=True)
             await bot.send_message(chat_id, f"Error processing image: {str(e)[:100]}. Please try again.")
-            return {"ok": True}
+            return
 
     # ── HANDLE INCOMING DOCUMENTS (Text Extraction) ───────────────────────────
     if msg.get("has_document") and msg.get("file_id"):
@@ -2531,7 +2583,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
             file_bytes = await bot.download_file(msg["file_id"])
             if not file_bytes:
                 await bot.send_message(chat_id, "I couldn't download the file. Please try again.")
-                return {"ok": True}
+                return
 
             await bot.send_message(chat_id, f"Reading {file_name}...")
             await bot.send_typing(chat_id)
@@ -2565,7 +2617,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
 
             if not extracted_text:
                 await bot.send_message(chat_id, "I couldn't extract any text from this file.")
-                return {"ok": True}
+                return
 
             # If user asked a question, answer it about the document
             if caption:
@@ -2583,16 +2635,16 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
                 if len(extracted_text) > 3500:
                     preview += "\n\n... (truncated)"
                 await bot.send_message(chat_id, f"*Extracted text from {file_name}*\n\n{preview}")
-            return {"ok": True}
+            return
 
         except Exception as e:
             logger.error(f"Telegram document error: {e}", exc_info=True)
             await bot.send_message(chat_id, f"Error processing file: {str(e)[:100]}. Please try again.")
-            return {"ok": True}
+            return
 
     # If no text and no file, ignore
     if not msg.get("text"):
-        return {"ok": True}
+        return
 
     user_text = msg["text"]
     username = msg.get("username") or msg.get("first_name", "User")
@@ -2623,7 +2675,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
             await db.rollback()
             if _attempt == 2:
                 await bot.send_message(chat_id, "I'm experiencing high traffic. Please try again in a moment.")
-                return {"ok": True}
+                return
             await asyncio.sleep(0.5)
 
     # Handle /start command
@@ -2641,7 +2693,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
             "Just send me any message or question to get started!"
         )
         await bot.send_message(chat_id, welcome)
-        return {"ok": True}
+        return
 
     # Handle /help command
     if user_text.startswith("/help"):
@@ -2658,7 +2710,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
             "Just talk to me naturally — I understand what you need!"
         )
         await bot.send_message(chat_id, help_text)
-        return {"ok": True}
+        return
 
     # ── IMAGE GENERATION ──────────────────────────────────────────────────────
     image_keywords = ["generate image", "create image", "draw", "make an image",
@@ -2709,7 +2761,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
         except Exception as e:
             logger.error(f"Telegram image generation error: {e}")
             await bot.send_message(chat_id, f"Image generation error: {str(e)[:200]}")
-        return {"ok": True}
+        return
 
     # ── DOCUMENT GENERATION ───────────────────────────────────────────────────
     doc_keywords = {
@@ -2832,7 +2884,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
         except Exception as e:
             logger.error(f"Telegram document generation error: {e}")
             await bot.send_message(chat_id, f"Document generation error: {str(e)[:200]}")
-        return {"ok": True}
+        return
 
     # ── BROWSE URL REQUEST ─────────────────────────────────────────────────────
     browse_keywords = ["browse ", "open ", "read ", "visit ", "summarize this url", "check this site"]
@@ -2868,7 +2920,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
             except Exception as e:
                 logger.error(f"Telegram browse error: {e}")
                 await bot.send_message(chat_id, f"Error browsing: {str(e)[:200]}")
-            return {"ok": True}
+            return
 
     # ── TOOL-CALLING AGENT (Kimi-style) ─────────────────────────────────────────
     # Detect requests that need tool calling: code, math, data analysis, documents
@@ -2911,9 +2963,9 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
 
             # Log
             if tg_user:
-                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
+                await _log_call(db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
 
-            return {"ok": True}
+            return
         except Exception as e:
             logger.error(f"Tool agent error: {e}", exc_info=True)
             await bot.send_message(chat_id, "Agent encountered an error. Trying regular mode...")
@@ -3006,18 +3058,18 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks, 
     messages = build_llm_messages(conv, system, recalled_tg)
 
     try:
-        result = await asyncio.wait_for(asyncio.to_thread(llm.chat, messages), timeout=25)
+        result = await asyncio.wait_for(asyncio.to_thread(llm.chat, messages), timeout=45)
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
         await bot.send_message(chat_id, reply, parse_mode="")
     except asyncio.TimeoutError:
-        logger.error("Telegram LLM call timed out after 25s")
+        logger.error("Telegram LLM call timed out after 45s")
         await bot.send_message(chat_id, "I'm taking longer than expected. The AI providers may be busy. Please try again in a moment.")
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
         await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")
 
-    return {"ok": True}
+    return
 
 
 @app.get("/telegram/status")
