@@ -3714,33 +3714,21 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             await bot.send_message(chat_id, "Research encountered an issue, proceeding with available data...")
             await bot.send_typing(chat_id)
     elif needs_search:
-        await bot.send_message(chat_id, f"Searching the web for: {user_text[:80]}")
+        await bot.send_message(chat_id, f"Searching the web...")
         await bot.send_typing(chat_id)
         try:
             search_results = await asyncio.to_thread(searcher.search, user_text, 5)
             if not search_results.get("grounded"):
-                await bot.send_message(chat_id, "Trying alternative search...")
-                await bot.send_typing(chat_id)
+                # Try Jina AI fallback ONCE (different backend, not a re-run)
                 search_results = await asyncio.to_thread(searcher.stew_extension_search, user_text, 5)
             if search_results.get("grounded"):
-                num_results = len(search_results.get("organic", []))
-                await bot.send_message(chat_id, f"Found {num_results} results. Analyzing...")
-                await bot.send_typing(chat_id)
                 context = searcher.format_results_for_llm(search_results)
                 system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
                 web_grounded = True
-                await bot.send_message(chat_id, "Generating response...")
-                await bot.send_typing(chat_id)
+            # If search failed entirely, just answer without web context — don't keep trying
         except Exception as e:
             logger.warning(f"Telegram search failed: {e}")
-            try:
-                search_results = await asyncio.to_thread(searcher.stew_extension_search, user_text, 5)
-                if search_results.get("grounded"):
-                    context = searcher.format_results_for_llm(search_results)
-                    system += f"\n\nWEB SEARCH CONTEXT:\n{context}"
-                    web_grounded = True
-            except Exception as e2:
-                logger.warning(f"Telegram browser extension search failed: {e2}")
+            # Don't retry — just answer without web context
 
     # Reuse the most recent conversation for this Telegram user
     from sqlalchemy import select as _sel

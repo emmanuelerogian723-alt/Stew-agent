@@ -66,6 +66,8 @@ Rules:
 12. Be concise in explanations. Show your work when using tools.
 13. End with a clear final answer after tool use.
 14. After a document is generated and you receive the TOOL_RESULT confirming success, tell the user the file is ready and they can download it. Do NOT repeat the TOOL_CALL.
+15. NEVER call web_search more than ONCE per conversation. If the first search returns no results or fails, answer based on your own knowledge instead of searching again.
+16. NEVER call browse_url more than ONCE per conversation.
 
 When you don't need a tool, just answer directly.
 Always end with a helpful, complete response."""
@@ -348,6 +350,7 @@ async def run_agent_loop(
     files = []
     figures = []
     tool_history = []
+    tools_used = set()  # Track tools already called to prevent loops
 
     for iteration in range(max_iterations):
         # Get LLM response
@@ -365,6 +368,34 @@ async def run_agent_loop(
                 "figures": figures,
                 "tool_calls": tool_history,
             }
+
+        # Filter out tools already called (prevent search loops)
+        new_calls = []
+        skipped_calls = []
+        for call in tool_calls:
+            tool_name = call.get("tool", "unknown")
+            # For web_search and browse_url, never call twice
+            if tool_name in ("web_search", "browse_url") and tool_name in tools_used:
+                skipped_calls.append(call)
+                logger.info(f"Skipping duplicate {tool_name} call (already used)")
+                continue
+            # For run_python_code, allow max 3 calls
+            if tool_name == "run_python_code" and list(tools_used).count("run_python_code") >= 3:
+                skipped_calls.append(call)
+                continue
+            new_calls.append(call)
+            tools_used.add(tool_name)
+
+        if not new_calls:
+            # All tool calls were duplicates — force final answer
+            messages.append({"role": "assistant", "content": assistant_text})
+            messages.append({
+                "role": "user",
+                "content": "You have already used all available tools. Please provide your final answer now based on the information you have. Do NOT make any more TOOL_CALL."
+            })
+            continue
+
+        tool_calls = new_calls
 
         # Execute each tool call
         for call in tool_calls:

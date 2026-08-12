@@ -49,43 +49,83 @@ class WebSearch:
 
     def search(self, query: str, num_results: int = 8) -> dict:
         """
-        Perform a real web search via multiple fallback providers.
-        Returns structured results with source URLs.
+        Perform a real web search via fallback providers.
+        Circuit breaker: stops after 3 consecutive failures to avoid timeouts.
         NEVER fabricates results.
         """
+        failed = 0
+        MAX_FAILURES = 3  # circuit breaker — don't try all 6 backends if first 3 fail
+
         # Try 1: Serper API (if configured)
         if self.api_key:
             result = self._serper_search(query, num_results)
             if result.get("organic"):
                 return result
+            failed += 1
 
         # Try 2: DuckDuckGo HTML (free, no key — primary free backend)
         result = self._duckduckgo_html_search(query, num_results)
         if result.get("organic"):
             return result
+        failed += 1
+        if failed >= MAX_FAILURES:
+            logger.warning(f"Search circuit breaker tripped after {failed} failures for: {query}")
+            return {
+                "organic": [],
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": False,
+                "error": f"Search failed after {failed} attempts",
+            }
 
-        # Try 2b: DuckDuckGo via allorigins proxy (for blocked IPs like Render free tier)
+        # Try 3: DuckDuckGo via allorigins proxy (for blocked IPs)
         result = self._duckduckgo_proxy_search(query, num_results)
         if result.get("organic"):
             return result
+        failed += 1
+        if failed >= MAX_FAILURES:
+            logger.warning(f"Search circuit breaker tripped after {failed} failures for: {query}")
+            return {
+                "organic": [],
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": False,
+                "error": f"Search failed after {failed} attempts",
+            }
 
-        # Try 3: DuckDuckGo Lite (different endpoint, free)
+        # Try 4: DuckDuckGo Lite
         result = self._duckduckgo_lite_search(query, num_results)
         if result.get("organic"):
             return result
+        failed += 1
+        if failed >= MAX_FAILURES:
+            logger.warning(f"Search circuit breaker tripped after {failed} failures for: {query}")
+            return {
+                "organic": [],
+                "answer_box": {},
+                "knowledge_graph": {},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "grounded": False,
+                "error": f"Search failed after {failed} attempts",
+            }
 
-        # Try 4: SearXNG public instances (free, no key)
+        # Try 5: SearXNG public instances
         result = self._searxng_search(query, num_results)
         if result.get("organic"):
             return result
 
-        # Try 5: Brave Search API (if configured)
+        # Try 6: Brave Search API (if configured)
         if self.brave_key:
             result = self._brave_search(query, num_results)
             if result.get("organic"):
                 return result
 
-        # Try 6: Jina AI search (if configured)
+        # Try 7: Jina AI search (if configured)
         if self.jina_key:
             result = self._jina_search(query, num_results)
             if result.get("organic"):
@@ -468,9 +508,47 @@ class WebSearch:
 
     def stew_extension_search(self, query: str, num_results: int = 8) -> dict:
         """
-        Search via DuckDuckGo + optional Serper (extension proxy removed).
+        Search via Jina AI reader (different backend than search()).
+        This is a FALLBACK that uses a different path, NOT a re-run of search().
         """
-        return self.search(query, num_results)
+        import httpx
+        try:
+            # Use Jina AI search API (free, different endpoint)
+            resp = httpx.get(
+                f"https://s.jina.ai/{query}",
+                headers={"Accept": "application/json"},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                organic = []
+                for item in (data.get("data", []) or [])[:num_results]:
+                    organic.append({
+                        "title": item.get("title", ""),
+                        "link": item.get("url", ""),
+                        "snippet": item.get("content", "")[:300],
+                        "source": "jina_ai",
+                    })
+                if organic:
+                    return {
+                        "organic": organic,
+                        "answer_box": {},
+                        "knowledge_graph": {},
+                        "grounded": True,
+                        "source": "jina_ai_fallback",
+                        "query": query,
+                    }
+        except Exception as e:
+            logger.warning(f"Jina AI fallback search failed: {e}")
+        
+        # Last resort: return empty — do NOT call self.search() again
+        return {
+            "organic": [],
+            "answer_box": {},
+            "grounded": False,
+            "query": query,
+            "error": "All search backends exhausted",
+        }
 
     def stew_extension_research(self, query: str, num_pages: int = 3) -> dict:
         """
