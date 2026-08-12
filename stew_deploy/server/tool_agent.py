@@ -71,7 +71,10 @@ Rules:
 16. NEVER call browse_url more than ONCE per conversation.
 
 When you don't need a tool, just answer directly.
-Always end with a helpful, complete response."""
+After using a tool and getting results, your final answer should be BRIEF (2-3 sentences max).
+Do NOT repeat what the tool did. Do NOT explain the process. Just state the result.
+Example: Done! I've created a 7-slide presentation about your startup. The file is ready to download above.
+Keep it clean, concise, and professional."""
 
 TOOL_CALL_MARKER = re.compile(r'TOOL_CALL:\s*')
 
@@ -218,8 +221,8 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
                 data = json.loads(json_match.group()) if json_match else [{"Topic": topic}]
                 result = generate_xlsx(data, "Sheet1", topic)
             elif doc_type == "pptx":
-                system = "You are a presentation designer. Return ONLY a JSON array of slides. Each slide has 'title' and 'content'."
-                user = f"Create a 6-8 slide presentation about: {topic}. JSON array only."
+                system = "You are a presentation designer. Return ONLY a JSON array of slides. Each slide has 'title' and 'content'. Content should be bullet points separated by newlines, with '- ' prefix for each bullet. Keep bullets concise (max 10 words each). Max 6 bullets per slide."
+                user = "Create a 10-12 slide presentation about: " + topic + ". Include: title slide, problem, solution, market, product, business model, traction, team, financials, funding ask, closing. JSON array only. Format: [{\"title\": \"Slide Title\", \"content\": \"- Bullet 1\\n- Bullet 2\\n- Bullet 3\"}]"
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
                 resp = await asyncio.to_thread(llm.chat, messages)
                 content = clean_response(resp["content"])

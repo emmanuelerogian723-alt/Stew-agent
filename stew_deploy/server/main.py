@@ -3770,7 +3770,6 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     ])
 
     if needs_tools:
-        await bot.send_message(chat_id, "S.T.E.W Agent mode activated. Analyzing your request...")
         await bot.send_typing(chat_id)
         try:
             from server.tool_agent import run_agent_loop
@@ -3788,10 +3787,19 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     except Exception as fe:
                         logger.error(f"File send error: {fe}")
 
-            # Send the final response
+            # Send the final response — clean it up
             response = agent_result.get("response", "")
             if response:
+                # Strip any leftover TOOL_CALL artifacts
+                import re as _re
+                response = _re.sub(r'TOOL_CALL:\s*\{.*?\}', '', response, flags=_re.DOTALL).strip()
+                response = _re.sub(r'TOOL_RESULT[\s\S]*', '', response).strip()
+                # If response is too long (wall of text), truncate
+                if len(response) > 800:
+                    response = response[:800] + "..."
                 await bot.send_message(chat_id, response)
+            elif agent_result.get("files"):
+                await bot.send_message(chat_id, "Done! Your file is ready above.")
             else:
                 await bot.send_message(chat_id, "Task completed.")
 
