@@ -2624,6 +2624,9 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     if not msg or msg["is_bot"]:
         return {"ok": True}
 
+    chat_id = msg["chat_id"]
+    user_id = msg.get("user_id", 0)
+
     # ── HANDLE INCOMING PHOTOS (OCR / Vision) ──────────────────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
         await bot.send_chat_action(chat_id, "typing")
@@ -2752,7 +2755,6 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     if not msg.get("text"):
         return {"ok": True}
 
-    chat_id = msg["chat_id"]
     user_text = msg["text"]
     username = msg.get("username") or msg.get("first_name", "User")
     user_lower = user_text.lower()
