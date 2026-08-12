@@ -912,11 +912,10 @@ async def chat(
     should_search = False
 
     market_or_weather_context = None
-    if body.web_search and searcher._is_available():
-        # Classify intent with the same NARROW classifier used by the Telegram
-        # bot. A previous version matched generic words like "what is the",
-        # "now", "when is", "how much", "how many", "who is" — which caused
-        # nearly every message to trigger a (frequently failing) web search.
+    # Market/weather lookups use CoinGecko/Yahoo Finance/wttr.in — they do NOT
+    # depend on the Serper search key, so we run them even if the searcher is
+    # unavailable. Only the generic web_search fallback below needs Serper.
+    if body.web_search:
         chat_intent = classify_realtime_intent(msg_lower)
 
         # For market/weather intents, try a direct structured lookup first —
@@ -953,7 +952,9 @@ async def chat(
 
         if market_or_weather_context:
             web_grounded = True
-        should_search = (not market_or_weather_context) and chat_intent in ("market", "weather", "search")
+        # Only do a generic web search if the searcher is available AND we
+        # didn't already get structured data AND the intent warrants it.
+        should_search = (not market_or_weather_context) and searcher._is_available() and chat_intent in ("market", "weather", "search")
         if should_search:
             try:
                 search_results = await asyncio.to_thread(searcher.search, body.message, 5)
