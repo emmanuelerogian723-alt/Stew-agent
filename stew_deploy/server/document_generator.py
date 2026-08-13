@@ -388,8 +388,9 @@ def generate_xlsx(
 
 # ── PPTX ──────────────────────────────────────────────────────────────────────
 
-def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
-    """Generate an advanced, premium PPTX — dark navy + gold, numbered slides, shape-based bullet markers, eyebrow labels."""
+def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = None) -> dict:
+    """Generate a premium PPTX with 46+ professional themes.
+    Theme is auto-detected from the title/topic, or can be specified by name."""
     try:
         from pptx import Presentation
         from pptx.util import Inches, Pt, Emu
@@ -397,6 +398,7 @@ def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
         from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
         from pptx.enum.shapes import MSO_SHAPE
         from pptx.oxml.ns import qn
+        from server.slide_themes import render_pptx, auto_select_theme, THEMES
 
         prs = Presentation()
         SLIDE_W = 13.333
@@ -404,142 +406,11 @@ def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
         prs.slide_width = Inches(SLIDE_W)
         prs.slide_height = Inches(SLIDE_H)
 
-        # ── Premium dark + gold palette ──
-        BG_DARK = RGBColor(0x0B, 0x0F, 0x1A)       # near-black navy
-        BG_PANEL = RGBColor(0x14, 0x1B, 0x2E)      # side panel shade
-        ACCENT = RGBColor(0xF5, 0x9E, 0x0B)        # amber gold
-        ACCENT_LIGHT = RGBColor(0xFD, 0xD8, 0x6E)  # light gold
-        ACCENT_DIM = RGBColor(0x7A, 0x5A, 0x1E)    # muted gold (faint numbers)
-        WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-        LIGHT = RGBColor(0xD7, 0xDE, 0xE8)
-        MUTED = RGBColor(0x7C, 0x8A, 0xA0)
-        DIVIDER = RGBColor(0x26, 0x2F, 0x45)
+        # Auto-detect theme if not specified
+        if not theme:
+            theme = auto_select_theme(title)
 
-        BLANK = prs.slide_layouts[6]
-        total_slides = len(slides)
-
-        def _add_bg(slide, color):
-            fill = slide.background.fill
-            fill.solid()
-            fill.fore_color.rgb = color
-
-        def _rect(slide, left, top, width, height, color, line=False):
-            shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(height))
-            shape.fill.solid()
-            shape.fill.fore_color.rgb = color
-            if not line:
-                shape.line.fill.background()
-            else:
-                shape.line.color.rgb = color
-                shape.line.width = Pt(0.5)
-            shape.shadow.inherit = False
-            return shape
-
-        def _oval(slide, left, top, size, color):
-            shape = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(left), Inches(top), Inches(size), Inches(size))
-            shape.fill.solid()
-            shape.fill.fore_color.rgb = color
-            shape.line.fill.background()
-            shape.shadow.inherit = False
-            return shape
-
-        def _text(slide, left, top, width, height, text, size, color,
-                  bold=False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP,
-                  font="Segoe UI", spacing=1.0, letter_spacing=None):
-            box = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
-            tf = box.text_frame
-            tf.word_wrap = True
-            tf.vertical_anchor = anchor
-            para = tf.paragraphs[0]
-            para.text = _sanitize_text(text)
-            para.alignment = align
-            para.line_spacing = spacing
-            run = para.runs[0] if para.runs else para.add_run()
-            run.font.size = Pt(size)
-            run.font.color.rgb = color
-            run.font.bold = bold
-            run.font.name = font
-            return tf
-
-        def _eyebrow(slide, left, top, text):
-            """Small uppercase gold label tag above a title."""
-            _text(slide, left, top, 8.0, 0.4, text.upper(), 12.5, ACCENT,
-                  bold=True, font="Segoe UI Semibold")
-
-        def _page_footer(slide, index):
-            """Bottom-right slide counter + thin gold rule."""
-            _rect(slide, 0, SLIDE_H - 0.06, SLIDE_W, 0.06, ACCENT)
-            _text(slide, SLIDE_W - 2.2, SLIDE_H - 0.55, 1.9, 0.4,
-                  f"{index+1:02d}  /  {total_slides:02d}", 11, MUTED, align=PP_ALIGN.RIGHT)
-            _text(slide, 0.6, SLIDE_H - 0.55, 4.0, 0.4, "S.T.E.W", 11, MUTED, bold=True)
-
-        def _bulleted_block(slide, left, top, width, bullets, font_size=17.5,
-                            line_gap=0.62, color=LIGHT, marker_color=ACCENT):
-            """Render bullets as gold square markers + wrapped text, evenly spaced."""
-            y = top
-            for bullet in bullets:
-                clean = _sanitize_text(bullet.strip().lstrip("-").lstrip("*").lstrip("\u2022").strip())
-                if not clean:
-                    continue
-                # gold marker square
-                _rect(slide, left, y + 0.12, 0.14, 0.14, marker_color)
-                # bullet text
-                box = slide.shapes.add_textbox(Inches(left + 0.35), Inches(y), Inches(width - 0.35), Inches(line_gap + 0.3))
-                tf = box.text_frame
-                tf.word_wrap = True
-                para = tf.paragraphs[0]
-                para.text = clean
-                para.line_spacing = 1.05
-                run = para.runs[0] if para.runs else para.add_run()
-                run.font.size = Pt(font_size)
-                run.font.color.rgb = color
-                run.font.name = "Segoe UI"
-                y += line_gap
-            return y
-
-        for i, slide_data in enumerate(slides):
-            slide_title = slide_data.get("title", f"Slide {i+1}")
-            slide_content = slide_data.get("content", "")
-            bullets = [b.strip() for b in slide_content.split("\n") if b.strip()]
-
-            slide = prs.slides.add_slide(BLANK)
-            _add_bg(slide, BG_DARK)
-
-            if i == 0:
-                # ══ TITLE SLIDE — big cover with side panel ══
-                _rect(slide, 0, 0, 4.6, SLIDE_H, BG_PANEL)          # left dark panel
-                _rect(slide, 4.6, 0, 0.05, SLIDE_H, ACCENT)          # gold seam
-
-                # Giant faint slide number on the panel
-                _text(slide, 0.5, 0.6, 3.6, 2.0, "01", 90, ACCENT_DIM, bold=True)
-                _eyebrow(slide, 0.5, 5.6, "PRESENTATION")
-                _text(slide, 0.5, 6.0, 3.6, 0.6, datetime.utcnow().strftime("%B %Y"), 13, MUTED)
-
-                # Main title + subtitle on the right
-                _eyebrow(slide, 5.1, 2.15, "OVERVIEW")
-                _text(slide, 5.05, 2.6, 7.7, 1.8, slide_title, 42, WHITE, bold=True, spacing=1.0)
-                subtitle = bullets[0] if bullets else title
-                if subtitle.strip() == slide_title.strip():
-                    subtitle = title
-                _rect(slide, 5.1, 4.15, 0.7, 0.045, ACCENT)
-                _text(slide, 5.05, 4.35, 7.5, 0.9, subtitle, 17, ACCENT_LIGHT, spacing=1.15)
-                _text(slide, 5.05, SLIDE_H - 0.9, 7.5, 0.5, "Generated by S.T.E.W Agent", 11, MUTED)
-
-            else:
-                # ══ CONTENT SLIDE ══
-                # thin top accent + eyebrow section tag
-                _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
-                _eyebrow(slide, 0.9, 0.45, f"SECTION {i:02d}")
-                _text(slide, 0.85, 0.85, 11.0, 0.95, slide_title, 30, WHITE, bold=True)
-                _rect(slide, 0.9, 1.75, 1.0, 0.05, ACCENT)
-
-                # faint big number top-right (design accent)
-                _text(slide, 11.3, 0.35, 1.6, 1.2, f"{i:02d}", 46, ACCENT_DIM, bold=True, align=PP_ALIGN.RIGHT)
-
-                if bullets:
-                    _bulleted_block(slide, 1.0, 2.25, 11.2, bullets, font_size=17.5, line_gap=0.68)
-
-                _page_footer(slide, i)
+        render_pptx(prs, slides, title, theme_name=theme)
 
         buf = io.BytesIO()
         prs.save(buf)
@@ -550,6 +421,9 @@ def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
             "filename": filename,
             "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "success": True,
+            "theme": theme,
+            "theme_category": THEMES.get(theme, {}).get("category", "corporate"),
+            "available_themes": len(THEMES),
         }
     except ImportError:
         raise HTTPException(500, "python-pptx not installed")
