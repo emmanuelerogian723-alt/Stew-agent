@@ -50,37 +50,34 @@ class WebSearch:
     def search(self, query: str, num_results: int = 8) -> dict:
         """
         Perform a real web search via fallback providers.
-        Circuit breaker: stops after 3 consecutive failures to avoid timeouts.
+        Circuit breaker: stops after 4 consecutive failures to avoid timeouts.
         NEVER fabricates results.
         """
         failed = 0
-        MAX_FAILURES = 3  # circuit breaker — don't try all 6 backends if first 3 fail
+        MAX_FAILURES = 4
 
-        # Try 1: Serper API (if configured)
+        # Try 1: Serper API (if configured — paid but fast)
         if self.api_key:
             result = self._serper_search(query, num_results)
             if result.get("organic"):
                 return result
             failed += 1
 
-        # Try 2: DuckDuckGo HTML (free, no key — primary free backend)
+        # Try 2: DuckDuckGo HTML (free, direct — works from non-cloud IPs)
         result = self._duckduckgo_html_search(query, num_results)
         if result.get("organic"):
             return result
         failed += 1
-        if failed >= MAX_FAILURES:
-            logger.warning(f"Search circuit breaker tripped after {failed} failures for: {query}")
-            return {
-                "organic": [],
-                "answer_box": {},
-                "knowledge_graph": {},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "query": query,
-                "grounded": False,
-                "error": f"Search failed after {failed} attempts",
-            }
 
-        # Try 3: DuckDuckGo via allorigins proxy (for blocked IPs)
+        # Try 3: Jina Reader proxy search (free, no key — fetches DDG through
+        # r.jina.ai which bypasses cloud IP rate-limits entirely).
+        # This is the primary reliable path on Render/cloud hosting.
+        result = self._jina_reader_search(query, num_results)
+        if result.get("organic"):
+            return result
+        failed += 1
+
+        # Try 4: DuckDuckGo via Allorigins proxy (for blocked IPs)
         result = self._duckduckgo_proxy_search(query, num_results)
         if result.get("organic"):
             return result
@@ -97,35 +94,23 @@ class WebSearch:
                 "error": f"Search failed after {failed} attempts",
             }
 
-        # Try 4: DuckDuckGo Lite
+        # Try 5: DuckDuckGo Lite
         result = self._duckduckgo_lite_search(query, num_results)
         if result.get("organic"):
             return result
-        failed += 1
-        if failed >= MAX_FAILURES:
-            logger.warning(f"Search circuit breaker tripped after {failed} failures for: {query}")
-            return {
-                "organic": [],
-                "answer_box": {},
-                "knowledge_graph": {},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "query": query,
-                "grounded": False,
-                "error": f"Search failed after {failed} attempts",
-            }
 
-        # Try 5: SearXNG public instances
+        # Try 6: SearXNG public instances
         result = self._searxng_search(query, num_results)
         if result.get("organic"):
             return result
 
-        # Try 6: Brave Search API (if configured)
+        # Try 7: Brave Search API (if configured)
         if self.brave_key:
             result = self._brave_search(query, num_results)
             if result.get("organic"):
                 return result
 
-        # Try 7: Jina AI search (if configured)
+        # Try 8: Jina AI search API (if configured — needs key)
         if self.jina_key:
             result = self._jina_search(query, num_results)
             if result.get("organic"):
@@ -172,8 +157,8 @@ class WebSearch:
             for item in organic[:8]:
                 if not isinstance(item, dict):
                     continue
-                title = item.get("title", "")
-                snippet = item.get("snippet", "")
+                title = item.get("title", "").replace("**", "").replace("*", "")
+                snippet = item.get("snippet", "").replace("**", "").replace("*", "")
                 link = item.get("link") or item.get("url", "")
                 pos = item.get("position", "")
                 lines.append(f"[{pos}] {title}\n    {snippet}\n    Source: {link}")
@@ -548,7 +533,105 @@ class WebSearch:
             logger.warning(f"Jina AI search error: {e}")
             return {"organic": []}
 
-    # ── Extension search (kept for backwards compat) ─────────────────
+    # ── Jina Reader Proxy Search (free, no API key needed) ──────────
+
+    def _jina_reader_search(self, query: str, num_results: int) -> dict:
+        """Search via DuckDuckGo HTML fetched through Jina AI reader proxy (r.jina.ai).
+        This bypasses Render/cloud-IP rate-limits entirely — Jina's servers fetch
+        the page, not ours. No API key required."""
+        try:
+            import urllib.parse
+            import httpx
+            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
+            jina_url = f"https://r.jina.ai/{ddg_url}"
+            headers = {
+                "Accept": "text/plain",
+                "User-Agent": "S.T.E.W-Agent/6.0",
+            }
+            jina_key = os.environ.get("JINA_API_KEY", os.environ.get("JINA_SEARCH_KEY", ""))
+            if jina_key:
+                headers["Authorization"] = f"Bearer {jina_key}"
+
+            with httpx.Client(timeout=15, follow_redirects=True) as client:
+                resp = client.get(jina_url, headers=headers)
+                if resp.status_code != 200 or len(resp.text) < 200:
+                    logger.warning(f"Jina reader search returned {resp.status_code}")
+                    return {"organic": []}
+
+                text = resp.text
+                lines = text.split("\n")
+                results = []
+
+                def _extract_ddg_url(ddg_link):
+                    """Extract real URL from DuckDuckGo redirect wrapper."""
+                    if "uddg=" in ddg_link:
+                        encoded = ddg_link.split("uddg=")[-1].split("&")[0]
+                        return urllib.parse.unquote(encoded)
+                    return ddg_link
+
+                for i, line in enumerate(lines):
+                    if len(results) >= num_results:
+                        break
+                    line = line.strip()
+
+                    # Results come as: ## [Title](ddg-redirect-url)
+                    if line.startswith("## [") and "](" in line:
+                        bracket_end = line.index("](", 3)
+                        title = line[4:bracket_end].strip()
+                        url_start = bracket_end + 2
+                        url_end = line.index(")", url_start)
+                        raw_link = line[url_start:url_end].strip()
+                        link = _extract_ddg_url(raw_link)
+
+                        if not link or "duckduckgo.com" in link:
+                            continue
+
+                        # Find snippet: next non-empty, non-link line after title
+                        snippet = ""
+                        for j in range(i + 1, min(i + 6, len(lines))):
+                            snip = lines[j].strip()
+                            if not snip:
+                                continue
+                            # Skip image links [![...](...)]
+                            if snip.startswith("[!"):
+                                continue
+                            # Skip domain-only links like [domain.com/path](...)
+                            if snip.startswith("[") and "](" in snip and not snip.startswith("[!"):
+                                # Could be snippet or domain link — check if it's mostly text
+                                bracket = snip.index("](")
+                                text_inside = snip[1:bracket]
+                                # Domain-only links are short (no spaces)
+                                if " " not in text_inside and "." in text_inside:
+                                    continue  # skip domain link
+                                # This is the snippet text
+                                snippet = text_inside[:300]
+                                break
+                            if snip.startswith("URL Source:"):
+                                continue
+
+                        results.append({
+                            "title": title,
+                            "link": link,
+                            "snippet": snippet,
+                            "position": len(results) + 1,
+                        })
+
+            if results:
+                logger.info(f"Jina reader search returned {len(results)} results for: {query}")
+                return {
+                    "organic": results,
+                    "answer_box": {},
+                    "knowledge_graph": {},
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "query": query,
+                    "grounded": True,
+                    "source": "jina_reader_ddg",
+                }
+            logger.warning(f"Jina reader search returned 0 results for: {query}")
+            return {"organic": []}
+        except Exception as e:
+            logger.warning(f"Jina reader search error: {e}")
+            return {"organic": []}
 
     def stew_extension_search(self, query: str, num_results: int = 8) -> dict:
         """
