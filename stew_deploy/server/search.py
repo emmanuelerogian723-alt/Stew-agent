@@ -143,6 +143,50 @@ class WebSearch:
             "error": "All search backends failed. Try again later.",
         }
 
+    def format_results_for_llm(self, results: dict) -> str:
+        """Format search results into a concise text block for the LLM context
+        window. Called from main.py, openai_compat.py etc. after search().
+        Handles empty/failed searches gracefully — never crashes."""
+        if not results or not isinstance(results, dict):
+            return "No web search results available."
+
+        lines = []
+
+        # Answer box (if any) — direct answer from the search engine
+        ab = results.get("answer_box") or {}
+        if ab and isinstance(ab, dict):
+            snippet = ab.get("snippet") or ab.get("answer") or ab.get("text")
+            if snippet:
+                lines.append(f"[Answer box]: {snippet}")
+
+        # Knowledge graph (if any)
+        kg = results.get("knowledge_graph") or {}
+        if kg and isinstance(kg, dict):
+            desc = kg.get("description") or kg.get("text")
+            if desc:
+                lines.append(f"[Knowledge graph]: {desc}")
+
+        # Organic results — the main content
+        organic = results.get("organic") or []
+        if organic:
+            for item in organic[:8]:
+                if not isinstance(item, dict):
+                    continue
+                title = item.get("title", "")
+                snippet = item.get("snippet", "")
+                link = item.get("link") or item.get("url", "")
+                pos = item.get("position", "")
+                lines.append(f"[{pos}] {title}\n    {snippet}\n    Source: {link}")
+        else:
+            # No organic results — include error if present
+            err = results.get("error", "")
+            if err:
+                lines.append(f"Search error: {err}")
+            else:
+                lines.append("No results found.")
+
+        return "\n\n".join(lines)
+
     def news_search(self, query: str, num_results: int = 5) -> dict:
         """Search for recent news articles."""
         # Try Serper news
