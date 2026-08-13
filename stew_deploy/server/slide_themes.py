@@ -460,6 +460,44 @@ THEMES = {
         "layout": "minimal", "shape": "rect", "fonts": "Georgia",
         "bg_type": "dark",
     },
+    # ── CHURCH / RELIGION (4) ────────────────────────────────────────────
+    "church_royal": {
+        "category": "church",
+        "bg": (0x0A, 0x04, 0x1E), "panel": (0x12, 0x0A, 0x34),
+        "accent": (0xD4, 0xAF, 0x37), "accent_light": (0xF0, 0xDE, 0x8C), "accent_dim": (0x6E, 0x5E, 0x2A),
+        "white": (0xFF, 0xFF, 0xFF), "light": (0xE4, 0xDE, 0xC4), "muted": (0x8A, 0x82, 0x6E),
+        "divider": (0x1A, 0x12, 0x3E),
+        "layout": "side_panel", "shape": "rect", "fonts": "Georgia",
+        "bg_type": "dark",
+    },
+    "church_warm": {
+        "category": "church",
+        "bg": (0x1E, 0x10, 0x08), "panel": (0x2E, 0x1C, 0x10),
+        "accent": (0xE8, 0x8C, 0x2A), "accent_light": (0xFF, 0xC4, 0x72), "accent_dim": (0x7E, 0x4E, 0x1E),
+        "white": (0xFF, 0xF8, 0xF0), "light": (0xE4, 0xCE, 0xBE), "muted": (0x9A, 0x82, 0x6E),
+        "divider": (0x3E, 0x2A, 0x1A),
+        "layout": "bottom_bar", "shape": "rect", "fonts": "Georgia",
+        "bg_type": "dark",
+    },
+    "church_divine": {
+        "category": "church",
+        "bg": (0xF8, 0xF4, 0xF0), "panel": (0xF0, 0xE8, 0xE0),
+        "accent": (0x8B, 0x6F, 0x3E), "accent_light": (0xC4, 0xA4, 0x6E), "accent_dim": (0xDE, 0xCE, 0xAE),
+        "white": (0x2A, 0x20, 0x14), "light": (0x5A, 0x4E, 0x3A), "muted": (0x9A, 0x8E, 0x7A),
+        "divider": (0xE4, 0xDE, 0xCE),
+        "layout": "top_bar", "shape": "rounded", "fonts": "Georgia",
+        "bg_type": "light",
+    },
+    "church_celestial": {
+        "category": "church",
+        "bg": (0x04, 0x0E, 0x1E), "panel": (0x0A, 0x1A, 0x34),
+        "accent": (0x5C, 0xB4, 0xFF), "accent_light": (0xA4, 0xD4, 0xFF), "accent_dim": (0x2A, 0x5A, 0x8E),
+        "white": (0xFF, 0xFF, 0xFF), "light": (0xC4, 0xD8, 0xE4), "muted": (0x6A, 0x82, 0x92),
+        "divider": (0x0A, 0x2A, 0x3E),
+        "layout": "minimal", "shape": "rect", "fonts": "Georgia",
+        "bg_type": "dark",
+    },
+
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -491,6 +529,9 @@ THEME_KEYWORDS = {
                   "strategy", "report", "annual", "quarterly", "executive"],
     "minimal": ["minimal", "simple", "clean", "basic", "overview", "summary",
                 "brief", "introduction"],
+    "church": ["church", "fundrais", "giving", "donation", "tithe", "offering",
+              "ministry", "pastor", "congregation", "faith", "gospel", "christian",
+              "prayer", "worship", "charity", "religious", "spiritual", "temple"],
 }
 
 
@@ -503,6 +544,7 @@ HIGH_PRIORITY_KEYWORDS = {
     "healthcare": ["hospital", "clinic", "patient", "doctor", "pharma"],
     "african": ["africa", "nigeria", "nigerian", "naira", "kente"],
     "luxury": ["luxury", "platinum", "vip"],
+    "church": ["church", "fundrais", "tithe", "offering", "ministry", "pastor", "gospel"],
 }
 
 
@@ -560,13 +602,8 @@ def _c(rgb_tuple):
 
 def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
     """Render slides into a Presentation object using the specified theme.
-
-    Args:
-        prs: python-pptx Presentation object (already sized)
-        slides: list of {"title": str, "content": str}
-        title: presentation title
-        theme_name: theme key from THEMES dict (auto-detected if None)
-        total_slides: override slide count (for pagination)
+    Enhanced with decorative shapes, alternating content layouts, stat blocks,
+    and gradient-like effects for world-class visual quality.
     """
     theme = get_theme(theme_name, title)
 
@@ -610,8 +647,27 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
     def _rect(slide, left, top, width, height, color):
         return _shape(slide, left, top, width, height, color, MSO_SHAPE.RECTANGLE)
 
+    def _rrect(slide, left, top, width, height, color):
+        return _shape(slide, left, top, width, height, color, MSO_SHAPE.ROUNDED_RECTANGLE)
+
     def _oval(slide, left, top, size, color):
         s = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(left), Inches(top), Inches(size), Inches(size))
+        s.fill.solid()
+        s.fill.fore_color.rgb = color
+        s.line.fill.background()
+        s.shadow.inherit = False
+        return s
+
+    def _tri(slide, left, top, width, height, color):
+        s = slide.shapes.add_shape(MSO_SHAPE.ISOSCELES_TRIANGLE, Inches(left), Inches(top), Inches(width), Inches(height))
+        s.fill.solid()
+        s.fill.fore_color.rgb = color
+        s.line.fill.background()
+        s.shadow.inherit = False
+        return s
+
+    def _chevron(slide, left, top, width, height, color):
+        s = slide.shapes.add_shape(MSO_SHAPE.CHEVRON, Inches(left), Inches(top), Inches(width), Inches(height))
         s.fill.solid()
         s.fill.fore_color.rgb = color
         s.line.fill.background()
@@ -638,8 +694,7 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
         return tf
 
     def _eyebrow(slide, left, top, text):
-        _text(slide, left, top, 8.0, 0.4, text.upper(), 12.5, ACCENT, bold=True,
-              font=FONT)
+        _text(slide, left, top, 8.0, 0.4, text.upper(), 12.5, ACCENT, bold=True, font=FONT)
 
     def _page_footer(slide, index):
         _rect(slide, 0, SLIDE_H - 0.06, SLIDE_W, 0.06, ACCENT)
@@ -667,10 +722,51 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
             y += line_gap
         return y
 
-    def _decorative_circles(slide):
-        """Add subtle accent circles for visual interest."""
-        _oval(slide, SLIDE_W - 1.5, -0.5, 2.0, ACCENT_DIM)
-        _oval(slide, SLIDE_W - 0.5, SLIDE_H - 1.5, 1.5, ACCENT_DIM)
+    def _decorative_shapes(slide, variant=0):
+        """Add decorative geometric shapes based on variant for visual richness."""
+        if variant == 0:
+            # Large faint circles top-right + bottom-left
+            _oval(slide, SLIDE_W - 1.8, -0.6, 2.4, ACCENT_DIM)
+            _oval(slide, -0.8, SLIDE_H - 1.8, 2.0, ACCENT_DIM)
+        elif variant == 1:
+            # Triangle accent + circle
+            _tri(slide, SLIDE_W - 2.5, 0, 2.5, 2.5, ACCENT_DIM)
+            _oval(slide, -0.5, SLIDE_H - 2.0, 1.8, ACCENT_DIM)
+        elif variant == 2:
+            # Chevron strip on the right
+            _chevron(slide, SLIDE_W - 1.2, 1.5, 1.0, 4.5, ACCENT_DIM)
+            _oval(slide, 10.5, -0.5, 1.5, ACCENT_DIM)
+        elif variant == 3:
+            # Two circles + small triangle
+            _oval(slide, SLIDE_W - 2.0, SLIDE_H - 2.5, 2.5, ACCENT_DIM)
+            _oval(slide, -0.6, -0.6, 1.8, ACCENT_DIM)
+            _tri(slide, 11.0, 0.2, 1.5, 1.5, ACCENT_DIM)
+        else:
+            # Parallelogram accent
+            _shape(slide, SLIDE_W - 3, SLIDE_H - 2.5, 3.5, 2.5, ACCENT_DIM, MSO_SHAPE.PARALLELOGRAM)
+            _oval(slide, -0.4, -0.4, 1.5, ACCENT_DIM)
+
+    def _gradient_strip(slide, left, top, width, height):
+        """Simulate a gradient bar using overlapping shapes with decreasing opacity colors."""
+        # Use 3 segments from accent to accent_dim for a gradient-like effect
+        seg = width / 3
+        _rect(slide, left, top, seg, height, ACCENT)
+        _rect(slide, left + seg, top, seg, height, ACCENT_LIGHT)
+        _rect(slide, left + seg * 2, top, seg, height, ACCENT_DIM)
+
+    def _stat_block(slide, left, top, width, number, label):
+        """A highlighted stat/number block for data-heavy slides."""
+        _rrect(slide, left, top, width, 2.0, BG_PANEL)
+        _rect(slide, left, top, 0.08, 2.0, ACCENT)
+        _text(slide, left + 0.3, top + 0.25, width - 0.5, 1.0, number, 40, ACCENT_LIGHT, bold=True)
+        _text(slide, left + 0.3, top + 1.25, width - 0.5, 0.6, label, 13, MUTED)
+
+    def _card(slide, left, top, width, height, title_text, body_text):
+        """A content card with accent top border."""
+        _rrect(slide, left, top, width, height, BG_PANEL)
+        _rect(slide, left, top, width, 0.06, ACCENT)
+        _text(slide, left + 0.25, top + 0.2, width - 0.4, 0.5, title_text, 16, ACCENT_LIGHT, bold=True)
+        _text(slide, left + 0.25, top + 0.75, width - 0.4, height - 0.9, body_text, 13, LIGHT, spacing=1.1)
 
     # ── Render each slide ──
     for i, slide_data in enumerate(slides):
@@ -686,9 +782,14 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
             if LAYOUT == "side_panel":
                 _rect(slide, 0, 0, 4.6, SLIDE_H, BG_PANEL)
                 _rect(slide, 4.6, 0, 0.05, SLIDE_H, ACCENT)
+                # Gradient strip at bottom of panel
+                _gradient_strip(slide, 0, SLIDE_H - 0.5, 4.6, 0.5)
                 _text(slide, 0.5, 0.6, 3.6, 2.0, "01", 90, ACCENT_DIM, bold=True)
                 _eyebrow(slide, 0.5, 5.6, "PRESENTATION")
                 _text(slide, 0.5, 6.0, 3.6, 0.6, _date_str(), 13, MUTED)
+                # Decorative circles on right side
+                _oval(slide, SLIDE_W - 2.0, -0.8, 2.5, ACCENT_DIM)
+                _oval(slide, SLIDE_W - 0.8, SLIDE_H - 2.0, 1.8, ACCENT_DIM)
                 _eyebrow(slide, 5.1, 2.15, "OVERVIEW")
                 _text(slide, 5.05, 2.6, 7.7, 1.8, slide_title, 42, WHITE, bold=True, spacing=1.0)
                 subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
@@ -698,30 +799,30 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
 
             elif LAYOUT == "top_bar":
                 _rect(slide, 0, 0, SLIDE_W, 1.2, BG_PANEL)
-                _rect(slide, 0, 1.2, SLIDE_W, 0.08, ACCENT)
-                _text(slide, 0.8, 0.3, 10.0, 0.7, slide_title, 36, WHITE if BG_DARK else WHITE, bold=True)
+                _gradient_strip(slide, 0, 1.2, SLIDE_W, 0.08)
+                _text(slide, 0.8, 0.3, 10.0, 0.7, slide_title, 36, WHITE, bold=True)
                 _eyebrow(slide, 0.8, 2.0, "PRESENTATION")
                 _rect(slide, 0.85, 2.5, 1.0, 0.05, ACCENT)
                 subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
                 _text(slide, 0.85, 2.8, 11.0, 1.0, subtitle, 20, ACCENT_LIGHT, spacing=1.15)
-                _decorative_circles(slide)
+                _decorative_shapes(slide, variant=2)
                 _text(slide, 0.85, SLIDE_H - 0.9, 7.5, 0.5, "Generated by S.T.E.W Agent", 11, MUTED)
 
             elif LAYOUT == "bottom_bar":
                 _rect(slide, 0, SLIDE_H - 1.5, SLIDE_W, 1.5, BG_PANEL)
-                _rect(slide, 0, SLIDE_H - 1.58, SLIDE_W, 0.08, ACCENT)
+                _gradient_strip(slide, 0, SLIDE_H - 1.58, SLIDE_W, 0.08)
                 _text(slide, 1.0, 1.8, 11.0, 2.0, slide_title, 44, WHITE, bold=True, spacing=1.0)
                 subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
                 _rect(slide, 1.05, 4.2, 0.7, 0.045, ACCENT)
                 _text(slide, 1.0, 4.4, 11.0, 0.8, subtitle, 18, ACCENT_LIGHT, spacing=1.15)
                 _text(slide, 1.0, SLIDE_H - 1.0, 10.0, 0.5, "Generated by S.T.E.W Agent", 11, MUTED)
                 _eyebrow(slide, 1.0, 1.2, "PRESENTATION")
-                _decorative_circles(slide)
+                _decorative_shapes(slide, variant=3)
 
             elif LAYOUT == "diagonal":
-                # Angled accent bar top-left to mid-right
                 _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
                 _shape(slide, -1, 4.5, 6, 4, ACCENT_DIM, MSO_SHAPE.PARALLELOGRAM)
+                _tri(slide, SLIDE_W - 2.0, 0, 2.0, 2.0, ACCENT_DIM)
                 _text(slide, 0.5, 0.6, 3.6, 1.5, "01", 80, ACCENT_DIM, bold=True)
                 _eyebrow(slide, 1.0, 1.8, "PRESENTATION")
                 _text(slide, 0.95, 2.3, 11.0, 1.8, slide_title, 42, WHITE, bold=True, spacing=1.0)
@@ -732,6 +833,8 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
 
             else:  # minimal
                 _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
+                _gradient_strip(slide, 0, 0.09, 3.0, 0.09)
+                _oval(slide, SLIDE_W - 2.0, -0.8, 2.5, ACCENT_DIM)
                 _eyebrow(slide, 1.0, 1.8, "PRESENTATION")
                 _text(slide, 0.95, 2.3, 11.0, 2.0, slide_title, 44, WHITE, bold=True, spacing=1.0)
                 subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
@@ -739,10 +842,30 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
                 _text(slide, 0.95, 4.75, 10.5, 0.9, subtitle, 17, ACCENT_LIGHT, spacing=1.15)
                 _text(slide, 0.95, SLIDE_H - 0.9, 7.5, 0.5, "Generated by S.T.E.W Agent", 11, MUTED)
 
+        elif i == len(slides) - 1 and total_slides > 3:
+            # ══ CLOSING SLIDE — special layout with call to action ══
+            _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
+            _decorative_shapes(slide, variant=i % 4)
+            _eyebrow(slide, 1.0, 1.0, "THANK YOU")
+            _text(slide, 0.95, 1.5, 11.0, 1.5, slide_title, 38, WHITE, bold=True, spacing=1.0)
+            _rect(slide, 1.0, 3.2, 1.0, 0.05, ACCENT)
+            if bullets:
+                _bullets(slide, 1.0, 3.6, 11.2, bullets, font_size=18, line_gap=0.72)
+            # CTA block at bottom
+            _rrect(slide, 1.0, SLIDE_H - 1.8, 5.0, 1.0, BG_PANEL)
+            _rect(slide, 1.0, SLIDE_H - 1.8, 0.08, 1.0, ACCENT)
+            _text(slide, 1.3, SLIDE_H - 1.6, 4.5, 0.4, "Generated by S.T.E.W Agent", 13, ACCENT_LIGHT, bold=True)
+            _text(slide, 1.3, SLIDE_H - 1.1, 4.5, 0.3, "stew-agent.onrender.com", 12, MUTED)
+            _page_footer(slide, i)
+
         else:
-            # ══ CONTENT SLIDE ══
-            if LAYOUT == "side_panel":
+            # ══ CONTENT SLIDE — alternating layouts for variety ══
+            content_variant = i % 3  # alternate between 3 content layouts
+
+            if content_variant == 0:
+                # Layout A: Standard with decorative shapes
                 _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
+                _decorative_shapes(slide, variant=i % 4)
                 _eyebrow(slide, 0.9, 0.45, f"SECTION {i:02d}")
                 _text(slide, 0.85, 0.85, 11.0, 0.95, slide_title, 30, WHITE, bold=True)
                 _rect(slide, 0.9, 1.75, 1.0, 0.05, ACCENT)
@@ -751,47 +874,48 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
                     _bullets(slide, 1.0, 2.25, 11.2, bullets, font_size=17.5, line_gap=0.68)
                 _page_footer(slide, i)
 
-            elif LAYOUT == "top_bar":
+            elif content_variant == 1:
+                # Layout B: Two-column with accent panel on right
                 _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
-                _rect(slide, 0, 0.9, 3.0, 0.5, BG_PANEL)
-                _eyebrow(slide, 0.5, 0.95, f"SECTION {i:02d}")
-                _text(slide, 0.5, 1.5, 12.0, 0.95, slide_title, 30, WHITE, bold=True)
-                _rect(slide, 0.55, 2.4, 1.0, 0.05, ACCENT)
-                _text(slide, 11.5, 0.4, 1.4, 1.0, f"{i:02d}", 40, ACCENT_DIM, bold=True, align=PP_ALIGN.RIGHT)
+                # Right accent panel
+                _rect(slide, SLIDE_W - 3.5, 0, 3.5, SLIDE_H, BG_PANEL)
+                _rect(slide, SLIDE_W - 3.55, 0, 0.05, SLIDE_H, ACCENT)
+                # Large number in panel
+                _text(slide, SLIDE_W - 3.2, 0.5, 3.0, 2.5, f"{i:02d}", 72, ACCENT_DIM, bold=True, align=PP_ALIGN.CENTER)
+                _eyebrow(slide, SLIDE_W - 3.2, 3.0, "SECTION")
+                # Left content
+                _eyebrow(slide, 0.9, 0.45, f"SECTION {i:02d}")
+                _text(slide, 0.85, 0.85, 9.0, 0.95, slide_title, 28, WHITE, bold=True)
+                _rect(slide, 0.9, 1.75, 1.0, 0.05, ACCENT)
                 if bullets:
-                    _bullets(slide, 0.65, 2.9, 12.0, bullets, font_size=17.5, line_gap=0.68)
+                    _bullets(slide, 1.0, 2.25, 8.8, bullets, font_size=17, line_gap=0.68)
                 _page_footer(slide, i)
 
-            elif LAYOUT == "bottom_bar":
+            else:
+                # Layout C: Card-based layout — bullets as cards
                 _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
-                _eyebrow(slide, 1.0, 0.5, f"SECTION {i:02d}")
-                _text(slide, 0.95, 0.9, 11.0, 0.95, slide_title, 30, WHITE, bold=True)
-                _rect(slide, 1.0, 1.8, 1.0, 0.05, ACCENT)
-                _text(slide, 11.3, 0.4, 1.4, 1.0, f"{i:02d}", 40, ACCENT_DIM, bold=True, align=PP_ALIGN.RIGHT)
-                if bullets:
-                    _bullets(slide, 1.0, 2.3, 11.2, bullets, font_size=17.5, line_gap=0.68)
-                _rect(slide, 0, SLIDE_H - 0.5, SLIDE_W, 0.06, ACCENT)
-                _page_footer(slide, i)
+                _eyebrow(slide, 0.9, 0.45, f"SECTION {i:02d}")
+                _text(slide, 0.85, 0.85, 11.0, 0.95, slide_title, 30, WHITE, bold=True)
+                _rect(slide, 0.9, 1.75, 1.0, 0.05, ACCENT)
+                _text(slide, 11.3, 0.35, 1.6, 1.2, f"{i:02d}", 46, ACCENT_DIM, bold=True, align=PP_ALIGN.RIGHT)
 
-            elif LAYOUT == "diagonal":
-                _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
-                _shape(slide, -1, SLIDE_H - 2, 5, 3, ACCENT_DIM, MSO_SHAPE.PARALLELOGRAM)
-                _eyebrow(slide, 1.0, 0.5, f"SECTION {i:02d}")
-                _text(slide, 0.95, 0.9, 11.0, 0.95, slide_title, 30, WHITE, bold=True)
-                _rect(slide, 1.0, 1.8, 1.0, 0.05, ACCENT)
-                _text(slide, 11.3, 0.4, 1.4, 1.0, f"{i:02d}", 40, ACCENT_DIM, bold=True, align=PP_ALIGN.RIGHT)
-                if bullets:
-                    _bullets(slide, 1.0, 2.3, 11.2, bullets, font_size=17.5, line_gap=0.68)
-                _page_footer(slide, i)
+                if bullets and len(bullets) <= 3:
+                    # Render as cards
+                    card_w = 3.6
+                    card_gap = 0.3
+                    start_x = (SLIDE_W - (len(bullets) * card_w + (len(bullets) - 1) * card_gap)) / 2
+                    for j, bullet in enumerate(bullets):
+                        clean = _sanitize(bullet.strip().lstrip("-").lstrip("*").lstrip("\u2022").strip())
+                        if not clean:
+                            continue
+                        cx = start_x + j * (card_w + card_gap)
+                        _card(slide, cx, 2.5, card_w, 3.5, f"Point {j+1}", clean)
+                elif bullets:
+                    # Too many bullets for cards — use standard layout
+                    _bullets(slide, 1.0, 2.25, 11.2, bullets, font_size=17.5, line_gap=0.68)
 
-            else:  # minimal
-                _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
-                _eyebrow(slide, 1.0, 0.5, f"SECTION {i:02d}")
-                _text(slide, 0.95, 0.9, 11.0, 0.95, slide_title, 30, WHITE, bold=True)
-                _rect(slide, 1.0, 1.8, 1.0, 0.05, ACCENT)
-                _text(slide, 11.3, 0.4, 1.4, 1.0, f"{i:02d}", 40, ACCENT_DIM, bold=True, align=PP_ALIGN.RIGHT)
-                if bullets:
-                    _bullets(slide, 1.0, 2.3, 11.2, bullets, font_size=17.5, line_gap=0.68)
+                # Decorative accent
+                _oval(slide, -0.5, SLIDE_H - 2.0, 1.5, ACCENT_DIM)
                 _page_footer(slide, i)
 
 

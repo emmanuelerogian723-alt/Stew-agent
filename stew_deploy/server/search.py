@@ -609,6 +609,9 @@ class WebSearch:
                             if snip.startswith("URL Source:"):
                                 continue
 
+                        # Strip markdown artifacts from title and snippet
+                        title = title.replace("**", "").replace("*", "")
+                        snippet = snippet.replace("**", "").replace("*", "")
                         results.append({
                             "title": title,
                             "link": link,
