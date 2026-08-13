@@ -2732,12 +2732,20 @@ async def _transcribe_audio_bytes(file_bytes: bytes, file_name: str = "audio.ogg
 
 
 @app.post("/telegram/webhook")
-async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Receive Telegram messages and reply via S.T.E.W."""
+async def telegram_webhook(request: Request):
+    """Receive Telegram messages. ACKs Telegram INSTANTLY, then processes the
+    update in a detached background task with its own DB session. This is
+    critical: if we do OCR/LLM/transcription work BEFORE responding, a Render
+    cold start or a slow AI provider can push us past Telegram's webhook
+    delivery timeout — Telegram then RETRIES the same update, which caused
+    duplicate replies (the 'goes quiet then repeats the answer' bug)."""
     if not settings.TELEGRAM_BOT_TOKEN:
         raise HTTPException(503, "Telegram bot not configured")
 
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": True}  # invalid JSON, ignore
 
     # Dedup Telegram's update_id — prevents double-processing on webhook retries
     update_id = data.get("update_id")
@@ -2745,6 +2753,27 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         logger.info(f"Skipping duplicate Telegram update_id={update_id}")
         return {"ok": True}
 
+    # Fire-and-forget — do NOT await. Return to Telegram immediately.
+    asyncio.create_task(_process_telegram_update_safe(data))
+    return {"ok": True}
+
+
+async def _process_telegram_update_safe(data: dict):
+    """Runs the real handler with its own DB session, detached from the
+    request/response cycle so it can take as long as it needs without ever
+    causing Telegram to time out and retry."""
+    from server.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as bg_db:
+        try:
+            await _handle_telegram_update(data, bg_db)
+        except Exception as e:
+            logger.error(f"Telegram background handler error: {e}", exc_info=True)
+
+
+async def _handle_telegram_update(data: dict, db: AsyncSession):
+    """The actual Telegram update handler — all the real logic lives here.
+    Called from a detached background task (see _process_telegram_update_safe),
+    never directly from the request path."""
     from server.telegram_bot import TelegramBot
     bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
     msg = bot.parse_update(data)
@@ -2928,8 +2957,12 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             await bot.send_message(chat_id, f"Error processing file: {str(e)[:100]}. Please try again.")
             return {"ok": True}
 
-    # If no text and no file, ignore
-    if not msg.get("text"):
+    # If no text and no file, ignore — but NEVER drop voice/audio (they have no
+    # "text" field, only a "voice"/"audio" object) or callback button presses
+    # (parse_update always sets text="" for those). Both are handled further
+    # down; dropping them here silently ate every voice note before
+    # transcription ever ran.
+    if not msg.get("text") and not msg.get("has_voice") and not msg.get("has_audio") and not msg.get("is_callback"):
         return {"ok": True}
 
     user_text = msg["text"]
