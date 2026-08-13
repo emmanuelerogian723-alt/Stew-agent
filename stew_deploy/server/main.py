@@ -3585,13 +3585,13 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 doc_result = generate_pptx(slides, doc_topic)
             else:
                 # For PDF and DOCX, generate text content
-                system_prompt = f"You are a professional writer. Create a well-structured, detailed document about: {doc_topic}. Use markdown formatting with # for headings, ## for subheadings, - for bullet points. Make it comprehensive and professional."
-                user_msg = f"Write a complete, detailed document about: {doc_topic}. Include an introduction, main sections with headings, and a conclusion."
+                system_prompt = f"You are a professional writer. Create a well-structured, concise document (under 1200 words) about: {doc_topic}. Use markdown: # for title, ## for headings, - for bullet points. Do NOT use tables. Do NOT use special unicode symbols, subscripts, or superscripts — write exponents as 'x10^9' and use plain ASCII only. Write a complete document that ends with a proper conclusion — never cut off mid-sentence."
+                user_msg = f"Write a complete, well-structured document about: {doc_topic}. Include an introduction, 3-5 main sections with headings, and a conclusion. Keep it focused and under 1200 words so it fits completely."
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
                 ]
-                result = await asyncio.to_thread(llm.chat, messages)
+                result = await asyncio.to_thread(llm.chat, messages, max_tokens=3000)
                 raw_content = result["content"]
 
                 if doc_type == "pdf":

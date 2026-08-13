@@ -230,18 +230,18 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
                 slides = json.loads(json_match.group()) if json_match else [{"title": topic, "content": "Generated"}]
                 result = generate_pptx(slides, topic)
             elif doc_type == "docx":
-                system = "You are a professional writer. Create a well-structured document. Use markdown."
-                user = f"Write a detailed document about: {topic}. Introduction, sections, conclusion."
+                system = "You are a professional writer. Create a well-structured, concise document (under 1200 words). Use markdown: # for title, ## for section headings, - for bullet lists. Do NOT use tables. Do NOT use special unicode symbols, subscripts, or superscripts — write exponents as 'x10^9' and use plain ASCII characters only. Write a complete document that ends with a proper conclusion — never cut off mid-sentence."
+                user = f"Write a complete, well-structured document about: {topic}. Include an introduction, 3-5 main sections with headings, and a conclusion. Keep it focused and under 1200 words so it fits completely."
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-                resp = await asyncio.to_thread(llm.chat, messages)
+                resp = await asyncio.to_thread(llm.chat, messages, max_tokens=3000)
                 raw = resp["content"]
                 # Keep markdown — DOCX generator parses ##, #, - for headings/lists
                 result = generate_docx(raw, topic)
             else:  # pdf
-                system = "You are a professional writer. Create a well-structured document. Use markdown."
-                user = f"Write a detailed document about: {topic}. Introduction, sections, conclusion."
+                system = "You are a professional writer. Create a well-structured, concise document (under 1200 words). Use markdown: # for title, ## for section headings, - for bullet lists. Do NOT use tables. Do NOT use special unicode symbols, subscripts, or superscripts — write exponents as 'x10^9' and use plain ASCII characters only. Write a complete document that ends with a proper conclusion — never cut off mid-sentence."
+                user = f"Write a complete, well-structured document about: {topic}. Include an introduction, 3-5 main sections with headings, and a conclusion. Keep it focused and under 1200 words so it fits completely."
                 messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-                resp = await asyncio.to_thread(llm.chat, messages)
+                resp = await asyncio.to_thread(llm.chat, messages, max_tokens=3000)
                 raw = resp["content"]
                 # Keep markdown — PDF generator parses ##, #, - for headings/lists
                 result = generate_pdf(raw, topic)

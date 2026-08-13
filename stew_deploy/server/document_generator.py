@@ -20,7 +20,71 @@ def _to_base64(buf: io.BytesIO) -> str:
     return base64.b64encode(buf.read()).decode("utf-8")
 
 
+# Common unicode chars that break in reportlab's default Helvetica font
+_UNICODE_REPLACEMENTS = {
+    "\u2248": "~",     # ≈
+    "\u00d7": "x",     # ×
+    "\u2212": "-",     # − (unicode minus)
+    "\u2013": "-",     # – (en dash)
+    "\u2014": "--",    # — (em dash)
+    "\u2018": "'", "\u2019": "'",  # smart quotes
+    "\u201c": '"', "\u201d": '"',
+    "\u2192": "->",    # →
+    "\u03bb": "lambda", "\u039b": "Lambda",
+    "\u03c1": "rho", "\u03b4": "delta",
+    "\u03bc": "u", "\u00b5": "u",  # micro/mu
+    "\u2103": " deg C",
+    "\u00b1": "+/-",   # ±
+    "\u2265": ">=", "\u2264": "<=",
+    "\u2260": "!=",
+    "\u221e": "infinity",
+    "\u00b0": " deg",
+    "\u25a0": "",      # black square (the ■ artifact itself)
+    "\ufffd": "",      # replacement character
+}
+
+# Superscript/subscript digit maps -> plain ASCII (e.g. 10⁻³² -> 10^-32)
+_SUPERSCRIPT_MAP = str.maketrans({
+    "\u2070": "0", "\u00b9": "1", "\u00b2": "2", "\u00b3": "3",
+    "\u2074": "4", "\u2075": "5", "\u2076": "6", "\u2077": "7",
+    "\u2078": "8", "\u2079": "9", "\u207b": "-",
+})
+_SUBSCRIPT_MAP = str.maketrans({
+    "\u2080": "0", "\u2081": "1", "\u2082": "2", "\u2083": "3",
+    "\u2084": "4", "\u2085": "5", "\u2086": "6", "\u2087": "7",
+    "\u2088": "8", "\u2089": "9", "\u208b": "-",
+})
+
+
+def _sanitize_text(text: str) -> str:
+    """Strip/replace unicode chars that render as black boxes in default PDF/DOCX fonts."""
+    if not text:
+        return text
+    text = text.translate(_SUPERSCRIPT_MAP)
+    text = text.translate(_SUBSCRIPT_MAP)
+    for uni, replacement in _UNICODE_REPLACEMENTS.items():
+        text = text.replace(uni, replacement)
+    # Strip any remaining non-ASCII characters (final safety net)
+    text = text.encode("ascii", "ignore").decode("ascii")
+    return text
+
+
 # ── PDF ───────────────────────────────────────────────────────────────────────
+
+def _parse_md_table_row(line: str) -> list:
+    """Parse a markdown table row '| a | b | c |' into ['a','b','c']."""
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    return [_sanitize_text(c.replace("**", "").replace("*", "")) for c in cells]
+
+
+def _is_table_separator(line: str) -> bool:
+    """Detect '|---|---|---|' style separator rows."""
+    stripped = line.strip()
+    if not stripped.startswith("|"):
+        return False
+    inner = stripped.strip("|")
+    return all(c in "-:| " for c in inner) and "-" in inner
+
 
 def generate_pdf(content: str, title: str = "Document") -> dict:
     try:
@@ -39,7 +103,7 @@ def generate_pdf(content: str, title: str = "Document") -> dict:
             leftMargin=2 * cm,
             topMargin=2 * cm,
             bottomMargin=2 * cm,
-            title=title,
+            title=_sanitize_text(title),
             author="S.T.E.W Agent",
         )
 
@@ -58,37 +122,76 @@ def generate_pdf(content: str, title: str = "Document") -> dict:
             leading=16,
             spaceAfter=8,
         )
+        table_style = TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EFF6FF")]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ])
 
         story = []
-        story.append(Paragraph(title, title_style))
+        story.append(Paragraph(_sanitize_text(title), title_style))
         story.append(Spacer(1, 0.5 * cm))
 
-        # Parse content — split by newline, detect headings
-        for line in content.split("\n"):
+        lines = content.split("\n")
+        i = 0
+        n = len(lines)
+        while i < n:
+            line = lines[i]
             stripped = line.strip()
+
+            # Detect start of a markdown table: a row with pipes, followed by a separator row
+            if stripped.startswith("|") and i + 1 < n and _is_table_separator(lines[i + 1]):
+                header_row = _parse_md_table_row(stripped)
+                table_data = [header_row]
+                j = i + 2
+                while j < n and lines[j].strip().startswith("|"):
+                    table_data.append(_parse_md_table_row(lines[j]))
+                    j += 1
+                # Wrap cell text in Paragraphs so long text wraps instead of overflowing
+                cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=9, leading=11)
+                wrapped = [[Paragraph(str(cell), cell_style) for cell in row] for row in table_data]
+                col_count = len(header_row) or 1
+                avail_width = 17 * cm
+                col_width = avail_width / col_count
+                t = Table(wrapped, colWidths=[col_width] * col_count, repeatRows=1)
+                t.setStyle(table_style)
+                story.append(t)
+                story.append(Spacer(1, 0.4 * cm))
+                i = j
+                continue
+
             if not stripped:
                 story.append(Spacer(1, 0.3 * cm))
             elif stripped.startswith("## "):
-                clean_h = stripped[3:].replace("**", "").replace("*", "")
+                clean_h = _sanitize_text(stripped[3:].replace("**", "").replace("*", ""))
                 story.append(Paragraph(clean_h, styles["Heading2"]))
             elif stripped.startswith("# "):
-                clean_h = stripped[2:].replace("**", "").replace("*", "")
+                clean_h = _sanitize_text(stripped[2:].replace("**", "").replace("*", ""))
                 story.append(Paragraph(clean_h, styles["Heading1"]))
             elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
-                bullet_text = stripped.lstrip("-*• ").replace("**", "").replace("*", "")
+                bullet_text = _sanitize_text(stripped.lstrip("-*• ").replace("**", "").replace("*", ""))
                 story.append(Paragraph(f"• {bullet_text}", body_style))
             else:
-                # Strip **bold** and *italic* markers, escape HTML chars
-                safe = stripped.replace("**", "").replace("*", "")
+                # Strip **bold** and *italic* markers, sanitize unicode, escape HTML chars
+                safe = _sanitize_text(stripped.replace("**", "").replace("*", ""))
                 safe = safe.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 story.append(Paragraph(safe, body_style))
+            i += 1
 
         # Footer with timestamp
         story.append(Spacer(1, 1 * cm))
         footer_style = ParagraphStyle("Footer", parent=styles["Normal"], fontSize=8,
                                       textColor=colors.grey, alignment=TA_CENTER)
         story.append(Paragraph(
-            f"Generated by S.T.E.W Agent • {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            f"Generated by S.T.E.W Agent - {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
             footer_style,
         ))
 
@@ -114,38 +217,82 @@ def generate_docx(content: str, title: str = "Document") -> dict:
         from docx import Document
         from docx.shared import Pt, RGBColor
         from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
 
         doc = Document()
 
         # Document title
-        title_para = doc.add_heading(title, level=0)
+        title_para = doc.add_heading(_sanitize_text(title), level=0)
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         doc.add_paragraph()  # spacer
 
-        for line in content.split("\n"):
+        def _shade_cell(cell, color_hex):
+            shading = OxmlElement("w:shd")
+            shading.set(qn("w:fill"), color_hex)
+            cell._tc.get_or_add_tcPr().append(shading)
+
+        lines = content.split("\n")
+        i = 0
+        n = len(lines)
+        while i < n:
+            line = lines[i]
             stripped = line.strip()
+
+            # Detect markdown table
+            if stripped.startswith("|") and i + 1 < n and _is_table_separator(lines[i + 1]):
+                header_row = _parse_md_table_row(stripped)
+                table_rows = []
+                j = i + 2
+                while j < n and lines[j].strip().startswith("|"):
+                    table_rows.append(_parse_md_table_row(lines[j]))
+                    j += 1
+
+                col_count = len(header_row) or 1
+                table = doc.add_table(rows=1, cols=col_count)
+                table.style = "Table Grid"
+                hdr_cells = table.rows[0].cells
+                for idx, htext in enumerate(header_row):
+                    hdr_cells[idx].text = htext
+                    _shade_cell(hdr_cells[idx], "2563EB")
+                    for p in hdr_cells[idx].paragraphs:
+                        for run in p.runs:
+                            run.font.bold = True
+                            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                for row_idx, row_data in enumerate(table_rows):
+                    row_cells = table.add_row().cells
+                    for idx in range(col_count):
+                        val = row_data[idx] if idx < len(row_data) else ""
+                        row_cells[idx].text = val
+                        if row_idx % 2 == 1:
+                            _shade_cell(row_cells[idx], "EFF6FF")
+                doc.add_paragraph()  # spacer after table
+                i = j
+                continue
+
             if not stripped:
                 doc.add_paragraph()
             elif stripped.startswith("## "):
-                doc.add_heading(stripped[3:].replace("**", "").replace("*", ""), level=2)
-            elif stripped.startswith("# "):
-                doc.add_heading(stripped[2:].replace("**", "").replace("*", ""), level=1)
+                doc.add_heading(_sanitize_text(stripped[3:].replace("**", "").replace("*", "")), level=2)
             elif stripped.startswith("### "):
-                doc.add_heading(stripped[4:].replace("**", "").replace("*", ""), level=3)
+                doc.add_heading(_sanitize_text(stripped[4:].replace("**", "").replace("*", "")), level=3)
+            elif stripped.startswith("# "):
+                doc.add_heading(_sanitize_text(stripped[2:].replace("**", "").replace("*", "")), level=1)
             elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
-                clean_bullet = stripped.lstrip("-*• ").replace("**", "").replace("*", "")
+                clean_bullet = _sanitize_text(stripped.lstrip("-*• ").replace("**", "").replace("*", ""))
                 doc.add_paragraph(clean_bullet, style="List Bullet")
             elif stripped.startswith("1. ") or (len(stripped) > 2 and stripped[0].isdigit() and stripped[1] == "."):
-                doc.add_paragraph(stripped, style="List Number")
+                doc.add_paragraph(_sanitize_text(stripped), style="List Number")
             else:
-                doc.add_paragraph(stripped.replace("**", "").replace("*", ""))
+                doc.add_paragraph(_sanitize_text(stripped.replace("**", "").replace("*", "")))
+            i += 1
 
         # Footer paragraph
         footer = doc.add_paragraph()
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = footer.add_run(
-            f"Generated by S.T.E.W Agent • {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+            f"Generated by S.T.E.W Agent - {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
         )
         run.font.size = Pt(8)
         run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
@@ -280,7 +427,7 @@ def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
             tf.vertical_anchor = anchor
             tf.auto_size = None
             para = tf.paragraphs[0]
-            para.text = text
+            para.text = _sanitize_text(text)
             para.alignment = align
             run = para.runs[0] if para.runs else para.add_run()
             run.font.size = Pt(font_size)
@@ -299,7 +446,7 @@ def generate_pptx(slides: list[dict], title: str = "Presentation") -> dict:
                 else:
                     para = tf.add_paragraph()
                 # Clean the bullet text
-                clean = bullet.strip().lstrip("-").lstrip("•").strip()
+                clean = _sanitize_text(bullet.strip().lstrip("-").lstrip("•").strip())
                 para.text = clean
                 para.space_after = Pt(10)
                 para.space_before = Pt(4)

@@ -154,7 +154,7 @@ class LLMClient:
     def fallback_order(self) -> list[str]:
         return [p for p in ["groq", "nvidia", "mistral", "openrouter", "huggingface", "openai", "pollinations"] if p in self.providers]
 
-    def _call_groq_with_fallback(self, messages: list[dict], temperature: float) -> dict:
+    def _call_groq_with_fallback(self, messages: list[dict], temperature: float, max_tokens: int = 4096) -> dict:
         """Try each Groq model in fallback order."""
         client = self.providers["groq"]
         last_error = None
@@ -164,6 +164,7 @@ class LLMClient:
                     model=model,
                     messages=messages,
                     temperature=temperature,
+                    max_tokens=max_tokens,
                 )
                 content = response.choices[0].message.content
                 usage = response.usage
@@ -187,7 +188,7 @@ class LLMClient:
                     raise  # Non-model error — don't retry
         raise last_error
 
-    def _call_nvidia_with_fallback(self, messages: list[dict], temperature: float) -> dict:
+    def _call_nvidia_with_fallback(self, messages: list[dict], temperature: float, max_tokens: int = 4096) -> dict:
         """Try each NVIDIA NIM free-tier model in fallback order."""
         client = self.providers["nvidia"]
         last_error = None
@@ -197,6 +198,7 @@ class LLMClient:
                     model=model,
                     messages=messages,
                     temperature=temperature,
+                    max_tokens=max_tokens,
                 )
                 content = response.choices[0].message.content
                 usage = response.usage
@@ -218,15 +220,15 @@ class LLMClient:
         raise last_error
 
     def _call_provider(self, provider_name: str, messages: list[dict],
-                       model: Optional[str], temperature: float) -> dict:
+                       model: Optional[str], temperature: float, max_tokens: int = 4096) -> dict:
         if provider_name == "groq":
             m = model or self._groq_model
             if model is None:
-                return self._call_groq_with_fallback(messages, temperature)
+                return self._call_groq_with_fallback(messages, temperature, max_tokens)
             client = self.providers["groq"]
             try:
                 response = client.chat.completions.create(
-                    model=m, messages=messages, temperature=temperature)
+                    model=m, messages=messages, temperature=temperature, max_tokens=max_tokens)
                 content = response.choices[0].message.content
                 usage = response.usage
                 return {
@@ -238,15 +240,15 @@ class LLMClient:
                     },
                 }
             except Exception:
-                return self._call_groq_with_fallback(messages, temperature)
+                return self._call_groq_with_fallback(messages, temperature, max_tokens)
 
         if provider_name == "nvidia":
             if model is None:
-                return self._call_nvidia_with_fallback(messages, temperature)
+                return self._call_nvidia_with_fallback(messages, temperature, max_tokens)
             client = self.providers["nvidia"]
             try:
                 response = client.chat.completions.create(
-                    model=model, messages=messages, temperature=temperature)
+                    model=model, messages=messages, temperature=temperature, max_tokens=max_tokens)
                 content = response.choices[0].message.content
                 usage = response.usage
                 return {
@@ -258,7 +260,7 @@ class LLMClient:
                     },
                 }
             except Exception:
-                return self._call_nvidia_with_fallback(messages, temperature)
+                return self._call_nvidia_with_fallback(messages, temperature, max_tokens)
 
 
 
@@ -267,7 +269,7 @@ class LLMClient:
             m = model or "openai"
             try:
                 response = client.chat.completions.create(
-                    model=m, messages=messages, temperature=temperature)
+                    model=m, messages=messages, temperature=temperature, max_tokens=max_tokens)
                 content = response.choices[0].message.content
                 return {
                     "content": content, "provider": "pollinations", "model": m,
@@ -288,6 +290,7 @@ class LLMClient:
                         model=m,
                         messages=messages,
                         temperature=temperature,
+                        max_tokens=max_tokens,
                     )
                     content_text = resp.choices[0].message.content
                     return {
@@ -308,7 +311,7 @@ class LLMClient:
         client = self.providers[provider_name]
         chosen_model = model or PROVIDER_MODELS.get(provider_name, "gpt-4o-mini")
         response = client.chat.completions.create(
-            model=chosen_model, messages=messages, temperature=temperature)
+            model=chosen_model, messages=messages, temperature=temperature, max_tokens=max_tokens)
         content = response.choices[0].message.content
         usage = response.usage
         return {
@@ -321,7 +324,7 @@ class LLMClient:
         }
 
     def chat(self, messages: list[dict], model: Optional[str] = None,
-             temperature: float = 0.7, _retry: int = 0) -> dict:
+             temperature: float = 0.7, _retry: int = 0, max_tokens: int = 4096) -> dict:
         """Try each provider in fallback order until one succeeds. Auto-retries once on 429."""
         import time as _time
         last_error = None
@@ -330,7 +333,7 @@ class LLMClient:
             raise HTTPException(status_code=503, detail="No LLM providers configured. Set GROQ_API_KEY.")
         for provider_name in providers:
             try:
-                result = self._call_provider(provider_name, messages, model, temperature)
+                result = self._call_provider(provider_name, messages, model, temperature, max_tokens)
                 logger.info(f"LLM success via {provider_name}/{result['model']}")
                 return result
             except Exception as e:
@@ -350,7 +353,7 @@ class LLMClient:
         if _retry == 0:
             logger.warning("All providers failed on first pass, retrying after 3s...")
             _time.sleep(3)
-            return self.chat(messages, model, temperature, _retry=1)
+            return self.chat(messages, model, temperature, _retry=1, max_tokens=max_tokens)
 
         raise HTTPException(
             status_code=503,
