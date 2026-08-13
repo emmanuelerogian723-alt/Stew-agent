@@ -1,0 +1,11 @@
+/* S.T.E.W Browser Agent — Content CSS */
+#stew-sidebar * {
+  box-sizing: border-box;
+}
+#stew-sidebar button:hover {
+  opacity: 0.85;
+}
+#stew-sidebar textarea:focus {
+  outline: none;
+  border-color: #10b981;
+}

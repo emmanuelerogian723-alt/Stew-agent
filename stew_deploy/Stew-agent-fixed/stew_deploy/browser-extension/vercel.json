@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/search.py", "use": "@vercel/python" },
+    { "src": "api/research.py", "use": "@vercel/python" },
+    { "src": "api/fetch.py", "use": "@vercel/python" }
+  ],
+  "routes": [
+    { "src": "/api/search", "dest": "api/search.py" },
+    { "src": "/api/research", "dest": "api/research.py" },
+    { "src": "/api/fetch", "dest": "api/fetch.py" }
+  ]
+}

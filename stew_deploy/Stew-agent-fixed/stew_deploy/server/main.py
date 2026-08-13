@@ -390,9 +390,9 @@ async def sitemap():
 @app.get("/llms.txt", include_in_schema=False)
 async def llms_txt():
     """llms.txt v2 - AI-friendly docs for LLM agents (ChatGPT, Gemini, Perplexity, Claude)."""
-    content = """# Stew Agent (S.T.E.W)
+    content = """# S.T.E.W Agent
 
-> Stew Agent (S.T.E.W — Smart Thinking Executive Worker) is an AI agent API and Telegram bot built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
+> S.T.E.W (Smart Thinking Executive Worker) is an AI agent API built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
 
 ## Key Facts
 - Base URL: https://stew-agent.onrender.com
@@ -2630,88 +2630,6 @@ async def search_test():
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
 
-# Audio/voice file extensions Telegram may send as a "document" instead of "voice"/"audio"
-_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "oga", "opus", "flac", "aac", "wma", "aiff", "amr"}
-
-# Telegram Bot API cannot download files larger than 20MB via getFile
-_TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
-
-
-async def _transcribe_audio_bytes(file_bytes: bytes, file_name: str = "audio.ogg") -> tuple[str, str]:
-    """Transcribe audio bytes via Groq Whisper (falls back to OpenAI Whisper).
-    Returns (transcript, error_message) — error_message is "" on success.
-    Handles voice notes, songs, and any audio file Telegram passes through,
-    regardless of whether it arrived as message.voice, message.audio, or message.document.
-    """
-    import os as _os
-    import tempfile
-
-    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "ogg"
-    if ext not in _AUDIO_EXTENSIONS:
-        ext = "ogg"
-    mime_map = {
-        "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
-        "ogg": "audio/ogg", "oga": "audio/ogg", "opus": "audio/ogg",
-        "flac": "audio/flac", "aac": "audio/aac", "wma": "audio/x-ms-wma",
-        "aiff": "audio/aiff", "amr": "audio/amr",
-    }
-    mime = mime_map.get(ext, "audio/ogg")
-
-    groq_key = _os.getenv("GROQ_API_KEY", "")
-    openai_key = _os.getenv("OPENAI_API_KEY", "")
-    transcript = ""
-    last_error = ""
-
-    with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
-        tmp.write(file_bytes)
-        tmp_path = tmp.name
-
-    try:
-        if groq_key:
-            try:
-                with open(tmp_path, "rb") as audio_file:
-                    resp = http_requests.post(
-                        "https://api.groq.com/openai/v1/audio/transcriptions",
-                        headers={"Authorization": f"Bearer {groq_key}"},
-                        files={"file": (f"audio.{ext}", audio_file, mime)},
-                        data={"model": "whisper-large-v3"},
-                        timeout=90,
-                    )
-                if resp.status_code == 200:
-                    transcript = resp.json().get("text", "").strip()
-                else:
-                    last_error = f"Groq Whisper error {resp.status_code}: {resp.text[:200]}"
-                    logger.warning(last_error)
-            except Exception as e:
-                last_error = f"Groq Whisper exception: {e}"
-                logger.warning(last_error)
-
-        if not transcript and openai_key and not openai_key.startswith("sk-stew"):
-            try:
-                with open(tmp_path, "rb") as audio_file:
-                    resp = http_requests.post(
-                        "https://api.openai.com/v1/audio/transcriptions",
-                        headers={"Authorization": f"Bearer {openai_key}"},
-                        files={"file": (f"audio.{ext}", audio_file, mime)},
-                        data={"model": "whisper-1"},
-                        timeout=90,
-                    )
-                if resp.status_code == 200:
-                    transcript = resp.json().get("text", "").strip()
-                else:
-                    last_error = f"OpenAI Whisper error {resp.status_code}: {resp.text[:200]}"
-                    logger.warning(last_error)
-            except Exception as e:
-                last_error = f"OpenAI Whisper exception: {e}"
-                logger.warning(last_error)
-    finally:
-        _os.unlink(tmp_path)
-
-    if not transcript and not last_error:
-        last_error = "No transcription provider configured (missing GROQ_API_KEY/OPENAI_API_KEY)."
-    return transcript, ("" if transcript else last_error)
-
-
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Receive Telegram messages and reply via S.T.E.W."""
@@ -2803,37 +2721,10 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 await bot.send_message(chat_id, "I couldn't download the file. Please try again.")
                 return {"ok": True}
 
+            await bot.send_message(chat_id, f"Reading {file_name}...")
             await bot.send_typing(chat_id)
 
             ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-
-            # Songs/audio sent via the file picker land here as "document" instead of
-            # "voice"/"audio" — detect and route to transcription instead of text extraction.
-            if ext in _AUDIO_EXTENSIONS:
-                await bot.send_message(chat_id, "Transcribing your audio...")
-                await bot.send_typing(chat_id)
-                transcript, error = await _transcribe_audio_bytes(file_bytes, file_name)
-                if not transcript:
-                    await bot.send_message(chat_id, f"Couldn't transcribe that audio ({error[:150]}). Please type your message instead.")
-                    return {"ok": True}
-                if caption:
-                    await bot.send_message(chat_id, f'Transcript: "{transcript[:500]}"\nAnswering your question...')
-                    await bot.send_typing(chat_id)
-                    llm = get_llm_client()
-                    reply = llm.complete(
-                        f"Audio transcript:\n{transcript[:8000]}\n\nQuestion: {caption}",
-                        system="Answer the question based on the transcript. Be concise and accurate.",
-                    )
-                    await bot.send_message(chat_id, clean_response(reply))
-                else:
-                    preview = transcript[:3500]
-                    if len(transcript) > 3500:
-                        preview += "\n\n... (truncated)"
-                    await bot.send_message(chat_id, f'*Transcript of {file_name}*\n\n{preview}')
-                return {"ok": True}
-
-            await bot.send_message(chat_id, f"Reading {file_name}...")
-            await bot.send_typing(chat_id)
 
             # Route to appropriate processor
             if ext in ("png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif", "pdf"):
@@ -3058,29 +2949,52 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
 
-    # ── VOICE MESSAGE HANDLING (voice notes, audio files, songs) ──────────────
+    # ── VOICE MESSAGE HANDLING ─────────────────────────────────────────────────
     if msg.get("has_voice") or msg.get("has_audio"):
         await bot.send_chat_action(chat_id, "typing")
-        file_size = msg.get("file_size") or 0
-        if file_size and file_size > _TELEGRAM_MAX_DOWNLOAD_BYTES:
-            await bot.send_message(
-                chat_id,
-                f"That file is {file_size / 1024 / 1024:.1f}MB — Telegram bots can only download files up to 20MB. "
-                "Please send a shorter clip or a smaller file."
-            )
-            return {"ok": True}
         try:
             file_bytes = await bot.download_file(msg["file_id"])
             if not file_bytes:
-                await bot.send_message(chat_id, "Couldn't download your audio — it may be too large or Telegram's servers timed out. Try again or send a shorter clip.")
+                await bot.send_message(chat_id, "Couldn't download your voice message.")
                 return {"ok": True}
-            await bot.send_message(chat_id, "Transcribing your audio...")
+            await bot.send_message(chat_id, "Transcribing your voice message...")
             await bot.send_typing(chat_id)
-            transcript, error = await _transcribe_audio_bytes(file_bytes, msg.get("file_name") or "voice.ogg")
+            import os as _os
+            import tempfile
+            groq_key = _os.getenv("GROQ_API_KEY", "")
+            transcript = ""
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            try:
+                if groq_key:
+                    with open(tmp_path, "rb") as audio_file:
+                        resp = http_requests.post(
+                            "https://api.groq.com/openai/v1/audio/transcriptions",
+                            headers={"Authorization": f"Bearer {groq_key}"},
+                            files={"file": ("voice.ogg", audio_file, "audio/ogg")},
+                            data={"model": "whisper-large-v3"},
+                            timeout=30,
+                        )
+                    transcript = resp.json().get("text", "").strip()
+                else:
+                    openai_key = _os.getenv("OPENAI_API_KEY", "")
+                    if openai_key and not openai_key.startswith("sk-stew"):
+                        with open(tmp_path, "rb") as audio_file:
+                            resp = http_requests.post(
+                                "https://api.openai.com/v1/audio/transcriptions",
+                                headers={"Authorization": f"Bearer {openai_key}"},
+                                files={"file": ("voice.ogg", audio_file, "audio/ogg")},
+                                data={"model": "whisper-1"},
+                                timeout=30,
+                            )
+                        transcript = resp.json().get("text", "").strip()
+            finally:
+                _os.unlink(tmp_path)
             if not transcript:
-                await bot.send_message(chat_id, f"Couldn't transcribe that audio ({error[:150]}). Please type your message instead.")
+                await bot.send_message(chat_id, "Couldn't transcribe. Please type your message instead.")
                 return {"ok": True}
-            await bot.send_message(chat_id, f'You said: "{transcript[:500]}"\nProcessing...')
+            await bot.send_message(chat_id, f'You said: "{transcript}"\nProcessing...')
             await bot.send_typing(chat_id)
             user_text = transcript
             user_lower = user_text.lower()

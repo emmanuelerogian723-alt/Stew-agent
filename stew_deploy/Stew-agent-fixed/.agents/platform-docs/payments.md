@@ -1,0 +1,7 @@
+# payments
+
+> Payment setup and payment-provider tools, including Stripe and Wix-backed payments
+
+Payment tools are conditional on the app's active payment integration and backend-function capability. If no provider is active, the agent may have a setup-suggestion tool: `suggest_payments_installation` when Wix-backed providers are available (it routes between Wix Payments, Payments by Wix, and Stripe based on country, availability, and the user's explicit preference), or `suggest_stripe_installation` in Stripe-only environments where no Wix-backed provider is enabled. Use whichever of the two is actually in your tool list. Treat "Base44 Payments", "Wix Payments", and "Payments by Wix" as the Wix-backed payments family, not as a Stripe request.
+
+If Stripe is connected, use `activate_platform_skill("stripe-payments")` for product, price, checkout, and Stripe webhook details. If Wix-backed payments (Wix Payments or Payments by Wix) are connected, the only Wix payment tool exposed is a webhook-registration tool — there are no agent tools for Wix product or checkout management, so those are handled in the Wix dashboard, not from chat. Use whatever Wix payment tool is actually in your tool list, and don't promise Wix product/checkout tooling that isn't present. Do not invent payment capabilities when the install or provider-specific tools are absent; explain what setup is needed and use the suggestion tool when available.

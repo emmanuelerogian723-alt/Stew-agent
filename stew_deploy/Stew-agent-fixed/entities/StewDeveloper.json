@@ -1,0 +1,64 @@
+{
+  "type": "object",
+  "properties": {
+    "full_name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "company": {
+      "type": "string"
+    },
+    "password_hash": {
+      "type": "string"
+    },
+    "plan": {
+      "type": "string",
+      "enum": [
+        "free",
+        "starter",
+        "pro",
+        "enterprise"
+      ]
+    },
+    "api_key": {
+      "type": "string"
+    },
+    "api_calls_used": {
+      "type": "number"
+    },
+    "api_calls_limit": {
+      "type": "number"
+    },
+    "paystack_reference": {
+      "type": "string"
+    },
+    "payment_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "active",
+        "expired",
+        "cancelled"
+      ]
+    },
+    "plan_expires": {
+      "type": "string"
+    },
+    "is_verified": {
+      "type": "boolean"
+    },
+    "verification_token": {
+      "type": "string"
+    },
+    "last_active": {
+      "type": "string"
+    },
+    "total_paid_ngn": {
+      "type": "number"
+    }
+  },
+  "required": [],
+  "name": "StewDeveloper"
+}

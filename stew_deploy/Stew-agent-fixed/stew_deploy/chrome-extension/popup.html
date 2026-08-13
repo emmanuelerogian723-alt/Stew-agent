@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S.T.E.W Agent</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <div class="logo-text">S.T.E.W</div>
+      <div class="logo-sub">Browser Agent</div>
+    </div>
+    <div class="status" id="status">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Connecting...</span>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" data-tab="chat">Chat</button>
+    <button class="tab-btn" data-tab="actions">Actions</button>
+    <button class="tab-btn" data-tab="memory">Memory</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+  </div>
+
+  <div class="tab-content" id="tab-chat">
+    <div class="chat-history" id="chat-history">
+      <div class="chat-empty">Ask S.T.E.W anything, search the web, or describe a task to automate on the current page.</div>
+    </div>
+    <div class="chat-input-area">
+      <textarea id="chat-input" placeholder="Type your message, search query, or task..." rows="2"></textarea>
+      <button id="chat-send" class="btn-primary">Send</button>
+    </div>
+  </div>
+
+  <div class="tab-content hidden" id="tab-actions">
+    <div class="action-grid">
+      <button class="action-card" data-action="search">
+        <div class="action-icon">🔍</div>
+        <div class="action-title">Web Search</div>
+        <div class="action-desc">Search DuckDuckGo, Bing, SearXNG (free)</div>
+      </button>
+      <button class="action-card" data-action="browse">
+        <div class="action-icon">🌐</div>
+        <div class="action-title">Browse URL</div>
+        <div class="action-desc">Read any web page and extract content</div>
+      </button>
+      <button class="action-card" data-action="summarize">
+        <div class="action-icon">📄</div>
+        <div class="action-title">Summarize Page</div>
+        <div class="action-desc">Get an AI summary of the current page</div>
+      </button>
+      <button class="action-card" data-action="extract">
+        <div class="action-icon">📊</div>
+        <div class="action-title">Extract Info</div>
+        <div class="action-desc">Pull key facts, contacts, and data</div>
+      </button>
+      <button class="action-card" data-action="research">
+        <div class="action-icon">🔬</div>
+        <div class="action-title">Deep Research</div>
+        <div class="action-desc">Multi-source deep dive on any topic</div>
+      </button>
+      <button class="action-card" data-action="automate">
+        <div class="action-icon">🤖</div>
+        <div class="action-title">Automate Task</div>
+        <div class="action-desc">Let S.T.E.W click & fill for you</div>
+      </button>
+      <button class="action-card" data-action="navigate">
+        <div class="action-icon">🧭</div>
+        <div class="action-title">Navigate & Explore</div>
+        <div class="action-desc">Multi-step browsing with AI</div>
+      </button>
+      <button class="action-card" data-action="sidebar">
+        <div class="action-icon">📱</div>
+        <div class="action-title">Open Sidebar</div>
+        <div class="action-desc">Inline agent panel on page</div>
+      </button>
+    </div>
+  </div>
+
+  <div class="tab-content hidden" id="tab-memory">
+    <div class="memory-controls">
+      <button id="clear-memory" class="btn-secondary">Clear All Memory</button>
+    </div>
+    <div class="memory-list" id="memory-list">
+      <div class="memory-empty">No memories yet. S.T.E.W will remember pages you visit and tasks you perform.</div>
+    </div>
+  </div>
+
+  <div class="tab-content hidden" id="tab-settings">
+    <div class="setting-row">
+      <label>Server URL</label>
+      <input type="text" id="setting-server" placeholder="https://stew-agent.onrender.com">
+    </div>
+    <div class="setting-row">
+      <label>API Key (optional — for AI features)</label>
+      <input type="password" id="setting-apikey" placeholder="Enter your stew_ API key">
+    </div>
+    <div class="setting-row">
+      <label>Use built-in free search</label>
+      <input type="checkbox" id="setting-freesearch" checked>
+      <small style="display:block;color:#888;font-size:11px;margin-top:4px;">Search works without API key using DuckDuckGo + Bing + SearXNG</small>
+    </div>
+    <div class="setting-row">
+      <label>Auto-summarize pages</label>
+      <input type="checkbox" id="setting-autosummarize">
+    </div>
+    <div class="setting-row">
+      <label>Enable memory</label>
+      <input type="checkbox" id="setting-memory" checked>
+    </div>
+    <div class="setting-row">
+      <label>Human-like delays</label>
+      <input type="checkbox" id="setting-delay" checked>
+    </div>
+    <div class="setting-row">
+      <label>Max memory items</label>
+      <input type="number" id="setting-maxmem" value="500" min="50" max="5000">
+    </div>
+    <button id="save-settings" class="btn-primary" style="margin-top: 12px;">Save Settings</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# S.T.E.W on Fly.io
+# Run: fly launch --name stew-agent --no-deploy
+# Then: fly secrets set GROQ_API_KEY=... (see README)
+# Then: fly deploy
+
+app = "stew-agent"
+primary_region = "lhr"  # London — close to Nigeria
+
+[build]
+  dockerfile = "stew_deploy/Dockerfile"
+
+[env]
+  PORT = "8000"
+  ENVIRONMENT = "production"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+[checks]
+  [checks.health]
+    grace_period = "30s"
+    interval = "15s"
+    method = "get"
+    path = "/heartbeat"
+    port = 8000
+    timeout = "10s"
+    type = "http"

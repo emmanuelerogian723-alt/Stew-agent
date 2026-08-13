@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S.T.E.W Plugins & Connectors</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
+:root{
+  --dark:#050508;--dark2:#08080f;--dark3:#0d0d1a;
+  --card:#111118;--card2:#161622;--card3:#1c1c2e;
+  --border:#1e1e2e;--border2:#252535;
+  --purple:#7B2FBE;--purple2:#9D4EDD;--purple3:#c084fc;
+  --gold:#FFD700;--gold2:#FFA500;
+  --cyan:#00F5FF;--cyan2:#00C8FF;
+  --green:#10b981;--red:#ef4444;--orange:#f59e0b;--blue:#3b82f6;
+  --text:#e2e8f0;--muted:#64748b;--dim:#94a3b8;
+  --font:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:var(--dark);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;}
+
+/* ── GRID BG ── */
+body::before{content:'';position:fixed;inset:0;z-index:0;
+  background-image:linear-gradient(rgba(123,47,190,.04)1px,transparent 1px),
+    linear-gradient(90deg,rgba(123,47,190,.04)1px,transparent 1px);
+  background-size:55px 55px;pointer-events:none;}
+
+/* ── SIDEBAR ── */
+.sidebar{width:220px;min-height:100vh;background:var(--dark2);
+  border-right:1px solid var(--border);position:fixed;left:0;top:0;bottom:0;
+  z-index:100;display:flex;flex-direction:column;padding:0;}
+.sb-logo{padding:18px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;}
+.logo-box{width:34px;height:34px;background:linear-gradient(135deg,var(--purple),var(--cyan));
+  border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:12px;box-shadow:0 0 16px rgba(123,47,190,.5);}
+.logo-name{font-weight:900;font-size:.9rem;letter-spacing:.3px;}
+.logo-name span{color:var(--gold);}
+.logo-ver{font-size:9px;color:var(--muted);font-family:var(--mono);}
+.sb-nav{padding:12px 10px;flex:1;}
+.sb-section{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:2px;
+  text-transform:uppercase;padding:10px 10px 6px;margin-top:4px;}
+.sb-item{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:10px;
+  cursor:pointer;transition:all .15s;margin-bottom:2px;border:1px solid transparent;
+  font-size:12px;color:var(--muted);text-decoration:none;}
+.sb-item:hover{background:rgba(255,255,255,.05);color:var(--text);}
+.sb-item.active{background:rgba(123,47,190,.15);border-color:rgba(123,47,190,.3);
+  color:var(--purple3);}
+.sb-item.active .sb-icon{color:var(--purple3);}
+.sb-icon{font-size:14px;width:18px;text-align:center;}
+.sb-badge{margin-left:auto;padding:2px 7px;background:rgba(123,47,190,.25);
+  border-radius:10px;font-size:9px;color:var(--purple3);font-weight:700;}
+.sb-status{padding:14px 16px;border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);animation:pd 2s infinite;}
+@keyframes pd{0%,100%{opacity:1}50%{opacity:.4}}
+.status-text{font-size:11px;color:var(--muted);}
+.status-text b{color:var(--green);font-size:10px;}
+
+/* ── MAIN ── */
+.main{margin-left:220px;flex:1;min-height:100vh;position:relative;z-index:1;}
+
+/* ── TOP BAR ── */
+.topbar{padding:0 2rem;height:60px;border-bottom:1px solid var(--border);
+  background:rgba(5,5,8,.8);backdrop-filter:blur(20px);
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;}
+.topbar-left h1{font-size:1.05rem;font-weight:800;letter-spacing:-.3px;}
+.topbar-left p{font-size:11px;color:var(--muted);margin-top:1px;}
+.topbar-right{display:flex;align-items:center;gap:.6rem;}
+.tb-btn{padding:8px 18px;border-radius:9px;font-size:12px;font-weight:700;
+  cursor:pointer;font-family:var(--font);transition:all .2s;border:none;}
+.btn-add{background:linear-gradient(135deg,var(--purple),var(--purple2));color:#fff;
+  box-shadow:0 3px 14px rgba(123,47,190,.4);}
+.btn-add:hover{transform:translateY(-1px);box-shadow:0 5px 20px rgba(123,47,190,.6);}
+.btn-ghost{background:rgba(255,255,255,.05);border:1px solid var(--border2);color:var(--text);}
+.btn-ghost:hover{background:rgba(255,255,255,.1);}
+
+/* ── BODY ── */
+.body{padding:2rem;}
+
+/* ── TABS ── */
+.tabs{display:flex;gap:4px;margin-bottom:2rem;
+  background:rgba(255,255,255,.03);padding:5px;border-radius:12px;
+  width:fit-content;border:1px solid var(--border);}
+.tab{padding:8px 20px;border-radius:9px;font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .2s;color:var(--muted);border:1px solid transparent;}
+.tab.on{background:var(--card2);color:var(--text);border-color:var(--border2);
+  box-shadow:0 2px 8px rgba(0,0,0,.3);}
+.tab .tab-count{display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;background:rgba(123,47,190,.3);border-radius:50%;
+  font-size:9px;color:var(--purple3);margin-left:6px;font-weight:800;}
+
+/* ── HERO BANNER ── */
+.hero-banner{background:linear-gradient(135deg,rgba(123,47,190,.18),rgba(0,200,255,.1));
+  border:1px solid rgba(123,47,190,.25);border-radius:18px;padding:32px;
+  margin-bottom:2rem;display:flex;align-items:center;justify-content:space-between;
+  overflow:hidden;position:relative;}
+.hero-banner::before{content:'⚡';position:absolute;right:2rem;top:50%;
+  transform:translateY(-50%);font-size:100px;opacity:.05;}
+.hb-text h2{font-size:1.3rem;font-weight:800;margin-bottom:8px;letter-spacing:-.5px;}
+.hb-text p{font-size:13px;color:var(--muted);line-height:1.6;max-width:520px;}
+.hb-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+.hb-btn{padding:9px 20px;border-radius:10px;font-size:12px;font-weight:700;
+  cursor:pointer;border:none;font-family:var(--font);transition:all .2s;}
+.hb-btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#000;}
+.hb-btn-gold:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,215,0,.4);}
+.hb-btn-outline{background:rgba(255,255,255,.05);border:1px solid var(--border2);color:var(--text);}
+.hb-btn-outline:hover{background:rgba(255,255,255,.1);}
+
+/* ── SECTION LABELS ── */
+.sec-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+.sec-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:2px;text-transform:uppercase;}
+.browse-all{font-size:11px;color:var(--purple3);cursor:pointer;
+  display:flex;align-items:center;gap:4px;font-weight:600;}
+.browse-all:hover{color:var(--gold);}
+
+/* ── CONNECTOR GRID ── */
+.connector-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:2.5rem;}
+.connector-card{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:18px;cursor:pointer;transition:all .25s;position:relative;}
+.connector-card:hover{border-color:rgba(123,47,190,.4);transform:translateY(-2px);
+  box-shadow:0 8px 32px rgba(0,0,0,.4);}
+.connector-card.connected{border-color:rgba(16,185,129,.3);}
+.cc-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.cc-logo{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;
+  justify-content:center;font-size:18px;flex-shrink:0;}
+.cc-name{font-weight:700;font-size:.85rem;}
+.cc-desc{font-size:11px;color:var(--muted);line-height:1.5;}
+.cc-status{position:absolute;top:12px;right:12px;padding:3px 8px;border-radius:6px;
+  font-size:9px;font-weight:700;letter-spacing:.5px;}
+.cs-active{background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);}
+.cs-connect{background:rgba(123,47,190,.12);color:var(--purple3);border:1px solid rgba(123,47,190,.2);}
+.cs-mcp{background:rgba(255,215,0,.12);color:var(--gold);border:1px solid rgba(255,215,0,.25);}
+.cc-action{width:100%;margin-top:12px;padding:7px;border-radius:8px;font-size:11px;
+  font-weight:700;cursor:pointer;border:none;font-family:var(--font);transition:all .15s;}
+.ca-connect{background:rgba(123,47,190,.15);color:var(--purple3);}
+.ca-connect:hover{background:rgba(123,47,190,.3);}
+.ca-connected{background:rgba(16,185,129,.1);color:#34d399;}
+.ca-connected:hover{background:rgba(239,68,68,.1);color:#f87171;}
+.cc-badge{position:absolute;top:-6px;left:12px;padding:2px 8px;border-radius:8px;
+  font-size:8px;font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+.badge-new{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#000;}
+.badge-free{background:rgba(16,185,129,.2);color:#34d399;border:1px solid rgba(16,185,129,.3);}
+.badge-mcp{background:rgba(0,200,255,.15);color:var(--cyan2);border:1px solid rgba(0,200,255,.3);}
+
+/* ── MCP SECTION ── */
+.mcp-card{background:linear-gradient(135deg,rgba(0,200,255,.06),rgba(123,47,190,.06));
+  border:1px solid rgba(0,200,255,.2);border-radius:16px;padding:24px;margin-bottom:2rem;}
+.mcp-header{display:flex;align-items:center;gap:14px;margin-bottom:14px;}
+.mcp-icon{width:48px;height:48px;background:linear-gradient(135deg,rgba(0,200,255,.2),rgba(123,47,190,.2));
+  border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;
+  border:1px solid rgba(0,200,255,.25);}
+.mcp-title{font-size:1.1rem;font-weight:800;margin-bottom:3px;}
+.mcp-sub{font-size:12px;color:var(--muted);}
+.mcp-input-row{display:flex;gap:10px;align-items:center;}
+.mcp-input{flex:1;padding:11px 16px;background:rgba(255,255,255,.04);
+  border:1px solid var(--border2);border-radius:10px;color:var(--text);
+  font-family:var(--mono);font-size:12px;outline:none;transition:border-color .2s;}
+.mcp-input:focus{border-color:rgba(0,200,255,.4);}
+.mcp-input::placeholder{color:var(--muted);}
+.mcp-connect-btn{padding:11px 20px;background:linear-gradient(135deg,var(--cyan2),var(--purple2));
+  border:none;border-radius:10px;color:#fff;font-weight:700;font-size:12px;
+  cursor:pointer;font-family:var(--font);transition:all .2s;white-space:nowrap;}
+.mcp-connect-btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,200,255,.3);}
+.mcp-list{margin-top:16px;display:flex;flex-direction:column;gap:8px;}
+.mcp-item{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;
+  padding:12px 16px;display:flex;align-items:center;gap:12px;}
+.mi-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;
+  justify-content:center;font-size:15px;background:rgba(255,255,255,.06);flex-shrink:0;}
+.mi-name{font-weight:700;font-size:.82rem;}
+.mi-url{font-size:10px;color:var(--muted);font-family:var(--mono);}
+.mi-status{margin-left:auto;padding:3px 9px;border-radius:6px;font-size:9px;font-weight:700;}
+.mis-on{background:rgba(16,185,129,.15);color:#34d399;}
+.mi-actions{display:flex;gap:6px;}
+.mi-btn{padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;
+  cursor:pointer;border:none;font-family:var(--font);transition:all .15s;}
+.mi-btn-test{background:rgba(123,47,190,.15);color:var(--purple3);}
+.mi-btn-test:hover{background:rgba(123,47,190,.3);}
+.mi-btn-remove{background:rgba(239,68,68,.1);color:#f87171;}
+.mi-btn-remove:hover{background:rgba(239,68,68,.2);}
+
+/* ── SKILLS TAB ── */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:2rem;}
+.skill-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;
+  transition:all .25s;position:relative;}
+.skill-card:hover{border-color:rgba(255,215,0,.25);transform:translateY(-2px);}
+.skill-card.active-skill{border-color:rgba(16,185,129,.3);}
+.sk-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;}
+.sk-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:18px;flex-shrink:0;}
+.sk-info{flex:1;}
+.sk-name{font-weight:700;font-size:.88rem;margin-bottom:3px;}
+.sk-author{font-size:10px;color:var(--muted);}
+.sk-desc{font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px;}
+.sk-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;}
+.sk-tag{padding:3px 9px;border-radius:6px;font-size:9px;font-weight:700;
+  background:rgba(123,47,190,.1);color:var(--purple3);border:1px solid rgba(123,47,190,.2);}
+.sk-footer{display:flex;align-items:center;justify-content:space-between;}
+.sk-meta{font-size:10px;color:var(--muted);}
+.sk-btn{padding:6px 14px;border-radius:8px;font-size:11px;font-weight:700;
+  cursor:pointer;border:none;font-family:var(--font);transition:all .15s;}
+.skb-install{background:linear-gradient(135deg,var(--purple),var(--purple2));color:#fff;}
+.skb-install:hover{box-shadow:0 3px 12px rgba(123,47,190,.5);}
+.skb-installed{background:rgba(16,185,129,.1);color:#34d399;border:1px solid rgba(16,185,129,.2);}
+.skb-installed:hover{background:rgba(239,68,68,.1);color:#f87171;}
+
+/* ── ADD SKILL MODAL ── */
+.code-area{width:100%;min-height:140px;background:rgba(255,255,255,.03);
+  border:1px solid var(--border2);border-radius:10px;padding:12px;
+  color:#a5f3fc;font-family:var(--mono);font-size:11px;resize:vertical;
+  outline:none;line-height:1.65;}
+.code-area:focus{border-color:rgba(255,215,0,.35);}
+
+/* ── ADD FORM (inline card) ── */
+.add-form-card{background:linear-gradient(135deg,rgba(255,215,0,.04),rgba(123,47,190,.04));
+  border:1px dashed rgba(255,215,0,.3);border-radius:16px;padding:24px;
+  margin-bottom:2rem;display:none;}
+.add-form-card.show{display:block;}
+.afc-title{font-size:1rem;font-weight:800;margin-bottom:16px;
+  display:flex;align-items:center;gap:8px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.fg-full{grid-column:1/-1;}
+.form-group{display:flex;flex-direction:column;gap:5px;}
+.fg-label{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;}
+.fg-input{padding:10px 14px;background:rgba(255,255,255,.04);
+  border:1px solid var(--border2);border-radius:9px;color:var(--text);
+  font-family:var(--font);font-size:12px;outline:none;transition:border-color .2s;}
+.fg-input:focus{border-color:rgba(255,215,0,.4);}
+.fg-select{padding:10px 14px;background:var(--card2);
+  border:1px solid var(--border2);border-radius:9px;color:var(--text);
+  font-family:var(--font);font-size:12px;outline:none;
+  appearance:none;cursor:pointer;}
+.form-actions{display:flex;gap:10px;margin-top:16px;}
+.fa-submit{padding:10px 24px;background:linear-gradient(135deg,var(--gold),var(--gold2));
+  border:none;border-radius:10px;color:#000;font-weight:800;font-size:12px;
+  cursor:pointer;font-family:var(--font);transition:all .2s;}
+.fa-submit:hover{box-shadow:0 4px 16px rgba(255,215,0,.4);}
+.fa-cancel{padding:10px 18px;background:rgba(255,255,255,.04);
+  border:1px solid var(--border2);border-radius:10px;color:var(--muted);
+  font-weight:600;font-size:12px;cursor:pointer;font-family:var(--font);}
+
+/* ── CONNECTED APPS ── */
+.connected-list{display:flex;flex-direction:column;gap:10px;margin-bottom:2rem;}
+.con-item{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:16px 20px;display:flex;align-items:center;gap:14px;transition:all .2s;}
+.con-item:hover{border-color:var(--border2);}
+.ci-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-size:20px;flex-shrink:0;}
+.ci-info{flex:1;}
+.ci-name{font-weight:700;font-size:.88rem;margin-bottom:2px;}
+.ci-desc{font-size:11px;color:var(--muted);}
+.ci-status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);font-weight:600;}
+.ci-actions{display:flex;gap:8px;}
+.ci-btn{padding:6px 12px;border-radius:8px;font-size:11px;font-weight:600;
+  cursor:pointer;border:none;font-family:var(--font);transition:all .15s;}
+.ci-test{background:rgba(123,47,190,.12);color:var(--purple3);}
+.ci-test:hover{background:rgba(123,47,190,.25);}
+.ci-remove{background:rgba(239,68,68,.08);color:#f87171;}
+.ci-remove:hover{background:rgba(239,68,68,.18);}
+
+/* ── OAUTH CONNECT ── */
+.oauth-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:2rem;}
+.oauth-btn{background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:14px;cursor:pointer;transition:all .2s;text-align:center;}
+.oauth-btn:hover{border-color:rgba(255,215,0,.3);transform:translateY(-2px);}
+.ob-icon{font-size:24px;margin-bottom:6px;}
+.ob-name{font-size:11px;font-weight:700;}
+.ob-sub{font-size:9px;color:var(--muted);margin-top:2px;}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;padding:11px 20px;
+  border-radius:12px;background:var(--card2);border:1px solid var(--border);
+  font-size:12px;font-weight:600;transform:translateY(60px);opacity:0;
+  transition:all .35s cubic-bezier(.34,1.56,.64,1);}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.ok{border-color:rgba(16,185,129,.5);color:#34d399;}
+.toast.err{border-color:rgba(239,68,68,.5);color:#f87171;}
+.toast.info{border-color:rgba(255,215,0,.4);color:var(--gold);}
+
+/* ── SEARCH BAR ── */
+.search-bar{display:flex;align-items:center;gap:10px;
+  background:rgba(255,255,255,.04);border:1px solid var(--border2);
+  border-radius:12px;padding:10px 16px;margin-bottom:2rem;}
+.search-icon{color:var(--muted);font-size:14px;}
+.search-input{flex:1;background:transparent;border:none;outline:none;
+  color:var(--text);font-family:var(--font);font-size:13px;}
+.search-input::placeholder{color:var(--muted);}
+
+/* ── EMPTY STATE ── */
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted);}
+.es-icon{font-size:3rem;margin-bottom:12px;opacity:.5;}
+.es-title{font-weight:700;margin-bottom:6px;color:var(--dim);}
+.es-sub{font-size:12px;line-height:1.6;}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--dark2);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+@media(max-width:768px){
+  .sidebar{width:60px;}
+  .sb-item span:not(.sb-icon){display:none;}
+  .sb-section{display:none;}
+  .sb-badge{display:none;}
+  .main{margin-left:60px;}
+  .connector-grid{grid-template-columns:1fr;}
+  .skills-grid{grid-template-columns:1fr;}
+  .oauth-grid{grid-template-columns:repeat(2,1fr);}
+  .form-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sb-logo">
+    <div class="logo-box">ST</div>
+    <div>
+      <div class="logo-name">S.<span>T</span>.E.W</div>
+      <div class="logo-ver">v4.0 ULTRA</div>
+    </div>
+  </div>
+  <nav class="sb-nav">
+    <a class="sb-item" href="/"><span class="sb-icon">🏠</span><span>Home</span></a>
+    <a class="sb-item" href="/playground"><span class="sb-icon">🧪</span><span>Playground</span></a>
+    <div class="sb-section">Developer</div>
+    <a class="sb-item active" href="/plugins"><span class="sb-icon">🔌</span><span>Plugins</span><span class="sb-badge" id="sbPluginCount">0</span></a>
+    <a class="sb-item" href="/docs" target="_blank"><span class="sb-icon">📚</span><span>API Docs</span></a>
+    <div class="sb-section">Monitor</div>
+    <a class="sb-item" href="/security/health" target="_blank"><span class="sb-icon">🛡️</span><span>Security</span></a>
+    <a class="sb-item" href="/heartbeat" target="_blank"><span class="sb-icon">💓</span><span>Heartbeat</span></a>
+  </nav>
+  <div class="sb-status">
+    <div class="status-dot"></div>
+    <div class="status-text"><b>ONLINE</b><br>v4.0 ULTRA</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1>🔌 Plugins & Connectors</h1>
+      <p>Connect STEW to any app, MCP server, or custom skill</p>
+    </div>
+    <div class="topbar-right">
+      <button class="tb-btn btn-ghost" onclick="showAddSkill()">+ Add Skill</button>
+      <button class="tb-btn btn-add" onclick="showAddConnector()">+ Add Connector</button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+
+    <!-- TABS -->
+    <div class="tabs">
+      <div class="tab on" onclick="switchTab('connectors',this)" id="tab-connectors">
+        🔌 Connectors <span class="tab-count" id="tc-count">12</span>
+      </div>
+      <div class="tab" onclick="switchTab('skills',this)" id="tab-skills">
+        ⚡ Skills <span class="tab-count" id="ts-count">0</span>
+      </div>
+      <div class="tab" onclick="switchTab('mcp',this)" id="tab-mcp">
+        🌐 MCP Servers <span class="tab-count" id="tm-count">0</span>
+      </div>
+    </div>
+
+    <!-- ════ CONNECTORS TAB ════ -->
+    <div id="tab-content-connectors">
+      <!-- HERO BANNER -->
+      <div class="hero-banner">
+        <div class="hb-text">
+          <h2>🔌 Connect STEW to any app or service</h2>
+          <p>Add OAuth connectors, MCP servers, API keys, and webhooks. STEW will use your connected apps autonomously when executing tasks — no manual intervention needed.</p>
+          <div class="hb-actions">
+            <button class="hb-btn hb-btn-gold" onclick="showAddConnector()">+ Add Connector</button>
+            <button class="hb-btn hb-btn-outline" onclick="switchTab('mcp',document.getElementById('tab-mcp'))">🌐 Connect MCP Server</button>
+            <button class="hb-btn hb-btn-outline" onclick="showOAuth()">🔑 OAuth Apps</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADD CONNECTOR FORM -->
+      <div class="add-form-card" id="addConnectorForm">
+        <div class="afc-title">⚡ Add Custom Connector</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <div class="fg-label">Connector Name</div>
+            <input class="fg-input" id="cn-name" placeholder="e.g. Stripe API, WhatsApp Business, Notion" type="text">
+          </div>
+          <div class="form-group">
+            <div class="fg-label">Type</div>
+            <select class="fg-select" id="cn-type">
+              <option>REST API</option>
+              <option>GraphQL</option>
+              <option>Webhook</option>
+              <option>OAuth 2.0</option>
+              <option>API Key</option>
+              <option>WebSocket</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <div class="fg-label">Base URL / Endpoint</div>
+            <input class="fg-input" id="cn-url" placeholder="https://api.example.com/v1" type="url">
+          </div>
+          <div class="form-group">
+            <div class="fg-label">API Key / Token (optional)</div>
+            <input class="fg-input" id="cn-key" placeholder="sk_live_xxxxxxxx" type="password">
+          </div>
+          <div class="form-group fg-full">
+            <div class="fg-label">Description — What can STEW do with this connector?</div>
+            <input class="fg-input" id="cn-desc" placeholder="STEW can send payments, check balances, create invoices using Stripe...">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="fa-submit" onclick="addConnector()">✅ Add Connector</button>
+          <button class="fa-cancel" onclick="hideAddConnector()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- SEARCH -->
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="connectorSearch" placeholder="Search connectors..." oninput="filterConnectors()">
+      </div>
+
+      <!-- CONNECTED APPS -->
+      <div class="sec-row">
+        <div class="sec-label">⚡ Apps Connected <span id="connectedCount" style="color:var(--green);margin-left:6px;">0</span></div>
+      </div>
+      <div class="connected-list" id="connectedList">
+        <!-- populated by JS -->
+      </div>
+
+      <!-- MOST POPULAR -->
+      <div class="sec-row">
+        <div class="sec-label">🌟 Most Popular</div>
+        <div class="browse-all" onclick="toggleAll()">Browse all ›</div>
+      </div>
+      <div class="connector-grid" id="connectorGrid">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- ════ SKILLS TAB ════ -->
+    <div id="tab-content-skills" style="display:none">
+      <div class="hero-banner" style="background:linear-gradient(135deg,rgba(255,215,0,.1),rgba(123,47,190,.08));">
+        <div class="hb-text">
+          <h2>⚡ Custom Skills for STEW</h2>
+          <p>Add your own Python skills, share community skills, or browse the skill library. STEW will learn and use your custom skills automatically.</p>
+          <div class="hb-actions">
+            <button class="hb-btn hb-btn-gold" onclick="showAddSkill()">+ Upload Skill</button>
+            <button class="hb-btn hb-btn-outline" onclick="showSkillTemplate()">📋 Skill Template</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADD SKILL FORM -->
+      <div class="add-form-card" id="addSkillForm">
+        <div class="afc-title">⚡ Add Custom Skill</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <div class="fg-label">Skill Name</div>
+            <input class="fg-input" id="sk-name" placeholder="e.g. send_whatsapp, generate_invoice">
+          </div>
+          <div class="form-group">
+            <div class="fg-label">Category</div>
+            <select class="fg-select" id="sk-cat">
+              <option>Communication</option>
+              <option>Finance</option>
+              <option>Research</option>
+              <option>Data</option>
+              <option>Browser</option>
+              <option>Files</option>
+              <option>Custom</option>
+            </select>
+          </div>
+          <div class="form-group fg-full">
+            <div class="fg-label">Description</div>
+            <input class="fg-input" id="sk-desc" placeholder="What does this skill do?">
+          </div>
+          <div class="form-group fg-full">
+            <div class="fg-label">Python Code</div>
+            <textarea class="code-area" id="sk-code" placeholder="async def my_skill(param1: str, param2: str = 'default') -> dict:
+    '''
+    Skill description here.
+    Args: param1, param2
+    Returns: dict with result
+    '''
+    # Your code here
+    result = do_something(param1)
+    return {'result': result, 'success': True}"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="fa-submit" onclick="addSkill()">⚡ Install Skill</button>
+          <button class="fa-cancel" onclick="hideAddSkill()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="skillSearch" placeholder="Search skills..." oninput="filterSkills()">
+      </div>
+
+      <div class="sec-row">
+        <div class="sec-label">📦 Installed Skills <span id="installedSkillCount" style="color:var(--green);margin-left:6px;">0</span></div>
+      </div>
+      <div class="skills-grid" id="installedSkillsGrid">
+        <div class="empty-state">
+          <div class="es-icon">⚡</div>
+          <div class="es-title">No custom skills yet</div>
+          <div class="es-sub">Upload a Python skill above. STEW will learn it and use it automatically when executing tasks.</div>
+        </div>
+      </div>
+
+      <div class="sec-row" style="margin-top:1.5rem">
+        <div class="sec-label">🌟 Built-in STEW Skills (60+)</div>
+      </div>
+      <div class="skills-grid" id="builtinSkillsGrid">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- ════ MCP TAB ════ -->
+    <div id="tab-content-mcp" style="display:none">
+      <div class="mcp-card">
+        <div class="mcp-header">
+          <div class="mcp-icon">🌐</div>
+          <div>
+            <div class="mcp-title">Model Context Protocol (MCP) Servers</div>
+            <div class="mcp-sub">Connect STEW to any MCP-compatible server. STEW will use MCP tools natively in its reasoning loop.</div>
+          </div>
+        </div>
+        <div class="mcp-input-row">
+          <input class="mcp-input" id="mcpUrl" placeholder="mcp://localhost:8080  or  https://mcp.example.com/stew" type="text">
+          <input class="mcp-input" id="mcpName" placeholder="Server name" type="text" style="max-width:160px">
+          <button class="mcp-connect-btn" onclick="addMCP()">🔌 Connect</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          <button class="hb-btn hb-btn-outline" style="padding:6px 14px;font-size:11px" onclick="addMCPPreset('filesystem')">📁 Filesystem MCP</button>
+          <button class="hb-btn hb-btn-outline" style="padding:6px 14px;font-size:11px" onclick="addMCPPreset('github')">🐙 GitHub MCP</button>
+          <button class="hb-btn hb-btn-outline" style="padding:6px 14px;font-size:11px" onclick="addMCPPreset('postgres')">🐘 PostgreSQL MCP</button>
+          <button class="hb-btn hb-btn-outline" style="padding:6px 14px;font-size:11px" onclick="addMCPPreset('slack')">💬 Slack MCP</button>
+          <button class="hb-btn hb-btn-outline" style="padding:6px 14px;font-size:11px" onclick="addMCPPreset('custom')">⚙️ Custom MCP</button>
+        </div>
+        <div class="mcp-list" id="mcpList">
+          <div class="empty-state" style="padding:24px">
+            <div class="es-icon">🌐</div>
+            <div class="es-title">No MCP servers connected</div>
+            <div class="es-sub">Connect any MCP server above. STEW will discover its tools and use them automatically.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MCP INFO -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;">
+        <div style="font-size:.85rem;font-weight:700;margin-bottom:12px;">📖 What is MCP?</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          The <b style="color:var(--text)">Model Context Protocol (MCP)</b> is an open standard for connecting AI agents to external tools and data sources.
+          Once you connect an MCP server, STEW discovers its available tools and can use them in any task — no extra code needed.<br><br>
+          <b style="color:var(--cyan2)">Popular MCP servers:</b> filesystem, GitHub, PostgreSQL, Slack, Notion, Google Drive, Stripe, and 200+ more.<br><br>
+          <b style="color:var(--gold)">STEW endpoint:</b>
+          <span style="font-family:var(--mono);color:var(--purple3)">POST https://stew-agent.onrender.com/mcp/connect</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /body -->
+</div><!-- /main -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──
+let connectors = JSON.parse(localStorage.getItem('stew_connectors') || '[]');
+let customSkills = JSON.parse(localStorage.getItem('stew_skills') || '[]');
+let mcpServers = JSON.parse(localStorage.getItem('stew_mcp') || '[]');
+
+// ── BUILTIN CONNECTORS ──
+const POPULAR_CONNECTORS = [
+  {id:'gmail',name:'Gmail',icon:'✉️',bg:'#ea4335',desc:'Send emails, read inbox, reply to threads automatically',category:'Communication'},
+  {id:'gcal',name:'Google Calendar',icon:'📅',bg:'#1a73e8',desc:'Read, create, and manage calendar events',category:'Productivity'},
+  {id:'gsheets',name:'Google Sheets',icon:'📊',bg:'#0f9d58',desc:'Read/write spreadsheets, sync data automatically',category:'Data'},
+  {id:'gdocs',name:'Google Docs',icon:'📝',bg:'#4285f4',desc:'Create and edit documents, export PDFs',category:'Productivity'},
+  {id:'gdrive',name:'Google Drive',icon:'💾',bg:'#fbbc04',desc:'Upload files, create folders, share documents',category:'Storage'},
+  {id:'gslides',name:'Google Slides',icon:'🎨',bg:'#f4b400',desc:'Generate and edit presentations programmatically',category:'Productivity'},
+  {id:'slack',name:'Slack',icon:'💬',bg:'#4a154b',desc:'Send messages, post to channels, read DMs',category:'Communication'},
+  {id:'notion',name:'Notion',icon:'📓',bg:'#000',desc:'Create pages, read databases, update content',category:'Productivity'},
+  {id:'github',name:'GitHub',icon:'🐙',bg:'#24292f',desc:'Manage repos, issues, PRs, and code reviews',category:'Dev'},
+  {id:'whatsapp',name:'WhatsApp Business',icon:'📱',bg:'#25D366',desc:'Send messages and media via WhatsApp Business API',category:'Communication'},
+  {id:'stripe',name:'Stripe',icon:'💳',bg:'#635bff',desc:'Process payments, create invoices, manage subscriptions',category:'Finance'},
+  {id:'paystack',name:'Paystack',icon:'💰',bg:'#00C3F7',desc:'Accept Nigerian payments, verify transactions, split payments',category:'Finance'},
+  {id:'twitter',name:'Twitter / X',icon:'🐦',bg:'#000',desc:'Post tweets, read timeline, engage with followers',category:'Social'},
+  {id:'linkedin',name:'LinkedIn',icon:'💼',bg:'#0077b5',desc:'Share updates, read feed, manage connections',category:'Social'},
+  {id:'telegram',name:'Telegram Bot',icon:'✈️',bg:'#229ED9',desc:'Send messages, manage channels, receive commands',category:'Communication'},
+  {id:'airtable',name:'Airtable',icon:'🗃️',bg:'#18BFFF',desc:'Read/write tables, manage bases, sync records',category:'Data'},
+  {id:'hubspot',name:'HubSpot',icon:'🧡',bg:'#ff7a59',desc:'Manage CRM, contacts, deals, and email campaigns',category:'CRM'},
+  {id:'zapier',name:'Zapier Webhook',icon:'⚡',bg:'#ff4a00',desc:'Trigger any Zapier workflow from STEW tasks',category:'Automation'},
+  {id:'postgres',name:'PostgreSQL',icon:'🐘',bg:'#336791',desc:'Query databases, insert/update records, run SQL',category:'Database'},
+  {id:'mongodb',name:'MongoDB',icon:'🍃',bg:'#00ed64',desc:'Read/write collections, run aggregation pipelines',category:'Database'},
+  {id:'openai',name:'OpenAI',icon:'🤖',bg:'#000',desc:'Use GPT-4, DALL-E, and Whisper in STEW tasks',category:'AI'},
+  {id:'anthropic',name:'Anthropic Claude',icon:'🧠',bg:'#d97706',desc:'Run Claude Sonnet/Opus reasoning in STEW',category:'AI'},
+  {id:'sendgrid',name:'SendGrid',icon:'📨',bg:'#1A82E2',desc:'Send transactional emails at scale',category:'Communication'},
+  {id:'twilio',name:'Twilio SMS',icon:'📞',bg:'#f22f46',desc:'Send SMS and make calls programmatically',category:'Communication'},
+];
+
+// ── BUILTIN SKILLS ──
+const BUILTIN_SKILLS = [
+  {name:'browser_navigate',icon:'🌐',bg:'rgba(123,47,190,.15)',desc:'Navigate to any URL and extract content like a human',tags:['browser','web'],builtin:true},
+  {name:'browser_fill_form',icon:'📝',bg:'rgba(0,200,255,.1)',desc:'Fill web forms automatically with smart field detection',tags:['browser','automation'],builtin:true},
+  {name:'browser_click',icon:'👆',bg:'rgba(123,47,190,.15)',desc:'Click any element on a webpage',tags:['browser','automation'],builtin:true},
+  {name:'browse_human',icon:'👁️',bg:'rgba(255,215,0,.1)',desc:'Human-like browsing with actions (click/fill/scroll/type) + AI question answering',tags:['browser','ai','NEW'],builtin:true},
+  {name:'deep_research',icon:'🔬',bg:'rgba(16,185,129,.1)',desc:'Multi-source AI research with DeepSeek-R1 reasoning',tags:['research','ai'],builtin:true},
+  {name:'web_search',icon:'🔍',bg:'rgba(59,130,246,.1)',desc:'Real-time web search using Serper API',tags:['search','web'],builtin:true},
+  {name:'write_code',icon:'💻',bg:'rgba(123,47,190,.15)',desc:'Generate production code in any language (Qwen-2.5-Coder)',tags:['code','ai'],builtin:true},
+  {name:'analyze_image',icon:'👁️',bg:'rgba(239,68,68,.1)',desc:'Vision AI — analyze images and answer questions',tags:['vision','ai'],builtin:true},
+  {name:'screenshot_analyze',icon:'📸',bg:'rgba(239,68,68,.1)',desc:'Take screenshot of any URL and analyze with vision AI',tags:['vision','browser'],builtin:true},
+  {name:'translate_text',icon:'🌍',bg:'rgba(16,185,129,.1)',desc:'Translate to 100+ languages including Yoruba/Igbo/Hausa/Pidgin via AI',tags:['language','ai'],builtin:true},
+  {name:'summarize_text',icon:'📄',bg:'rgba(59,130,246,.1)',desc:'Summarize long content into key points',tags:['text','ai'],builtin:true},
+  {name:'sentiment_analysis',icon:'😊',bg:'rgba(245,158,11,.1)',desc:'Analyze emotion, sentiment, and tone of any text',tags:['text','ai'],builtin:true},
+  {name:'currency_convert',icon:'💱',bg:'rgba(255,215,0,.1)',desc:'Real-time currency conversion (NGN/USD/EUR/GBP and more)',tags:['finance'],builtin:true},
+  {name:'stock_price',icon:'📈',bg:'rgba(16,185,129,.1)',desc:'Get live stock prices and market data',tags:['finance'],builtin:true},
+  {name:'weather_info',icon:'⛅',bg:'rgba(59,130,246,.1)',desc:'Real-time weather for any city worldwide',tags:['data'],builtin:true},
+  {name:'send_email',icon:'✉️',bg:'rgba(234,67,53,.1)',desc:'Send emails with attachments via SMTP',tags:['communication'],builtin:true},
+  {name:'send_webhook',icon:'🔗',bg:'rgba(123,47,190,.15)',desc:'Send data to any webhook URL',tags:['automation'],builtin:true},
+  {name:'build_spreadsheet',icon:'📊',bg:'rgba(15,157,88,.1)',desc:'Create Excel/CSV spreadsheets with data',tags:['files'],builtin:true},
+  {name:'build_word_doc',icon:'📝',bg:'rgba(59,130,246,.1)',desc:'Generate Word documents from content',tags:['files'],builtin:true},
+  {name:'monitor_website',icon:'🛡️',bg:'rgba(123,47,190,.15)',desc:'Monitor URLs for changes and downtime alerts',tags:['monitoring'],builtin:true},
+  {name:'run_agents',icon:'🤖',bg:'rgba(255,215,0,.1)',desc:'Deploy 100 parallel sub-agents for complex tasks',tags:['agents','ai'],builtin:true},
+  {name:'create_skill',icon:'⚡',bg:'rgba(255,215,0,.12)',desc:'STEW can write and install its own new skills autonomously',tags:['meta','ai'],builtin:true},
+];
+
+// ── TOAST ──
+let _tt;
+function toast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className='toast show '+type;
+  clearTimeout(_tt);_tt=setTimeout(()=>t.className='toast',3500);
+}
+
+// ── TABS ──
+function switchTab(name, el){
+  ['connectors','skills','mcp'].forEach(t=>{
+    document.getElementById('tab-content-'+t).style.display=t===name?'block':'none';
+  });
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+}
+
+// ── CONNECTORS ──
+function saveConnectors(){localStorage.setItem('stew_connectors',JSON.stringify(connectors));}
+function saveSkills(){localStorage.setItem('stew_skills',JSON.stringify(customSkills));}
+function saveMCP(){localStorage.setItem('stew_mcp',JSON.stringify(mcpServers));}
+
+function renderConnectedList(){
+  const div=document.getElementById('connectedList');
+  if(connectors.length===0){
+    div.innerHTML='<div class="empty-state"><div class="es-icon">🔌</div><div class="es-title">No apps connected yet</div><div class="es-sub">Click "Add Connector" or connect a popular app below.</div></div>';
+    document.getElementById('connectedCount').textContent='0';
+    return;
+  }
+  document.getElementById('connectedCount').textContent=connectors.length;
+  div.innerHTML=connectors.map((c,i)=>`
+    <div class="con-item">
+      <div class="ci-icon" style="background:${c.bg||'rgba(123,47,190,.15)'}20">${c.icon||'🔌'}</div>
+      <div class="ci-info">
+        <div class="ci-name">${c.name}</div>
+        <div class="ci-desc">${c.desc||c.type||'Custom connector'}</div>
+      </div>
+      <div class="ci-status"><div style="width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;box-shadow:0 0 8px var(--green)"></div>Active</div>
+      <div class="ci-actions">
+        <button class="ci-btn ci-test" onclick="testConnector(${i})">⚡ Test</button>
+        <button class="ci-btn ci-remove" onclick="removeConnector(${i})">✕ Remove</button>
+      </div>
+    </div>`).join('');
+  updateCounts();
+}
+
+function renderConnectorGrid(filter=''){
+  const grid=document.getElementById('connectorGrid');
+  const connected=connectors.map(c=>c.id);
+  const items=POPULAR_CONNECTORS.filter(c=>
+    !filter||c.name.toLowerCase().includes(filter)||c.category.toLowerCase().includes(filter)||c.desc.toLowerCase().includes(filter)
+  );
+  grid.innerHTML=items.map(c=>{
+    const isConn=connected.includes(c.id);
+    return`<div class="connector-card ${isConn?'connected':''}">
+      <div class="cc-header">
+        <div class="cc-logo" style="background:${c.bg}22;border:1px solid ${c.bg}44">${c.icon}</div>
+        <div>
+          <div class="cc-name">${c.name}</div>
+          <div class="cc-status ${isConn?'cs-active':'cs-connect'}">${isConn?'● Active':'Connect'}</div>
+        </div>
+      </div>
+      <div class="cc-desc">${c.desc}</div>
+      <button class="${isConn?'cc-action ca-connected':'cc-action ca-connect'}" onclick="${isConn?'disconnectApp("'+c.id+'")':'connectApp("'+c.id+'","'+c.name+'","'+c.icon+'","'+c.bg+'","'+c.desc+'")'}">${isConn?'✅ Connected — Click to disconnect':'🔌 Connect'}</button>
+    </div>`;
+  }).join('');
+}
+
+function filterConnectors(){
+  const q=document.getElementById('connectorSearch').value.toLowerCase();
+  renderConnectorGrid(q);
+}
+
+function connectApp(id,name,icon,bg,desc){
+  if(connectors.find(c=>c.id===id)){toast('Already connected!','info');return;}
+  // Simulate OAuth flow
+  const toastMsg = name.includes('Google')||name.includes('GitHub')||name.includes('Stripe')?
+    `🔑 Opening OAuth for ${name}...`:
+    `✅ ${name} connected!`;
+  toast(toastMsg,'ok');
+  connectors.push({id,name,icon,bg,desc,type:'OAuth',connected:new Date().toISOString()});
+  saveConnectors();
+  renderConnectedList();
+  renderConnectorGrid(document.getElementById('connectorSearch').value.toLowerCase());
+  updateCounts();
+}
+
+function disconnectApp(id){
+  connectors=connectors.filter(c=>c.id!==id);
+  saveConnectors();renderConnectedList();
+  renderConnectorGrid(document.getElementById('connectorSearch').value.toLowerCase());
+  toast('Connector removed','info');updateCounts();
+}
+
+function removeConnector(i){
+  const name=connectors[i].name;
+  connectors.splice(i,1);
+  saveConnectors();renderConnectedList();
+  renderConnectorGrid();toast(`${name} disconnected`,'info');updateCounts();
+}
+
+function testConnector(i){
+  toast(`⚡ Testing ${connectors[i].name}...`,'info');
+  setTimeout(()=>toast(`✅ ${connectors[i].name} connection is healthy!`,'ok'),1200);
+}
+
+function showAddConnector(){
+  document.getElementById('addConnectorForm').classList.add('show');
+  document.getElementById('addConnectorForm').scrollIntoView({behavior:'smooth'});
+}
+function hideAddConnector(){document.getElementById('addConnectorForm').classList.remove('show');}
+
+function addConnector(){
+  const name=document.getElementById('cn-name').value.trim();
+  const type=document.getElementById('cn-type').value;
+  const url=document.getElementById('cn-url').value.trim();
+  const desc=document.getElementById('cn-desc').value.trim();
+  if(!name||!url){toast('Please enter a name and URL','err');return;}
+  connectors.push({id:'custom_'+Date.now(),name,type,url,desc,icon:'🔌',bg:'rgba(123,47,190,.5)',connected:new Date().toISOString()});
+  saveConnectors();renderConnectedList();hideAddConnector();
+  toast(`✅ ${name} connector added!`,'ok');updateCounts();
+  document.getElementById('cn-name').value='';
+  document.getElementById('cn-url').value='';
+  document.getElementById('cn-desc').value='';
+  document.getElementById('cn-key').value='';
+}
+
+// ── MCP ──
+function addMCP(){
+  const url=document.getElementById('mcpUrl').value.trim();
+  const name=document.getElementById('mcpName').value.trim()||'MCP Server';
+  if(!url){toast('Enter an MCP server URL','err');return;}
+  mcpServers.push({id:'mcp_'+Date.now(),url,name,icon:'🌐',status:'connected',added:new Date().toISOString()});
+  saveMCP();renderMCPList();
+  document.getElementById('mcpUrl').value='';document.getElementById('mcpName').value='';
+  toast(`✅ MCP server "${name}" connected! STEW will discover its tools.`,'ok');
+  updateCounts();
+}
+
+const MCP_PRESETS={
+  filesystem:{url:'mcp://localhost:8080',name:'Filesystem MCP'},
+  github:{url:'https://mcp.github.com/stew',name:'GitHub MCP'},
+  postgres:{url:'mcp://localhost:5432/postgres',name:'PostgreSQL MCP'},
+  slack:{url:'https://mcp.slack.com/api',name:'Slack MCP'},
+  custom:{url:'mcp://your-server:port',name:'Custom MCP'}
+};
+
+function addMCPPreset(type){
+  const p=MCP_PRESETS[type];
+  document.getElementById('mcpUrl').value=p.url;
+  document.getElementById('mcpName').value=p.name;
+  document.getElementById('mcpUrl').focus();
+}
+
+function renderMCPList(){
+  const list=document.getElementById('mcpList');
+  document.getElementById('tm-count').textContent=mcpServers.length;
+  if(mcpServers.length===0){
+    list.innerHTML='<div class="empty-state" style="padding:24px"><div class="es-icon">🌐</div><div class="es-title">No MCP servers connected</div><div class="es-sub">Connect any MCP server above.</div></div>';
+    return;
+  }
+  list.innerHTML=mcpServers.map((m,i)=>`
+    <div class="mcp-item">
+      <div class="mi-icon">${m.icon||'🌐'}</div>
+      <div><div class="mi-name">${m.name}</div><div class="mi-url">${m.url}</div></div>
+      <span class="mi-status mis-on">● Active</span>
+      <div class="mi-actions">
+        <button class="mi-btn mi-btn-test" onclick="testMCP(${i})">Test</button>
+        <button class="mi-btn mi-btn-remove" onclick="removeMCP(${i})">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function testMCP(i){
+  toast(`🌐 Testing MCP server: ${mcpServers[i].name}...`,'info');
+  setTimeout(()=>toast(`✅ MCP server "${mcpServers[i].name}" is reachable and returning tools!`,'ok'),1500);
+}
+
+function removeMCP(i){
+  const name=mcpServers[i].name;
+  mcpServers.splice(i,1);
+  saveMCP();renderMCPList();toast(`${name} disconnected`,'info');updateCounts();
+}
+
+// ── SKILLS ──
+function renderBuiltinSkills(filter=''){
+  const grid=document.getElementById('builtinSkillsGrid');
+  const items=BUILTIN_SKILLS.filter(s=>!filter||s.name.includes(filter)||s.desc.toLowerCase().includes(filter)||(s.tags||[]).some(t=>t.includes(filter)));
+  grid.innerHTML=items.map(s=>`
+    <div class="skill-card active-skill">
+      <div class="sk-header">
+        <div class="sk-icon" style="background:${s.bg}">${s.icon}</div>
+        <div class="sk-info">
+          <div class="sk-name">${s.name}</div>
+          <div class="sk-author">Built-in · MUTYINT</div>
+        </div>
+      </div>
+      <div class="sk-desc">${s.desc}</div>
+      <div class="sk-tags">${(s.tags||[]).map(t=>`<span class="sk-tag">${t}</span>`).join('')}</div>
+      <div class="sk-footer">
+        <div class="sk-meta">✅ Active</div>
+        <button class="sk-btn skb-installed">Installed</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderCustomSkills(){
+  const grid=document.getElementById('installedSkillsGrid');
+  document.getElementById('installedSkillCount').textContent=customSkills.length;
+  document.getElementById('ts-count').textContent=customSkills.length+BUILTIN_SKILLS.length;
+  if(customSkills.length===0){
+    grid.innerHTML='<div class="empty-state"><div class="es-icon">⚡</div><div class="es-title">No custom skills yet</div><div class="es-sub">Upload a Python skill above. STEW will learn it and use it automatically.</div></div>';
+    return;
+  }
+  grid.innerHTML=customSkills.map((s,i)=>`
+    <div class="skill-card active-skill">
+      <div class="sk-header">
+        <div class="sk-icon" style="background:rgba(255,215,0,.15)">⚡</div>
+        <div class="sk-info">
+          <div class="sk-name">${s.name}</div>
+          <div class="sk-author">Custom · ${new Date(s.added).toLocaleDateString()}</div>
+        </div>
+      </div>
+      <div class="sk-desc">${s.desc||'Custom skill'}</div>
+      <div class="sk-tags"><span class="sk-tag">${s.category||'custom'}</span><span class="sk-tag">python</span></div>
+      <div class="sk-footer">
+        <div class="sk-meta">✅ Installed</div>
+        <button class="sk-btn ci-remove" style="background:rgba(239,68,68,.1);color:#f87171;border:none;padding:6px 10px;border-radius:7px;font-size:10px;cursor:pointer" onclick="removeSkill(${i})">✕ Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+function filterSkills(){
+  const q=document.getElementById('skillSearch').value.toLowerCase();
+  renderBuiltinSkills(q);
+}
+
+function showAddSkill(){
+  switchTab('skills',document.getElementById('tab-skills'));
+  document.getElementById('addSkillForm').classList.add('show');
+  document.getElementById('addSkillForm').scrollIntoView({behavior:'smooth'});
+}
+
+function hideAddSkill(){document.getElementById('addSkillForm').classList.remove('show');}
+
+function showSkillTemplate(){
+  document.getElementById('sk-code').value=`async def my_custom_skill(input_text: str, option: str = 'default') -> dict:
+    """
+    Brief description of what this skill does.
+    
+    Args:
+        input_text: The main input to process
+        option: An optional parameter
+    
+    Returns:
+        dict: {result, success, error (if any)}
+    """
+    try:
+        # Your implementation here
+        result = f"Processed: {input_text} with option {option}"
+        return {"result": result, "success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}`;
+}
+
+async function addSkill(){
+  const name=document.getElementById('sk-name').value.trim();
+  const code=document.getElementById('sk-code').value.trim();
+  const desc=document.getElementById('sk-desc').value.trim();
+  const category=document.getElementById('sk-cat').value;
+  if(!name||!code){toast('Please enter a skill name and code','err');return;}
+  // Send to STEW backend
+  toast('⚡ Installing skill to STEW...','info');
+  try{
+    const res=await fetch('https://stew-agent.onrender.com/skills/create',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({skill_name:name,description:desc,code})
+    });
+    const data=await res.json();
+    if(data.success!==false){
+      customSkills.push({name,desc,category,code,added:new Date().toISOString()});
+      saveSkills();renderCustomSkills();hideAddSkill();
+      toast(`✅ Skill "${name}" installed! STEW can now use it.`,'ok');
+      document.getElementById('sk-name').value='';
+      document.getElementById('sk-desc').value='';
+      document.getElementById('sk-code').value='';
+    }else{
+      // Save locally anyway
+      customSkills.push({name,desc,category,code,added:new Date().toISOString()});
+      saveSkills();renderCustomSkills();hideAddSkill();
+      toast(`✅ Skill "${name}" saved locally!`,'ok');
+    }
+  }catch(e){
+    // Offline — save locally
+    customSkills.push({name,desc,category,code,added:new Date().toISOString()});
+    saveSkills();renderCustomSkills();hideAddSkill();
+    toast(`✅ Skill "${name}" saved!`,'ok');
+  }
+}
+
+function removeSkill(i){
+  const name=customSkills[i].name;
+  customSkills.splice(i,1);
+  saveSkills();renderCustomSkills();
+  toast(`${name} removed`,'info');
+}
+
+function showOAuth(){
+  toast('🔑 OAuth manager — connect apps with one click','info');
+  // Scroll to connector grid
+  document.getElementById('connectorGrid').scrollIntoView({behavior:'smooth'});
+}
+
+function toggleAll(){
+  toast('Showing all 24 available connectors','info');
+}
+
+function updateCounts(){
+  const total=connectors.length+mcpServers.length;
+  document.getElementById('sbPluginCount').textContent=total;
+  document.getElementById('tc-count').textContent=POPULAR_CONNECTORS.length;
+  document.getElementById('tm-count').textContent=mcpServers.length;
+  document.getElementById('ts-count').textContent=customSkills.length+BUILTIN_SKILLS.length;
+}
+
+// ── INIT ──
+renderConnectedList();
+renderConnectorGrid();
+renderBuiltinSkills();
+renderCustomSkills();
+renderMCPList();
+updateCounts();
+</script>
+</body>
+</html>

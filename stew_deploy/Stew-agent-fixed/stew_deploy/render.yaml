@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: stew-agent
+    runtime: docker
+    dockerfilePath: ./stew_deploy/Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: ENVIRONMENT
+        value: production
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stew-db
+          property: connectionString
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: STEW_ADMIN_SECRET
+        generateValue: true
+    healthCheckPath: /heartbeat
+    autoDeploy: true
+
+databases:
+  - name: stew-db
+    plan: free
+    databaseName: stew_agent
+    user: stew_user
+
+# deploy trigger: 2026-06-26T12:20:25.233623

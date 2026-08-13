@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>S.T.E.W Browser Agent — Settings</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a0a; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px; }
+    .container { max-width: 600px; margin: 0 auto; }
+    h1 { color: #10b981; font-size: 24px; margin-bottom: 20px; }
+    h2 { color: #888; font-size: 14px; text-transform: uppercase; margin: 24px 0 10px; }
+    .setting { margin-bottom: 16px; }
+    .setting label { display: block; font-size: 14px; margin-bottom: 4px; }
+    .setting input[type="text"], .setting input[type="password"], .setting input[type="number"] {
+      width: 100%; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: #e5e5e5; padding: 10px; font-size: 14px;
+    }
+    .setting input[type="checkbox"] { width: 18px; height: 18px; accent-color: #10b981; }
+    .hint { font-size: 12px; color: #555; margin-top: 4px; }
+    button { background: #10b981; color: #000; border: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; }
+    button:hover { opacity: 0.85; }
+    .status-bar { margin-top: 16px; padding: 12px; border-radius: 8px; background: #1a1a1a; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>S.T.E.W Browser Agent Settings</h1>
+    
+    <h2>Server Configuration</h2>
+    <div class="setting">
+      <label>Server URL</label>
+      <input type="text" id="server-url" placeholder="https://stew-agent.onrender.com">
+      <div class="hint">The S.T.E.W backend server URL. Default: https://stew-agent.onrender.com</div>
+    </div>
+    <div class="setting">
+      <label>API Key</label>
+      <input type="password" id="api-key" placeholder="stew_extension_default">
+      <div class="hint">Your S.T.E.W API key for authentication.</div>
+    </div>
+    
+    <h2>Agent Behavior</h2>
+    <div class="setting">
+      <label><input type="checkbox" id="auto-summarize"> Auto-summarize pages on visit</label>
+      <div class="hint">Automatically generate summaries of pages you visit.</div>
+    </div>
+    <div class="setting">
+      <label><input type="checkbox" id="human-delay" checked> Human-like interaction delays</label>
+      <div class="hint">Add random delays between actions to mimic human browsing.</div>
+    </div>
+    <div class="setting">
+      <label>Planning depth (1-5)</label>
+      <input type="number" id="planning-depth" value="3" min="1" max="5">
+      <div class="hint">How many steps ahead the agent plans for complex tasks.</div>
+    </div>
+    
+    <h2>Memory</h2>
+    <div class="setting">
+      <label><input type="checkbox" id="memory-enabled" checked> Enable agent memory</label>
+      <div class="hint">S.T.E.W will remember pages, summaries, and task results.</div>
+    </div>
+    <div class="setting">
+      <label>Max memory items</label>
+      <input type="number" id="max-memory" value="500" min="50" max="5000">
+      <div class="hint">Maximum number of memory entries to keep.</div>
+    </div>
+    
+    <button id="save">Save Settings</button>
+    <div class="status-bar" id="status">Ready</div>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>
