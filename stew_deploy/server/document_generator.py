@@ -136,6 +136,8 @@ def generate_pdf(content: str, title: str = "Document") -> dict:
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ])
 
+        from reportlab.platypus import PageBreak
+
         story = []
         story.append(Paragraph(_sanitize_text(title), title_style))
         story.append(Spacer(1, 0.5 * cm))
@@ -146,6 +148,11 @@ def generate_pdf(content: str, title: str = "Document") -> dict:
         while i < n:
             line = lines[i]
             stripped = line.strip()
+
+            if stripped == "<!--PAGEBREAK-->":
+                story.append(PageBreak())
+                i += 1
+                continue
 
             # Detect start of a markdown table: a row with pipes, followed by a separator row
             if stripped.startswith("|") and i + 1 < n and _is_table_separator(lines[i + 1]):
@@ -271,6 +278,11 @@ def generate_docx(content: str, title: str = "Document") -> dict:
                 i = j
                 continue
 
+            if stripped == "<!--PAGEBREAK-->":
+                doc.add_page_break()
+                i += 1
+                continue
+
             if not stripped:
                 doc.add_paragraph()
             elif stripped.startswith("## "):
@@ -388,9 +400,14 @@ def generate_xlsx(
 
 # ── PPTX ──────────────────────────────────────────────────────────────────────
 
-def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = None) -> dict:
-    """Generate a premium PPTX with 46+ professional themes.
-    Theme is auto-detected from the title/topic, or can be specified by name."""
+def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = None,
+                   use_images: bool = True) -> dict:
+    """Generate a premium PPTX with 50+ professional themes.
+    Theme is auto-detected from the title/topic, or can be specified by name.
+    When use_images is True (default), fetches a real AI-generated hero photo
+    for the title and closing slides — Canva-style, not just flat shapes.
+    Image fetch failures are silent — the deck still renders with the flat
+    themed design as a fallback."""
     try:
         from pptx import Presentation
         from pptx.util import Inches, Pt, Emu
@@ -398,7 +415,7 @@ def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = 
         from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
         from pptx.enum.shapes import MSO_SHAPE
         from pptx.oxml.ns import qn
-        from server.slide_themes import render_pptx, auto_select_theme, THEMES
+        from server.slide_themes import render_pptx, auto_select_theme, THEMES, _fetch_hero_image
 
         prs = Presentation()
         SLIDE_W = 13.333
@@ -410,7 +427,18 @@ def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = 
         if not theme:
             theme = auto_select_theme(title)
 
-        render_pptx(prs, slides, title, theme_name=theme)
+        category = THEMES.get(theme, {}).get("category", "corporate")
+
+        hero_image = None
+        closing_image = None
+        if use_images:
+            import time as _time
+            hero_image = _fetch_hero_image(title, category, seed=1)
+            if len(slides) > 3:
+                _time.sleep(1.5)  # brief pause to avoid pollinations.ai rate limiting
+                closing_image = _fetch_hero_image(title, category, seed=2)
+
+        render_pptx(prs, slides, title, theme_name=theme, hero_image=hero_image, closing_image=closing_image)
 
         buf = io.BytesIO()
         prs.save(buf)
@@ -422,8 +450,10 @@ def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = 
             "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "success": True,
             "theme": theme,
-            "theme_category": THEMES.get(theme, {}).get("category", "corporate"),
+            "theme_category": category,
             "available_themes": len(THEMES),
+            "hero_image_used": hero_image is not None,
+            "closing_image_used": closing_image is not None,
         }
     except ImportError:
         raise HTTPException(500, "python-pptx not installed")

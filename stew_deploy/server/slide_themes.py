@@ -600,7 +600,83 @@ def _c(rgb_tuple):
     return RGBColor(*rgb_tuple)
 
 
-def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
+# ═══════════════════════════════════════════════════════════════════════════════
+# HERO IMAGE FETCHING — real photography for Canva-style title/closing slides
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CATEGORY_IMAGE_STYLE = {
+    "corporate": "modern corporate office skyline, glass towers, professional, cinematic lighting",
+    "finance": "modern bank headquarters, financial district skyline at dusk, cinematic",
+    "investment": "stock market growth chart, city skyline, golden hour, cinematic finance",
+    "marketing": "vibrant creative agency workspace, colorful abstract shapes, dynamic energy",
+    "tech": "futuristic technology data center, neon blue lights, servers, sci-fi atmosphere",
+    "education": "bright modern classroom, students learning, warm natural light",
+    "healthcare": "modern hospital interior, clean bright medical facility, calm atmosphere",
+    "creative": "vibrant art studio, colorful paint splashes, creative energy, bold colors",
+    "minimal": "minimalist white studio space, soft natural light, clean aesthetic",
+    "nature": "lush green forest, sunlight through trees, serene natural landscape",
+    "african": "vibrant African market scene, warm golden light, rich cultural colors",
+    "luxury": "elegant black marble interior, gold accents, luxury architecture",
+    "church": "warm cathedral interior, sunlight through stained glass windows, cinematic",
+}
+
+
+def _fetch_hero_image(topic: str, category: str, seed: int = None, timeout: int = 18, retries: int = 3):
+    """Fetch a real AI-generated background photo for hero slides via pollinations.ai.
+    Returns raw JPEG bytes, or None if the fetch fails (caller must handle gracefully).
+    Retries with backoff on 429 (rate limit) since consecutive calls (hero + closing
+    image) can trigger pollinations' free-tier rate limiting."""
+    import time as _time
+    try:
+        import httpx
+        import urllib.parse
+        import random as _random
+
+        style = CATEGORY_IMAGE_STYLE.get(category, "professional abstract background, cinematic lighting")
+        # Keep topic short to avoid overly literal/cluttered renders
+        short_topic = re.sub(r'[^a-zA-Z0-9 ]', '', topic)[:60]
+        prompt = f"{style}, related to {short_topic}, no text, no words, photography, 4k"
+        encoded = urllib.parse.quote(prompt, safe='')
+        seed = seed or _random.randint(1, 999999)
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1280&height=720&model=flux&nologo=true&seed={seed}"
+
+        for attempt in range(retries):
+            try:
+                with httpx.Client(timeout=timeout) as client:
+                    resp = client.get(url)
+                    if resp.status_code == 200 and len(resp.content) > 2000:
+                        return resp.content
+                    elif resp.status_code == 429:
+                        _time.sleep(3 + attempt * 2)  # backoff: 3s, 5s, 7s
+                        continue
+                    else:
+                        break
+            except Exception:
+                _time.sleep(2)
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def _set_shape_alpha(shape, alpha_percent: int):
+    """Apply real alpha transparency to a shape's solid fill via raw OOXML.
+    alpha_percent: 0-100, where 100 = fully opaque, 0 = fully transparent."""
+    try:
+        val = str(int(alpha_percent * 1000))
+        sp = shape.fill.fore_color._xFill
+        srgbClr = sp.find(qn('a:srgbClr'))
+        if srgbClr is not None:
+            existing = srgbClr.find(qn('a:alpha'))
+            if existing is not None:
+                srgbClr.remove(existing)
+            alpha_el = srgbClr.makeelement(qn('a:alpha'), {'val': val})
+            srgbClr.append(alpha_el)
+    except Exception:
+        pass
+
+
+def render_pptx(prs, slides, title, theme_name=None, total_slides=None, hero_image=None, closing_image=None):
     """Render slides into a Presentation object using the specified theme.
     Enhanced with decorative shapes, alternating content layouts, stat blocks,
     and gradient-like effects for world-class visual quality.
@@ -778,8 +854,57 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
         _add_bg(slide)
 
         if i == 0:
-            # ══ TITLE SLIDE ══
-            if LAYOUT == "side_panel":
+            # ══ TITLE SLIDE ══ — Canva-style hero image when available, themed flat design otherwise
+            if hero_image:
+                import io as _io
+                try:
+                    slide.shapes.add_picture(_io.BytesIO(hero_image), Inches(0), Inches(0), Inches(SLIDE_W), Inches(SLIDE_H))
+                except Exception:
+                    hero_image = None
+
+            if hero_image and LAYOUT == "side_panel":
+                overlay = _rect(slide, 0, 0, 5.6, SLIDE_H, BG_PANEL)
+                _set_shape_alpha(overlay, 82)
+                _rect(slide, 5.6, 0, 0.05, SLIDE_H, ACCENT)
+                _eyebrow(slide, 0.5, 0.6, "PRESENTATION")
+                _text(slide, 0.5, 1.4, 4.8, 2.2, slide_title, 34, WHITE, bold=True, spacing=1.0)
+                subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
+                _rect(slide, 0.55, 3.5, 0.7, 0.045, ACCENT)
+                _text(slide, 0.5, 3.7, 4.8, 1.6, subtitle, 15, ACCENT_LIGHT, spacing=1.15)
+                _text(slide, 0.5, SLIDE_H - 0.9, 4.8, 0.5, "Generated by S.T.E.W Agent", 11, MUTED)
+                _text(slide, 0.5, SLIDE_H - 1.3, 4.8, 0.4, _date_str(), 11, MUTED)
+
+            elif hero_image and LAYOUT == "top_bar":
+                overlay = _rect(slide, 0, SLIDE_H - 2.6, SLIDE_W, 2.6, BG_PANEL)
+                _set_shape_alpha(overlay, 82)
+                _gradient_strip(slide, 0, SLIDE_H - 2.68, SLIDE_W, 0.08)
+                _eyebrow(slide, 0.8, SLIDE_H - 2.3, "PRESENTATION")
+                _text(slide, 0.8, SLIDE_H - 1.9, 10.5, 0.9, slide_title, 32, WHITE, bold=True)
+                subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
+                _text(slide, 0.8, SLIDE_H - 1.0, 10.5, 0.7, subtitle, 15, ACCENT_LIGHT, spacing=1.1)
+
+            elif hero_image and LAYOUT == "bottom_bar":
+                overlay = _rect(slide, 0, 0, SLIDE_W, 2.6, BG_PANEL)
+                _set_shape_alpha(overlay, 82)
+                _gradient_strip(slide, 0, 2.58, SLIDE_W, 0.08)
+                _eyebrow(slide, 1.0, 0.4, "PRESENTATION")
+                _text(slide, 1.0, 0.8, 10.5, 0.9, slide_title, 32, WHITE, bold=True)
+                subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
+                _text(slide, 1.0, 1.7, 10.5, 0.8, subtitle, 15, ACCENT_LIGHT, spacing=1.1)
+                _text(slide, 1.0, SLIDE_H - 0.6, 8.0, 0.4, "Generated by S.T.E.W Agent", 11, WHITE)
+
+            elif hero_image:
+                # diagonal / minimal — bottom two-thirds panel
+                overlay = _rect(slide, 0, SLIDE_H - 3.4, SLIDE_W, 3.4, BG_PANEL)
+                _set_shape_alpha(overlay, 82)
+                _rect(slide, 0, SLIDE_H - 3.42, SLIDE_W, 0.06, ACCENT)
+                _eyebrow(slide, 1.0, SLIDE_H - 3.05, "PRESENTATION")
+                _text(slide, 0.95, SLIDE_H - 2.6, 11.0, 1.2, slide_title, 34, WHITE, bold=True, spacing=1.0)
+                subtitle = bullets[0] if bullets and bullets[0].strip() != slide_title.strip() else title
+                _rect(slide, 1.0, SLIDE_H - 1.3, 0.7, 0.045, ACCENT)
+                _text(slide, 0.95, SLIDE_H - 1.1, 10.5, 0.8, subtitle, 15, ACCENT_LIGHT, spacing=1.1)
+
+            elif LAYOUT == "side_panel":
                 _rect(slide, 0, 0, 4.6, SLIDE_H, BG_PANEL)
                 _rect(slide, 4.6, 0, 0.05, SLIDE_H, ACCENT)
                 # Gradient strip at bottom of panel
@@ -843,9 +968,19 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None):
                 _text(slide, 0.95, SLIDE_H - 0.9, 7.5, 0.5, "Generated by S.T.E.W Agent", 11, MUTED)
 
         elif i == len(slides) - 1 and total_slides > 3:
-            # ══ CLOSING SLIDE — special layout with call to action ══
+            # ══ CLOSING SLIDE — special layout with call to action, hero image if available ══
+            if closing_image:
+                import io as _io
+                try:
+                    slide.shapes.add_picture(_io.BytesIO(closing_image), Inches(0), Inches(0), Inches(SLIDE_W), Inches(SLIDE_H))
+                    overlay = _rect(slide, 0, 0, SLIDE_W, SLIDE_H, BG)
+                    _set_shape_alpha(overlay, 78)
+                except Exception:
+                    closing_image = None
+
             _rect(slide, 0, 0, SLIDE_W, 0.09, ACCENT)
-            _decorative_shapes(slide, variant=i % 4)
+            if not closing_image:
+                _decorative_shapes(slide, variant=i % 4)
             _eyebrow(slide, 1.0, 1.0, "THANK YOU")
             _text(slide, 0.95, 1.5, 11.0, 1.5, slide_title, 38, WHITE, bold=True, spacing=1.0)
             _rect(slide, 1.0, 3.2, 1.0, 0.05, ACCENT)
