@@ -2736,7 +2736,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     chat_id = msg["chat_id"]
     user_id = msg.get("user_id", 0)
 
-    # ── HANDLE INCOMING PHOTOS (OCR / Vision) ──────────────────────────────────
+    # ── HANDLE INCOMING PHOTOS (Vision-first, OCR fallback) ────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
         await bot.send_chat_action(chat_id, "typing")
         caption = msg.get("caption", "")
@@ -2746,49 +2746,71 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 await bot.send_message(chat_id, "I couldn't download the image. Please try again.")
                 return {"ok": True}
 
-            await bot.send_message(chat_id, "Processing image with OCR...")
+            await bot.send_message(chat_id, "Looking at your image...")
             await bot.send_typing(chat_id)
 
-            # Run OCR on the image
-            from server.ocr_engine import ocr_file, ocr_and_reason
-            ocr_result = await asyncio.to_thread(
-                ocr_file, file_bytes, msg.get("file_name", "photo.jpg"), "eng", False, True
+            # Vision is the primary path — a real multimodal model that can see and
+            # understand the image (people, scenes, objects, text, context), not just
+            # extract characters. This is what makes "what do you see?" work correctly.
+            vision_prompt = caption if caption else (
+                "Describe this image in detail — what you see, any people, objects, "
+                "setting, and mood. If there is any text visible anywhere in the image, "
+                "also transcribe it exactly."
             )
 
-            extracted_text = ocr_result.get("text", "").strip()
-            confidence = ocr_result.get("avg_confidence", 0)
-            word_count = ocr_result.get("word_count", 0)
+            import base64 as _b64
+            image_b64 = _b64.b64encode(file_bytes).decode("utf-8")
 
-            if not extracted_text:
-                await bot.send_message(chat_id, "I couldn't extract any text from this image. It might be blurry or contain no readable text.")
-                return {"ok": True}
-
-            # If user asked a question in the caption, answer it about the image
-            if caption:
-                await bot.send_message(chat_id, f"Found {word_count} words (confidence: {confidence}%). Analyzing...")
-                await bot.send_typing(chat_id)
-                result = await ocr_and_reason(
-                    content=file_bytes,
-                    filename=msg.get("file_name", "photo.jpg"),
-                    question=caption,
-                    lang="eng",
-                    task="answer",
-                )
-                reply = result.get("answer", result.get("response", ""))
+            try:
+                llm = get_llm_client()
+                vision_result = await asyncio.to_thread(llm.vision_chat, image_b64, vision_prompt, "image/jpeg")
+                reply = clean_response(vision_result.get("content", ""))
                 if reply:
                     await bot.send_message(chat_id, reply)
+                    return {"ok": True}
+                # Empty reply — fall through to OCR fallback below
+                raise ValueError("Vision model returned empty content")
+            except Exception as vision_err:
+                logger.warning(f"Vision failed, falling back to OCR: {vision_err}")
+                await bot.send_message(chat_id, "Vision is unavailable right now — trying text extraction (OCR) instead...")
+                await bot.send_typing(chat_id)
+
+                # OCR fallback — only reached if every vision provider failed.
+                from server.ocr_engine import ocr_file, ocr_and_reason
+                ocr_result = await asyncio.to_thread(
+                    ocr_file, file_bytes, msg.get("file_name", "photo.jpg"), "eng", False, True
+                )
+
+                extracted_text = ocr_result.get("text", "").strip()
+                confidence = ocr_result.get("avg_confidence", 0)
+                word_count = ocr_result.get("word_count", 0)
+
+                if not extracted_text:
+                    await bot.send_message(chat_id, "I couldn't understand or read this image right now. Please try again in a moment.")
+                    return {"ok": True}
+
+                if caption:
+                    result = await ocr_and_reason(
+                        content=file_bytes,
+                        filename=msg.get("file_name", "photo.jpg"),
+                        question=caption,
+                        lang="eng",
+                        task="answer",
+                    )
+                    reply = result.get("answer", result.get("response", ""))
+                    if reply:
+                        await bot.send_message(chat_id, reply)
+                    else:
+                        await bot.send_message(chat_id, "Extracted text:\n\n" + extracted_text[:3000])
                 else:
-                    await bot.send_message(chat_id, "Extracted text:\n\n" + extracted_text[:3000])
-            else:
-                # No question — just return the extracted text
-                preview = extracted_text[:3500]
-                if len(extracted_text) > 3500:
-                    preview += "\n\n... (truncated)"
-                await bot.send_message(chat_id, f"*OCR Result* (confidence: {confidence}%, {word_count} words)\n\n{preview}")
-            return {"ok": True}
+                    preview = extracted_text[:3500]
+                    if len(extracted_text) > 3500:
+                        preview += "\n\n... (truncated)"
+                    await bot.send_message(chat_id, f"*OCR Result* (confidence: {confidence}%, {word_count} words)\n\n{preview}")
+                return {"ok": True}
 
         except Exception as e:
-            logger.error(f"Telegram photo OCR error: {e}", exc_info=True)
+            logger.error(f"Telegram photo handling error: {e}", exc_info=True)
             await bot.send_message(chat_id, f"Error processing image: {str(e)[:100]}. Please try again.")
             return {"ok": True}
 
