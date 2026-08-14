@@ -398,59 +398,213 @@ def generate_book(topic: str, author: str = "", pages: int = 100,
 
 
 # ── SONG / MUSIC GENERATION ──────────────────────────────────────────────────
+#
+# Free/open-source engine stack (no paid GPU hosting required):
+#   1. ACE-Step 1.5 (primary) — real lyric-based singing generation, running on
+#      HuggingFace's free ZeroGPU pool via the public Space's Gradio API.
+#      This is the closest free/open-source equivalent to Suno/Gemini music —
+#      it actually sings the lyrics, not just instrumental. Best quality, but
+#      shared community GPU queue means it can take 30s-3min depending on load.
+#   2. Meta MusicGen-small (fallback) — HuggingFace serverless Inference API,
+#      instrumental-only, no vocals, but reliably fast.
+#   3. Pollinations TTS (last resort) — spoken-word reading of the lyrics over
+#      a synthesized voice, so the user always gets *something* even if both
+#      GPU-backed engines are down.
+# Lyrics/title/genre/mood: generated via whatever LLM Stew already has
+# configured (Groq Llama 3, Mistral, etc. — see llm_client.py fallback chain).
+# Cover art: FLUX.1 via Pollinations (see _fetch_cover_image, already FLUX).
+
+GENRE_TAGS = {
+    "afrobeat": "afrobeat, log drum, percussion, guitar, horns, groovy, upbeat, 106 bpm",
+    "gospel": "gospel, choir, piano, organ, uplifting, soulful, powerful vocals, 90 bpm",
+    "hip-hop": "hip hop, 808 bass, trap drums, boom bap, confident, rhythmic, 95 bpm",
+    "hip hop": "hip hop, 808 bass, trap drums, boom bap, confident, rhythmic, 95 bpm",
+    "rap": "rap, hard hitting drums, deep 808 bass, aggressive, rhythmic flow, 90 bpm",
+    "drill": "drill, sliding 808s, hi-hats, dark atmosphere, gritty, 140 bpm",
+    "amapiano": "amapiano, log drum, piano, shaker, deep house groove, smooth, 112 bpm",
+    "highlife": "highlife, guitar, horns, percussion, danceable, warm, joyful, 118 bpm",
+    "fuji": "fuji, talking drum, percussion, vocal chant, rhythmic, traditional, 120 bpm",
+    "r&b": "r&b, smooth bass, soulful vocals, mellow, romantic, 80 bpm",
+    "rnb": "r&b, smooth bass, soulful vocals, mellow, romantic, 80 bpm",
+    "pop": "pop, catchy melody, synth, upbeat, polished production, 118 bpm",
+    "rock": "rock, electric guitar, drums, bass, powerful, energetic, 130 bpm",
+    "country": "country, acoustic guitar, banjo, warm, storytelling, twangy, 100 bpm",
+    "jazz": "jazz, saxophone, double bass, piano, swing, smooth, improvisational, 100 bpm",
+    "blues": "blues, electric guitar, slow groove, soulful, raw emotion, 70 bpm",
+    "classical": "classical, orchestral strings, piano, elegant, cinematic, 90 bpm",
+    "orchestra": "orchestral, full symphony, strings, brass, epic, cinematic, 90 bpm",
+    "edm": "edm, synth lead, four on the floor kick, energetic, festival, 128 bpm",
+    "house": "house music, four on the floor, synth bass, groovy, hypnotic, 124 bpm",
+    "techno": "techno, driving kick, minimal synth, hypnotic, dark, 130 bpm",
+}
+
+
+def _detect_genre(text: str) -> str:
+    """Scan free-text for a known genre keyword. Returns '' if none found."""
+    lower = text.lower()
+    for genre in GENRE_TAGS:
+        if genre in lower:
+            return genre
+    return ""
+
+
+def _generate_ace_step_song(tags: str, lyrics: str, duration: float = 60.0,
+                             hf_token: str = "") -> bytes | None:
+    """Generate a real sung song (vocals + instrumentation) via the free,
+    open-source ACE-Step 1.5 model, called through its public HuggingFace
+    Space Gradio API (runs on HF's shared ZeroGPU pool — free, but queued).
+    Returns raw audio bytes (wav) or None on failure/timeout."""
+    try:
+        from gradio_client import Client
+        import concurrent.futures
+
+        def _call():
+            client = Client("ACE-Step/ACE-Step", hf_token=hf_token or None)
+            result = client.predict(
+                audio_duration=duration,
+                prompt=tags,
+                lyrics=lyrics,
+                infer_step=60,
+                guidance_scale=15.0,
+                scheduler_type="euler",
+                cfg_type="apg",
+                omega_scale=10.0,
+                manual_seeds=str(int(time.time()) % 2_000_000_000),
+                guidance_interval=0.5,
+                guidance_interval_decay=0.0,
+                min_guidance_scale=3.0,
+                use_erg_tag=True,
+                use_erg_lyric=True,
+                use_erg_diffusion=True,
+                oss_steps="",
+                guidance_scale_text=0.0,
+                guidance_scale_lyric=0.0,
+                audio2audio_enable=False,
+                ref_audio_strength=0.5,
+                ref_audio_input=None,
+                lora_name_or_path="none",
+                api_name="/__call__",
+            )
+            audio_path = result[0] if isinstance(result, (list, tuple)) else result
+            if audio_path and os.path.exists(audio_path):
+                with open(audio_path, "rb") as f:
+                    return f.read()
+            return None
+
+        # ZeroGPU is a shared community queue — bound the wait so we can fall
+        # back to MusicGen/TTS instead of leaving the user hanging forever.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_call)
+            return future.result(timeout=200)
+    except concurrent.futures.TimeoutError:
+        logger.warning("ACE-Step generation timed out (ZeroGPU queue busy) — falling back")
+        return None
+    except Exception as e:
+        logger.warning(f"ACE-Step generation failed: {e}")
+        return None
+
 
 def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
-                   duration_seconds: int = 30) -> dict:
-    """Generate a song with lyrics, album art, and audio.
-    
-    Uses HuggingFace MusicGen for instrumental audio (free inference API),
-    falls back to Pollinations TTS for spoken-word version.
-    Also generates lyrics via LLM and album cover via Pollinations.
-    
-    Returns dict with audio_bytes, lyrics, cover_bytes, filename.
+                   duration_seconds: int = 60, genre_hint: str = "") -> dict:
+    """Generate a complete song: title, genre, mood, structured lyrics
+    (verse/chorus/bridge/outro), album cover art, and real audio.
+
+    Engine order: ACE-Step 1.5 (real singing) -> MusicGen (instrumental)
+    -> Pollinations TTS (spoken lyrics fallback).
+
+    Returns dict with audio_bytes, lyrics, cover_bytes, filename, title,
+    genre, mood, engine_used.
     """
     import json as _json
 
-    # Step 1: Generate lyrics
-    lyrics = ""
-    lyrics_prompt = (
-        "You are a professional songwriter. Write original song lyrics based on the user's request. "
-        "Include verse(s), chorus, and bridge. Format clearly with [Verse], [Chorus], [Bridge] labels. "
-        "Make it catchy, emotional, and memorable. Do not use markdown. Plain text only."
+    genre = genre_hint or _detect_genre(prompt)
+
+    # Step 1: Generate structured song data (title, genre, mood, tags, lyrics) via LLM
+    songwriter_prompt = (
+        "You are a professional songwriter and music producer. Write an original song "
+        "based on the user's request. Return ONLY a JSON object with these exact keys:\n"
+        '"title" (a short catchy song title), '
+        '"genre" (one word/phrase best describing the musical genre), '
+        '"mood" (one word describing the emotional mood, e.g. joyful, melancholic, energetic), '
+        '"tags" (comma-separated music style descriptors for an AI music generator — instruments, '
+        'tempo in BPM, genre, mood — e.g. "afrobeat, log drum, guitar, percussion, upbeat, 106 bpm"), '
+        '"lyrics" (the full song lyrics using [Verse], [Chorus], [Bridge], [Outro] section tags, '
+        "each on its own line before that section's lyrics; include at least 2 verses, a chorus "
+        "repeated between verses, a bridge, and an outro).\n"
+        + (f"The requested genre is {genre}. " if genre else "")
+        + "Make it catchy, emotional, and memorable. JSON only, no markdown, no extra text."
     )
+
+    raw = ""
     if llm_chat_fn:
         result = llm_chat_fn(
-            [{"role": "system", "content": lyrics_prompt},
+            [{"role": "system", "content": songwriter_prompt},
              {"role": "user", "content": f"Write a song about: {prompt}"}],
-            max_tokens=2000
+            max_tokens=2500
         )
-        lyrics = _safe_content(result)
+        raw = _safe_content(result)
     elif llm_complete_fn:
-        lyrics = llm_complete_fn(f"Write a song about: {prompt}", system=lyrics_prompt)
+        raw = llm_complete_fn(f"Write a song about: {prompt}", system=songwriter_prompt)
+
+    title, mood, tags, lyrics = "", "", "", ""
+    if raw:
+        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if json_match:
+            try:
+                data = _json.loads(json_match.group())
+                title = data.get("title", "")
+                genre = genre or data.get("genre", "")
+                mood = data.get("mood", "")
+                tags = data.get("tags", "")
+                lyrics = data.get("lyrics", "")
+            except Exception as e:
+                logger.warning(f"Song JSON parse failed: {e}")
 
     if not lyrics:
-        lyrics = f"[Verse 1]\n{prompt}\n\n[Chorus]\n{prompt}\n\n[Verse 2]\n{prompt}\n\n[Outro]\n{prompt}"
+        # Fallback: plain lyrics without structured JSON (older model behavior)
+        lyrics = (f"[Verse]\n{prompt}\n\n[Chorus]\n{prompt}\n\n"
+                  f"[Verse]\n{prompt}\n\n[Bridge]\n{prompt}\n\n[Outro]\n{prompt}")
+    if not title:
+        title = prompt[:60].strip().title() or "Untitled Song"
+    if not tags:
+        tags = GENRE_TAGS.get(genre, f"{genre or 'pop'}, melodic, upbeat, 110 bpm")
+    if not genre:
+        genre = "pop"
 
-    # Step 2: Generate album cover
+    # Step 2: Generate album cover (FLUX.1 via Pollinations)
     cover_prompt = (
-        f"Professional album cover art for a song about '{prompt[:100]}', "
-        f"musical theme, vibrant colors, high quality, square format, 4k"
+        f"Professional album cover art for a {genre} song titled '{title}' about "
+        f"'{prompt[:80]}', {mood or 'vibrant'} mood, musical theme, high quality, "
+        f"square format, 4k"
     )
     cover_bytes = _fetch_cover_image(cover_prompt, width=1024, height=1024)
 
-    # Step 3: Generate audio via HuggingFace MusicGen (free inference API)
+    # Step 3: Generate audio — try engines in order of quality
     audio_bytes = None
     audio_format = "wav"
+    engine_used = "none"
 
-    # Try HuggingFace Inference API
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY") or ""
-    if hf_token:
+
+    # Engine 1: ACE-Step 1.5 — real singing with the actual lyrics (free ZeroGPU)
+    logger.info(f"Attempting song generation via ACE-Step 1.5 (genre={genre})...")
+    audio_bytes = _generate_ace_step_song(tags, lyrics, duration=min(max(duration_seconds, 30), 90),
+                                          hf_token=hf_token)
+    if audio_bytes and len(audio_bytes) > 1000:
+        audio_format = "wav"
+        engine_used = "ace-step-1.5"
+        logger.info(f"ACE-Step succeeded: {len(audio_bytes)} bytes")
+    else:
+        audio_bytes = None
+
+    # Engine 2: MusicGen-small — instrumental only, but fast and reliable
+    if not audio_bytes and hf_token:
         try:
-            logger.info("Attempting music generation via HuggingFace MusicGen...")
+            logger.info("Falling back to MusicGen-small (instrumental)...")
             hf_url = "https://api-inference.huggingface.co/models/facebook/musicgen-small"
             headers = {"Authorization": f"Bearer {hf_token}"}
             payload = {
-                "inputs": f"{prompt}, high quality music, professional production",
+                "inputs": f"{tags}, high quality music, professional production",
                 "parameters": {
                     "do_sample": True,
                     "max_new_tokens": min(duration_seconds * 50, 1500),
@@ -462,10 +616,11 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
                 resp = requests.post(hf_url, headers=headers, json=payload, timeout=120)
                 if resp.status_code == 200:
                     audio_bytes = resp.content
+                    audio_format = "wav"
+                    engine_used = "musicgen-small"
                     logger.info(f"MusicGen returned {len(audio_bytes)} bytes of audio")
                     break
                 elif resp.status_code == 503:
-                    # Model loading, wait and retry
                     logger.info(f"MusicGen loading (503), retry {attempt+1}...")
                     time.sleep(15)
                 else:
@@ -474,18 +629,18 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
         except Exception as e:
             logger.warning(f"MusicGen generation failed: {e}")
 
-    # Fallback: Try Pollinations TTS for spoken lyrics
+    # Engine 3: Pollinations TTS — spoken-word lyrics, last resort
     if not audio_bytes:
-        logger.info("Falling back to Pollinations TTS for audio...")
+        logger.info("Falling back to Pollinations TTS for spoken lyrics...")
         try:
-            # Use pollinations openai-audio for TTS
-            tts_text = lyrics[:2000]  # TTS has limits
+            tts_text = lyrics[:2000]
             tts_url = f"https://text.pollinations.ai/{quote(tts_text)}?model=openai-audio&voice=nova"
             for attempt in range(3):
                 resp = requests.get(tts_url, timeout=90)
                 if resp.status_code == 200 and len(resp.content) > 1000:
                     audio_bytes = resp.content
                     audio_format = "mp3"
+                    engine_used = "tts-fallback"
                     logger.info(f"TTS returned {len(audio_bytes)} bytes")
                     break
                 logger.warning(f"TTS attempt {attempt+1}: status={resp.status_code}")
@@ -493,12 +648,16 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
         except Exception as e:
             logger.warning(f"TTS fallback failed: {e}")
 
-    safe_name = re.sub(r'[^\w\- ]', '', prompt)[:40].strip().replace(" ", "_") or "song"
+    safe_name = re.sub(r'[^\w\- ]', '', title)[:40].strip().replace(" ", "_") or "song"
 
     return {
+        "title": title,
+        "genre": genre,
+        "mood": mood,
         "lyrics": lyrics,
         "cover_bytes": cover_bytes,
         "audio_bytes": audio_bytes,
         "audio_format": audio_format,
         "filename": f"{safe_name}.{audio_format}",
+        "engine_used": engine_used,
     }

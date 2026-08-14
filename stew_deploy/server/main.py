@@ -1248,7 +1248,7 @@ async def chat(
                 db, user.id, body.message, response_text, "api", conv.id, _sync_llm_chat_api
             )
         except Exception:
-            pass
+            pass  # memory extraction is best-effort
 
     if user:
         background_tasks.add_task(_log_call, db, user.id if user else None, "/chat", "POST", tokens, 200)
@@ -3318,19 +3318,39 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
 
             song_result = await asyncio.to_thread(
-                generate_song, song_topic, None, _sync_llm_chat_song
+                generate_song, song_topic, None, _sync_llm_chat_song,
+                duration_seconds=60
             )
 
+            title = song_result.get("title", song_topic[:60])
+            genre = song_result.get("genre", "")
+            mood = song_result.get("mood", "")
             lyrics = song_result.get("lyrics", "")
             cover_bytes = song_result.get("cover_bytes")
             audio_bytes = song_result.get("audio_bytes")
             audio_format = song_result.get("audio_format", "mp3")
             filename = song_result.get("filename", "song.mp3")
+            engine_used = song_result.get("engine_used", "none")
 
-            # Send lyrics first
+            # Send song info header
+            info_line = f"🎵 {title}"
+            if genre:
+                info_line += f" | {genre.title()}"
+            if mood:
+                info_line += f" | {mood.title()}"
+            engine_label = {
+                "ace-step-1.5": "ACE-Step 1.5 (full singing)",
+                "musicgen-small": "MusicGen (instrumental)",
+                "tts-fallback": "TTS (spoken lyrics)",
+                "none": "lyrics only",
+            }.get(engine_used, engine_used)
+            info_line += f"\nEngine: {engine_label}"
+            await bot.send_message(chat_id, info_line)
+
+            # Send lyrics
             lyrics_preview = lyrics[:3000]
             if len(lyrics) > 3000:
-                lyrics_preview += "\n\n... (full lyrics in audio)"
+                lyrics_preview += "\n\n... (full lyrics delivered in audio)"
             await bot.send_message(chat_id, f"Lyrics:\n\n{lyrics_preview}")
 
             # Send album cover
@@ -4405,18 +4425,22 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await append_message(db, conv, "assistant", reply, platform="telegram")
         await bot.send_message(chat_id, reply, parse_mode="")
 
-        # Background memory extraction — non-blocking, never breaks the reply
-        try:
-            def _sync_llm_chat_mem(messages, max_tokens=1000):
-                llm_m = get_llm_client()
-                return llm_m.chat(messages, max_tokens=max_tokens)
+        # Background memory extraction — fire-and-forget with its own DB session
+        # (was broken: async def passed to asyncio.to_thread never executed)
+        async def _extract_memories_safe(uid, u_msg, a_reply, cid):
+            from server.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as mem_db:
+                try:
+                    def _sync_llm_chat_mem(messages, max_tokens=1000):
+                        llm_m = get_llm_client()
+                        return llm_m.chat(messages, max_tokens=max_tokens)
+                    await extract_and_store_memories(
+                        mem_db, uid, u_msg, a_reply, "telegram", cid, _sync_llm_chat_mem
+                    )
+                except Exception as me:
+                    logger.warning(f"Memory extraction failed (non-fatal): {me}")
 
-            await asyncio.to_thread(
-                extract_and_store_memories,
-                db, tg_user.id, user_text, reply, "telegram", conv.id, _sync_llm_chat_mem
-            )
-        except Exception as me:
-            logger.warning(f"Memory extraction failed (non-fatal): {me}")
+        asyncio.create_task(_extract_memories_safe(tg_user.id, user_text, reply, conv.id))
 
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")

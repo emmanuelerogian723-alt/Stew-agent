@@ -1,15 +1,22 @@
 """
 S.T.E.W Memory — strong, persistent conversation memory.
 Primary store: PostgreSQL (UserMemory table) — survives Render restarts.
-Secondary: ChromaDB/numpy vector memory for semantic recall (ephemeral fallback).
+Secondary: numpy vector memory for semantic recall (ephemeral fallback).
 Conversation history: PostgreSQL Conversation.messages JSON column.
+
+Key design decisions:
+- DB memories are the source of truth — they survive Render restarts/redeploys.
+- Vector memory (/tmp) is a cache that may be wiped; never the sole source.
+- "Core memories" (importance >= 8) are ALWAYS injected, not just keyword-matched.
+- Deduplication: similar content is updated, not duplicated.
+- Memory extraction runs as a fire-and-forget task (non-blocking).
 """
 import logging
 import re
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select, desc, and_, or_
+from sqlalchemy import select, desc, and_, or_, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.models import Conversation, UserMemory
@@ -17,8 +24,9 @@ from server.vector_memory import store_memory, recall_relevant, format_memories_
 
 logger = logging.getLogger(__name__)
 
-MAX_MESSAGES_PER_CONVERSATION = 80  # per-conversation window
-MAX_MEMORIES_PER_USER = 200          # cap in DB
+MAX_MESSAGES_PER_CONVERSATION = 120
+MAX_MEMORIES_PER_USER = 300
+CORE_MEMORY_THRESHOLD = 8
 
 
 async def get_or_create_conversation(
@@ -60,13 +68,11 @@ async def append_message(
         "content": content,
         "timestamp": datetime.utcnow().isoformat(),
     })
-    # Trim old messages to keep context manageable
     if len(messages) > MAX_MESSAGES_PER_CONVERSATION:
         messages = messages[-MAX_MESSAGES_PER_CONVERSATION:]
     conversation.messages = messages
     await db.flush()
 
-    # Also store in vector memory for semantic recall across sessions
     try:
         store_memory(
             user_id=conversation.user_id,
@@ -84,7 +90,6 @@ def build_llm_messages(
     system_prompt: str,
     recalled_memories: str = "",
 ) -> list[dict]:
-    """Build the messages list for LLM API call from conversation history + memory."""
     full_system = system_prompt
     if recalled_memories:
         full_system += recalled_memories
@@ -106,11 +111,50 @@ async def store_user_memory(
     platform: str = "telegram",
     conversation_id: Optional[str] = None,
 ) -> UserMemory:
-    """Store a persistent memory fact in PostgreSQL."""
+    """Store a persistent memory fact in PostgreSQL.
+    Deduplicates: if a similar memory exists (same category, overlapping content),
+    updates it instead of creating a duplicate."""
+    content_clean = content[:2000].strip()
+    if not content_clean:
+        return None
+
+    # Check for duplicates — same category + significant content overlap
+    existing = await db.execute(
+        select(UserMemory).where(
+            and_(
+                UserMemory.user_id == user_id,
+                UserMemory.category == category,
+                UserMemory.is_active == True,
+                UserMemory.content.ilike(f"%{content_clean[:80]}%"),
+            )
+        ).limit(1)
+    )
+    existing_mem = existing.scalar_one_or_none()
+
+    if existing_mem:
+        existing_mem.content = content_clean
+        existing_mem.importance = max(existing_mem.importance, min(importance, 10))
+        existing_mem.updated_at = datetime.utcnow()
+        await db.flush()
+        return existing_mem
+
+    # Cap total memories — if at limit, remove lowest-importance old ones
+    count_result = await db.execute(
+        select(UserMemory).where(
+            and_(UserMemory.user_id == user_id, UserMemory.is_active == True)
+        )
+    )
+    all_mems = list(count_result.scalars().all())
+    if len(all_mems) >= MAX_MEMORIES_PER_USER:
+        all_mems.sort(key=lambda m: (m.importance, m.updated_at))
+        to_remove = all_mems[:len(all_mems) - MAX_MEMORIES_PER_USER + 1]
+        for m in to_remove:
+            m.is_active = False
+
     mem = UserMemory(
         user_id=user_id,
         category=category,
-        content=content[:2000],
+        content=content_clean,
         importance=max(1, min(importance, 10)),
         source_platform=platform,
         conversation_id=conversation_id,
@@ -126,12 +170,26 @@ async def get_user_memories(
     limit: int = 30,
     active_only: bool = True,
 ) -> list[UserMemory]:
-    """Retrieve all persistent memories for a user, most important first."""
     query = select(UserMemory).where(UserMemory.user_id == user_id)
     if active_only:
         query = query.where(UserMemory.is_active == True)
     query = query.order_by(desc(UserMemory.importance), desc(UserMemory.updated_at)).limit(limit)
     result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_core_memories(db: AsyncSession, user_id: str, limit: int = 15) -> list[UserMemory]:
+    """Get 'core' memories — high-importance facts that should ALWAYS be in context,
+    regardless of keyword matching. These are the things Stew must never forget."""
+    result = await db.execute(
+        select(UserMemory).where(
+            and_(
+                UserMemory.user_id == user_id,
+                UserMemory.is_active == True,
+                UserMemory.importance >= CORE_MEMORY_THRESHOLD,
+            )
+        ).order_by(desc(UserMemory.importance), desc(UserMemory.updated_at)).limit(limit)
+    )
     return list(result.scalars().all())
 
 
@@ -141,11 +199,8 @@ async def search_user_memories(
     query_text: str,
     limit: int = 10,
 ) -> list[UserMemory]:
-    """Search persistent memories by keyword matching."""
-    # Simple keyword search — no external dependencies, works on any PostgreSQL
     keywords = [k.lower() for k in query_text.split() if len(k) > 2]
     if not keywords:
-        # Fall back to getting most important memories
         return await get_user_memories(db, user_id, limit=limit)
 
     result = await db.execute(
@@ -159,7 +214,6 @@ async def search_user_memories(
     )
     memories = list(result.scalars().all())
 
-    # If keyword search found nothing, fall back to most important memories
     if not memories:
         return await get_user_memories(db, user_id, limit=limit)
 
@@ -168,23 +222,38 @@ async def search_user_memories(
 
 async def get_relevant_context(db: AsyncSession, user_id: str, query: str, platform: str = "api") -> str:
     """Retrieve semantically relevant past context for the current query.
-    Combines persistent DB memories (survives restarts) with ephemeral vector recall.
-    """
+    Combines: core memories (always) + keyword-matched DB memories + vector recall."""
     parts = []
 
-    # 1. Persistent DB memories (always available, survives Render restarts)
+    core_mems = []
+    # 1. Core memories — ALWAYS injected (high importance, must never be forgotten)
+    try:
+        core_mems = await get_core_memories(db, user_id, limit=15)
+        if core_mems:
+            lines = ["\n\n=== CORE MEMORIES — always remember these ==="]
+            for i, m in enumerate(core_mems, 1):
+                lines.append(f"{i}. [{m.category.upper()}] (importance: {m.importance}/10) {m.content[:300]}")
+            lines.append("=== END CORE MEMORIES ===\n")
+            parts.append("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"Core memory recall failed (non-fatal): {e}")
+
+    # 2. Keyword-matched DB memories (survives Render restarts)
     try:
         db_memories = await search_user_memories(db, user_id, query, limit=15)
+        if core_mems:
+            core_ids = {m.id for m in core_mems}
+            db_memories = [m for m in db_memories if m.id not in core_ids]
         if db_memories:
-            lines = ["\n\n=== WHAT YOU KNOW ABOUT THIS USER (persistent memory) ==="]
+            lines = ["\n=== RECALLED MEMORIES (relevant to current message) ==="]
             for i, m in enumerate(db_memories, 1):
                 lines.append(f"{i}. [{m.category.upper()}] {m.content[:300]}")
-            lines.append("=== END USER MEMORY ===\n")
+            lines.append("=== END RECALLED MEMORIES ===\n")
             parts.append("\n".join(lines))
     except Exception as e:
         logger.warning(f"DB memory recall failed (non-fatal): {e}")
 
-    # 2. Vector recall (ephemeral, may be empty after restart)
+    # 3. Vector recall (ephemeral, may be empty after restart)
     try:
         vec_memories = recall_relevant(user_id, query, platform=platform)
         vec_text = format_memories_for_prompt(vec_memories)
@@ -193,7 +262,29 @@ async def get_relevant_context(db: AsyncSession, user_id: str, query: str, platf
     except Exception as e:
         logger.warning(f"Vector recall failed (non-fatal): {e}")
 
+    # 4. Explicit instruction for the LLM to USE these memories
+    if parts:
+        parts.append(
+            "\n=== MEMORY INSTRUCTIONS ===\n"
+            "The memories above are REAL facts about this user that you have learned across "
+            "conversations. USE them naturally in your response — reference them, build on them, "
+            "and act on them. If a memory contradicts what the user just said, trust the user's "
+            "current message. Never say 'I see from my memory' — just use the information naturally.\n"
+        )
+
     return "\n".join(parts)
+
+
+def _safe_content(result) -> str:
+    """Defensively extract text from an LLM callback result."""
+    if isinstance(result, dict):
+        inner = result.get("content", "")
+        if isinstance(inner, dict):
+            inner = inner.get("content", "")
+        return inner if isinstance(inner, str) else str(inner) if inner else ""
+    if isinstance(result, str):
+        return result
+    return str(result) if result else ""
 
 
 async def extract_and_store_memories(
@@ -206,30 +297,42 @@ async def extract_and_store_memories(
     llm_chat_fn=None,
 ) -> None:
     """Use the LLM to extract important facts from a conversation exchange and store them.
-    Runs in background — non-blocking."""
+    Runs in background — non-blocking. Deduplicates against existing memories."""
     try:
         if not llm_chat_fn:
             return
 
         extract_prompt = (
-            "You are a memory extraction engine. Analyze the following conversation exchange "
-            "and extract any important, durable facts worth remembering about the user. "
-            "Focus on: personal details, preferences, goals, projects, deadlines, relationships, "
-            "instructions, and recurring topics. Ignore small talk, greetings, and transient questions.\n\n"
-            "Return ONLY a JSON array of objects with 'category' (one of: fact, preference, instruction, context) "
-            "and 'content' (the memory text, max 200 chars). If nothing worth remembering, return []."
+            "You are a memory extraction engine for an AI assistant called S.T.E.W. "
+            "Analyze the following conversation exchange and extract ALL important, durable "
+            "facts worth remembering about the user for future conversations.\n\n"
+            "Extract aggressively — better to store too much than too little. Focus on:\n"
+            "- Personal details (name, location, age, family, pets, work)\n"
+            "- Preferences (likes, dislikes, tastes, habits)\n"
+            "- Goals and projects (what they are building, deadlines, aspirations)\n"
+            "- Relationships (partner, friends, colleagues, children names)\n"
+            "- Standing instructions (things they want done a certain way)\n"
+            "- Technical context (tools they use, accounts, APIs, frameworks)\n"
+            "- Emotional context (what excites them, what worries them)\n"
+            "- Recurring topics (things they bring up repeatedly)\n\n"
+            "Return ONLY a JSON array of objects with:\n"
+            "  'category': one of 'fact', 'preference', 'instruction', 'context', 'relationship', 'goal', 'project'\n"
+            "  'content': the memory text, max 200 chars, written as a clear factual statement\n"
+            "  'importance': 1-10 (10 = critical/always remember, 1 = minor detail)\n"
+            "    Guidelines: name/location = 9, major projects = 8, preferences = 5, "
+            "minor context = 3, emotional state = 4\n"
+            "If nothing worth remembering, return []."
         )
 
-        exchange = f"User: {user_message[:500]}\nAssistant: {assistant_reply[:500]}"
+        exchange = f"User: {user_message[:800]}\nAssistant: {assistant_reply[:800]}"
         result = llm_chat_fn(
             [{"role": "system", "content": extract_prompt},
              {"role": "user", "content": exchange}],
-            max_tokens=1000
+            max_tokens=1500
         )
 
-        raw = result.get("content", "") if isinstance(result, dict) else str(result)
+        raw = _safe_content(result)
 
-        # Parse JSON array
         import json as _json
         json_match = re.search(r'\[.*\]', raw, re.DOTALL)
         if not json_match:
@@ -239,18 +342,22 @@ async def extract_and_store_memories(
         if not isinstance(memories, list):
             return
 
-        for m in memories[:5]:  # Cap at 5 memories per exchange
+        stored_count = 0
+        for m in memories[:8]:
             if isinstance(m, dict) and m.get("content"):
-                await store_user_memory(
+                stored = await store_user_memory(
                     db, user_id,
                     category=m.get("category", "context"),
                     content=m["content"],
-                    importance=6 if m.get("category") in ("fact", "instruction") else 4,
+                    importance=int(m.get("importance", 5)),
                     platform=platform,
                     conversation_id=conversation_id,
                 )
+                if stored:
+                    stored_count += 1
 
-        logger.info(f"Stored {len(memories[:5])} memories for user {user_id}")
+        if stored_count:
+            logger.info(f"Stored/updated {stored_count} memories for user {user_id}")
     except Exception as e:
         logger.warning(f"Memory extraction failed (non-fatal): {e}")
 

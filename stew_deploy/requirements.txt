@@ -65,6 +65,9 @@ aiohttp==3.11.10  # VPN/proxy detection API calls
 mistralai>=1.0.0
 firebase-admin>=6.5.0
 
+# ── AI Music Generation (ACE-Step 1.5 via free HF Space API) ──────────────────
+gradio_client==2.6.0
+
 # ── OCR ───────────────────────────────────────────────────────────────────────
 pymupdf>=1.24.0,<2.0.0
 
