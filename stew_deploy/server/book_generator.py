@@ -449,17 +449,19 @@ def _detect_genre(text: str) -> str:
 
 
 def _generate_ace_step_song(tags: str, lyrics: str, duration: float = 60.0,
-                             hf_token: str = "") -> bytes | None:
+                             hf_token: str = "") -> tuple:
     """Generate a real sung song (vocals + instrumentation) via the free,
     open-source ACE-Step 1.5 model, called through its public HuggingFace
     Space Gradio API (runs on HF's shared ZeroGPU pool — free, but queued).
-    Returns raw audio bytes (wav) or None on failure/timeout."""
+    Returns (audio_bytes, format_ext) or (None, None) on failure/timeout."""
     try:
         from gradio_client import Client
         import concurrent.futures
 
         def _call():
-            client = Client("ACE-Step/ACE-Step", hf_token=hf_token or None)
+            # NOTE: gradio_client's Client takes `token`, not `hf_token`.
+            # ACE-Step's public Space works fine fully anonymous (no token needed).
+            client = Client("ACE-Step/ACE-Step", token=hf_token or None)
             result = client.predict(
                 audio_duration=duration,
                 prompt=tags,
@@ -487,9 +489,10 @@ def _generate_ace_step_song(tags: str, lyrics: str, duration: float = 60.0,
             )
             audio_path = result[0] if isinstance(result, (list, tuple)) else result
             if audio_path and os.path.exists(audio_path):
+                ext = os.path.splitext(audio_path)[1].lstrip(".").lower() or "mp3"
                 with open(audio_path, "rb") as f:
-                    return f.read()
-            return None
+                    return (f.read(), ext)
+            return (None, None)
 
         # ZeroGPU is a shared community queue — bound the wait so we can fall
         # back to MusicGen/TTS instead of leaving the user hanging forever.
@@ -498,10 +501,10 @@ def _generate_ace_step_song(tags: str, lyrics: str, duration: float = 60.0,
             return future.result(timeout=200)
     except concurrent.futures.TimeoutError:
         logger.warning("ACE-Step generation timed out (ZeroGPU queue busy) — falling back")
-        return None
+        return (None, None)
     except Exception as e:
         logger.warning(f"ACE-Step generation failed: {e}")
-        return None
+        return (None, None)
 
 
 def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
@@ -588,14 +591,13 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
 
     # Engine 1: ACE-Step 1.5 — real singing with the actual lyrics (free ZeroGPU)
     logger.info(f"Attempting song generation via ACE-Step 1.5 (genre={genre})...")
-    audio_bytes = _generate_ace_step_song(tags, lyrics, duration=min(max(duration_seconds, 30), 90),
-                                          hf_token=hf_token)
-    if audio_bytes and len(audio_bytes) > 1000:
-        audio_format = "wav"
+    ace_bytes, ace_ext = _generate_ace_step_song(tags, lyrics, duration=min(max(duration_seconds, 30), 90),
+                                                  hf_token=hf_token)
+    if ace_bytes and len(ace_bytes) > 1000:
+        audio_bytes = ace_bytes
+        audio_format = ace_ext or "mp3"
         engine_used = "ace-step-1.5"
-        logger.info(f"ACE-Step succeeded: {len(audio_bytes)} bytes")
-    else:
-        audio_bytes = None
+        logger.info(f"ACE-Step succeeded: {len(audio_bytes)} bytes ({audio_format})")
 
     # Engine 2: MusicGen-small — instrumental only, but fast and reliable
     if not audio_bytes and hf_token:
@@ -629,24 +631,35 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
         except Exception as e:
             logger.warning(f"MusicGen generation failed: {e}")
 
-    # Engine 3: Pollinations TTS — spoken-word lyrics, last resort
+    # Engine 3: Pollinations TTS — spoken-word lyrics, last resort.
+    # Pollinations deprecated the free anonymous audio endpoint (text.pollinations.ai
+    # with model=openai-audio now 404s); audio now lives at gen.pollinations.ai and
+    # requires an API key (POLLINATIONS_API_KEY). Skip cleanly if no key is configured
+    # instead of burning retries on a guaranteed 401.
     if not audio_bytes:
-        logger.info("Falling back to Pollinations TTS for spoken lyrics...")
-        try:
-            tts_text = lyrics[:2000]
-            tts_url = f"https://text.pollinations.ai/{quote(tts_text)}?model=openai-audio&voice=nova"
-            for attempt in range(3):
-                resp = requests.get(tts_url, timeout=90)
+        polli_key = os.environ.get("POLLINATIONS_API_KEY", "")
+        if polli_key:
+            logger.info("Falling back to Pollinations TTS for spoken lyrics...")
+            try:
+                tts_text = lyrics[:2000]
+                resp = requests.get(
+                    f"https://gen.pollinations.ai/audio/{quote(tts_text)}",
+                    params={"voice": "nova"},
+                    headers={"Authorization": f"Bearer {polli_key}"},
+                    timeout=90,
+                )
                 if resp.status_code == 200 and len(resp.content) > 1000:
                     audio_bytes = resp.content
                     audio_format = "mp3"
                     engine_used = "tts-fallback"
                     logger.info(f"TTS returned {len(audio_bytes)} bytes")
-                    break
-                logger.warning(f"TTS attempt {attempt+1}: status={resp.status_code}")
-                time.sleep(3 * (attempt + 1))
-        except Exception as e:
-            logger.warning(f"TTS fallback failed: {e}")
+                else:
+                    logger.warning(f"TTS fallback: status={resp.status_code}")
+            except Exception as e:
+                logger.warning(f"TTS fallback failed: {e}")
+        else:
+            logger.info("Pollinations TTS skipped — no POLLINATIONS_API_KEY configured "
+                        "(their free anonymous audio tier was discontinued)")
 
     safe_name = re.sub(r'[^\w\- ]', '', title)[:40].strip().replace(" ", "_") or "song"
 

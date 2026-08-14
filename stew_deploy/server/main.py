@@ -3387,9 +3387,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                                      performer="S.T.E.W Agent", title=song_topic[:60])
             else:
                 await bot.send_message(chat_id,
-                    "Lyrics and cover art generated! Audio generation is processing — "
-                    "your song lyrics are ready above. Full audio may take longer on free tier. "
-                    "Try again in a moment for the complete song with music.")
+                    "Lyrics and cover art are ready above, but the music engine hit a snag "
+                    "generating the actual audio this time (it runs on a shared community "
+                    "GPU pool that's occasionally busy or briefly down). Send /song again "
+                    "with the same idea and it should go through.")
 
         except Exception as e:
             logger.error(f"Song generation error: {e}", exc_info=True)
