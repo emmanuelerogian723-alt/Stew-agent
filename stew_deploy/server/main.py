@@ -5,6 +5,7 @@ FastAPI Backend v5.0
 import json
 import logging
 import os
+import re
 import requests as http_requests
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -3186,25 +3187,28 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
 
     # ── /book COMMAND (Write a Book) ────────────────────────────────────────
-    if user_text.startswith("/book") or user_lower.startswith("write a book") or user_lower.startswith("create a book") or user_lower.startswith("generate a book"):
-        # Extract book topic
+    _book_intent = re.search(
+        r'\b(write|create|make|generate|compose|author|draft)\b.{0,15}\bbook\b'
+        r'|\bbook\b.{0,15}\b(about|on|for|titled|called)\b'
+        r'|^/book\b',
+        user_lower
+    )
+    if user_text.startswith("/book") or _book_intent:
+        # Extract book topic — strip the command/verb phrasing, keep the subject
         book_topic = ""
         if user_text.startswith("/book"):
             book_topic = user_text[5:].strip()
-        elif user_lower.startswith("write a book about "):
-            book_topic = user_text[19:].strip()
-        elif user_lower.startswith("write a book "):
-            book_topic = user_text[13:].strip()
-        elif user_lower.startswith("create a book about "):
-            book_topic = user_text[19:].strip()
-        elif user_lower.startswith("create a book "):
-            book_topic = user_text[14:].strip()
-        elif user_lower.startswith("generate a book about "):
-            book_topic = user_text[22:].strip()
-        elif user_lower.startswith("generate a book "):
-            book_topic = user_text[17:].strip()
         else:
-            book_topic = user_text.replace("/book", "").strip()
+            # Remove leading verb + "book" + connector words, keep the rest as topic
+            stripped = re.sub(
+                r'^\s*(please\s+)?(can you\s+|could you\s+)?(write|create|make|generate|compose|author|draft)\s+(me\s+|us\s+)?(a|an|the)?\s*book\s*(about|on|for|titled|called)?\s*',
+                '', user_text, flags=re.IGNORECASE
+            )
+            book_topic = stripped.strip()
+            if not book_topic or book_topic.lower() == user_text.lower():
+                # Fallback: just grab everything after the word "book"
+                m = re.search(r'\bbook\b\s*(about|on|for|titled|called)?\s*(.*)', user_text, re.IGNORECASE)
+                book_topic = m.group(2).strip() if m and m.group(2) else user_text.strip()
 
         # Extract page count if specified ("100 pages", "200 pages")
         import re as _re
@@ -3268,25 +3272,26 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # ── /song COMMAND (AI Song Generation) ──────────────────────────────────
-    if user_text.startswith("/song") or user_lower.startswith("create a song") or user_lower.startswith("make a song") or user_lower.startswith("generate a song"):
-        # Extract song topic
+    _song_intent = re.search(
+        r'\b(write|create|make|generate|compose|produce)\b.{0,15}\b(song|music|track|tune|jingle)\b'
+        r'|\b(song|music|track|tune|jingle)\b.{0,15}\b(about|on|for|titled|called)\b'
+        r'|^/song\b',
+        user_lower
+    )
+    if user_text.startswith("/song") or _song_intent:
+        # Extract song topic — strip the command/verb phrasing, keep the subject
         song_topic = ""
         if user_text.startswith("/song"):
             song_topic = user_text[5:].strip()
-        elif user_lower.startswith("create a song about "):
-            song_topic = user_text[20:].strip()
-        elif user_lower.startswith("create a song "):
-            song_topic = user_text[14:].strip()
-        elif user_lower.startswith("make a song about "):
-            song_topic = user_text[18:].strip()
-        elif user_lower.startswith("make a song "):
-            song_topic = user_text[12:].strip()
-        elif user_lower.startswith("generate a song about "):
-            song_topic = user_text[22:].strip()
-        elif user_lower.startswith("generate a song "):
-            song_topic = user_text[17:].strip()
         else:
-            song_topic = user_text.replace("/song", "").strip()
+            stripped = re.sub(
+                r'^\s*(please\s+)?(can you\s+|could you\s+)?(write|create|make|generate|compose|produce)\s+(me\s+|us\s+)?(a|an|the)?\s*(song|music|track|tune|jingle)\s*(for|about|on|titled|called)?\s*',
+                '', user_text, flags=re.IGNORECASE
+            )
+            song_topic = stripped.strip()
+            if not song_topic or song_topic.lower() == user_text.lower():
+                m = re.search(r'\b(song|music|track|tune|jingle)\b\s*(for|about|on|titled|called)?\s*(.*)', user_text, re.IGNORECASE)
+                song_topic = m.group(3).strip() if m and m.group(3) else user_text.strip()
 
         if not song_topic or len(song_topic) < 3:
             await bot.send_message(chat_id,
