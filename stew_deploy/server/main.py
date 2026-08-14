@@ -35,9 +35,10 @@ from server.llm_client import get_llm_client
 from server.orchestrator import orchestrate_text, orchestrate_image
 from server.memory import (
     append_message, build_llm_messages, get_or_create_conversation, get_relevant_context,
+    store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User
+from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -1187,7 +1188,7 @@ async def chat(
     if user:
         conv = await get_or_create_conversation(db, user.id, body.conversation_id)
         # Retrieve relevant past memories across all sessions
-        recalled = await get_relevant_context(user.id, body.message, platform="api")
+        recalled = await get_relevant_context(db, user.id, body.message, platform="api")
         await append_message(db, conv, "user", body.message, platform="api")
         messages = build_llm_messages(conv, system, recalled)
     else:
@@ -1235,6 +1236,18 @@ async def chat(
 
     if user:
         await append_message(db, conv, "assistant", response_text, platform="api")
+
+        # Background memory extraction for API users too
+        try:
+            def _sync_llm_chat_api(messages, max_tokens=1000):
+                llm_a = get_llm_client()
+                return llm_a.chat(messages, max_tokens=max_tokens)
+            background_tasks.add_task(
+                extract_and_store_memories,
+                db, user.id, body.message, response_text, "api", conv.id, _sync_llm_chat_api
+            )
+        except Exception:
+            pass
 
     if user:
         background_tasks.add_task(_log_call, db, user.id if user else None, "/chat", "POST", tokens, 200)
@@ -3026,7 +3039,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif action == "companies":
             await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN")
         elif action == "tools":
-            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx\nGenerate images: 'generate image of...'\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
+            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx\nGenerate images: 'generate image of...'\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
         elif action == "clear":
             try:
                 conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
@@ -3047,6 +3060,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Companies: /invoice /meeting /swot /businessplan /budget\n"
                 "Tools: /research /code /menu /clear\n"
                 "Documents: /pdf /docx /xlsx /pptx\n"
+                "Books: /book topic (up to 200 pages)\n"
+                "Songs: /song topic (AI music + lyrics)\n"
+                "Books: /book topic (up to 200 pages)\n"
                 "Images: generate image of...\n"
                 "Browse: browse https://...\n"
                 "Send photos/PDFs for OCR, voice notes for transcription"
@@ -3123,6 +3139,12 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "16. /swot - SWOT analysis PDF\n"
             "17. /businessplan - Business plan PDF\n"
             "18. /budget - Budget planner\n\n"
+            "Creative Pro Tools:\n"
+            "19. /book - Write a book (up to 200 pages)\n"
+            "20. /song - Create AI song with music\n"
+            "21. /remember - Tell Stew to remember something\n"
+            "22. /memory - View what Stew remembers\n"
+            "23. /forget - Clear all memories\n\n"
             "Documents: /pdf /docx /xlsx /pptx\n"
             "Images: generate image of...\n"
             "Browse: browse https://...\n"
@@ -3162,6 +3184,259 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             logger.error(f"Voice error: {e}", exc_info=True)
             await bot.send_message(chat_id, f"Voice error: {str(e)[:100]}. Please type instead.")
             return {"ok": True}
+
+    # ── /book COMMAND (Write a Book) ────────────────────────────────────────
+    if user_text.startswith("/book") or user_lower.startswith("write a book") or user_lower.startswith("create a book") or user_lower.startswith("generate a book"):
+        # Extract book topic
+        book_topic = ""
+        if user_text.startswith("/book"):
+            book_topic = user_text[5:].strip()
+        elif user_lower.startswith("write a book about "):
+            book_topic = user_text[19:].strip()
+        elif user_lower.startswith("write a book "):
+            book_topic = user_text[13:].strip()
+        elif user_lower.startswith("create a book about "):
+            book_topic = user_text[19:].strip()
+        elif user_lower.startswith("create a book "):
+            book_topic = user_text[14:].strip()
+        elif user_lower.startswith("generate a book about "):
+            book_topic = user_text[22:].strip()
+        elif user_lower.startswith("generate a book "):
+            book_topic = user_text[17:].strip()
+        else:
+            book_topic = user_text.replace("/book", "").strip()
+
+        # Extract page count if specified ("100 pages", "200 pages")
+        import re as _re
+        pages_match = _re.search(r'(\d+)\s*pages?', user_lower)
+        target_pages = int(pages_match.group(1)) if pages_match else 50
+        target_pages = max(10, min(target_pages, 200))
+
+        # Extract author name if specified ("by Author Name")
+        author_match = _re.search(r'\bby\s+([\w\s]+?)(?:\s*\d+\s*pages?|$)', user_text, _re.IGNORECASE)
+        book_author = author_match.group(1).strip() if author_match else username
+
+        if not book_topic or len(book_topic) < 3:
+            await bot.send_message(chat_id,
+                "Write a book with S.T.E.W!\n\n"
+                "Usage: /book The History of Nigerian Architecture\n"
+                "Or: write a book about African folktales, 100 pages\n\n"
+                "Supports up to 200 pages with professional cover design.")
+            return {"ok": True}
+
+        await bot.send_chat_action(chat_id, "typing")
+        await bot.send_message(chat_id,
+            f"Writing your book: '{book_topic}'\n"
+            f"Target: {target_pages} pages with cover design\n"
+            f"This will take a few minutes...")
+
+        try:
+            from server.book_generator import generate_book
+
+            def _sync_llm_chat(messages, max_tokens=4000):
+                llm = get_llm_client()
+                try:
+                    return {"content": llm.chat(messages, max_tokens=max_tokens)}
+                except Exception:
+                    return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
+
+            book_result = await asyncio.to_thread(
+                generate_book,
+                book_topic, book_author, target_pages, _sync_llm_chat, None
+            )
+
+            file_bytes = book_result.get("file_bytes")
+            filename = book_result.get("filename", "book.docx")
+
+            if file_bytes and len(file_bytes) > 1000:
+                # Send cover image first if available
+                cover_path = "/tmp/stew_book_cover.jpg"
+                # Check if we can extract the cover from the docx — just send a message about it
+                await bot.send_message(chat_id,
+                    f"Book complete! {book_result.get('chapters', 0)} chapters, "
+                    f"~{book_result.get('pages_estimated', target_pages)} pages\n"
+                    f"Genre: Auto-detected\n"
+                    f"Cover: Professional AI-designed front & back\n\n"
+                    f"Sending your book now...")
+                await bot.send_document(chat_id, file_bytes, filename, f"Book: {book_topic}")
+            else:
+                await bot.send_message(chat_id, "Sorry, couldn't generate the book. Please try with a simpler topic or fewer pages.")
+
+        except Exception as e:
+            logger.error(f"Book generation error: {e}", exc_info=True)
+            await bot.send_message(chat_id, f"Book generation error: {str(e)[:100]}. Please try again with a simpler request.")
+        return {"ok": True}
+
+    # ── /song COMMAND (AI Song Generation) ──────────────────────────────────
+    if user_text.startswith("/song") or user_lower.startswith("create a song") or user_lower.startswith("make a song") or user_lower.startswith("generate a song"):
+        # Extract song topic
+        song_topic = ""
+        if user_text.startswith("/song"):
+            song_topic = user_text[5:].strip()
+        elif user_lower.startswith("create a song about "):
+            song_topic = user_text[20:].strip()
+        elif user_lower.startswith("create a song "):
+            song_topic = user_text[14:].strip()
+        elif user_lower.startswith("make a song about "):
+            song_topic = user_text[18:].strip()
+        elif user_lower.startswith("make a song "):
+            song_topic = user_text[12:].strip()
+        elif user_lower.startswith("generate a song about "):
+            song_topic = user_text[22:].strip()
+        elif user_lower.startswith("generate a song "):
+            song_topic = user_text[17:].strip()
+        else:
+            song_topic = user_text.replace("/song", "").strip()
+
+        if not song_topic or len(song_topic) < 3:
+            await bot.send_message(chat_id,
+                "Create AI songs with S.T.E.W!\n\n"
+                "Usage: /song A love song about Lagos sunset\n"
+                "Or: create a song about friendship and hope\n\n"
+                "Generates lyrics + album cover + audio music")
+            return {"ok": True}
+
+        await bot.send_chat_action(chat_id, "typing")
+        await bot.send_message(chat_id,
+            f"Creating your song: '{song_topic}'\n"
+            f"Writing lyrics, generating music, designing cover art...\n"
+            f"This takes 1-3 minutes...")
+
+        try:
+            from server.book_generator import generate_song
+
+            def _sync_llm_chat_song(messages, max_tokens=2000):
+                llm = get_llm_client()
+                try:
+                    return {"content": llm.chat(messages, max_tokens=max_tokens)}
+                except Exception:
+                    return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
+
+            song_result = await asyncio.to_thread(
+                generate_song, song_topic, None, _sync_llm_chat_song
+            )
+
+            lyrics = song_result.get("lyrics", "")
+            cover_bytes = song_result.get("cover_bytes")
+            audio_bytes = song_result.get("audio_bytes")
+            audio_format = song_result.get("audio_format", "mp3")
+            filename = song_result.get("filename", "song.mp3")
+
+            # Send lyrics first
+            lyrics_preview = lyrics[:3000]
+            if len(lyrics) > 3000:
+                lyrics_preview += "\n\n... (full lyrics in audio)"
+            await bot.send_message(chat_id, f"Lyrics:\n\n{lyrics_preview}")
+
+            # Send album cover
+            if cover_bytes and len(cover_bytes) > 1000:
+                try:
+                    await bot.send_photo(chat_id, cover_bytes, caption="Album Cover")
+                except Exception as ce:
+                    logger.warning(f"Cover send error: {ce}")
+
+            # Send audio
+            if audio_bytes and len(audio_bytes) > 1000:
+                await bot.send_message(chat_id, "Sending your song audio...")
+                # Telegram expects ogg for voice, mp3 for audio
+                if audio_format == "wav":
+                    # Convert wav to mp3 if possible
+                    try:
+                        import subprocess
+                        mp3_path = f"/tmp/stew_song_{int(time.time())}.mp3"
+                        wav_path = f"/tmp/stew_song_{int(time.time())}.wav"
+                        with open(wav_path, "wb") as f:
+                            f.write(audio_bytes)
+                        subprocess.run(["ffmpeg", "-i", wav_path, "-y", mp3_path],
+                                      capture_output=True, timeout=30)
+                        if os.path.exists(mp3_path):
+                            with open(mp3_path, "rb") as f:
+                                audio_bytes = f.read()
+                            os.unlink(wav_path)
+                            os.unlink(mp3_path)
+                    except Exception:
+                        pass  # Send as-is if ffmpeg not available
+
+                await bot.send_audio(chat_id, audio_bytes, filename,
+                                     caption=f"Song: {song_topic}",
+                                     performer="S.T.E.W Agent", title=song_topic[:60])
+            else:
+                await bot.send_message(chat_id,
+                    "Lyrics and cover art generated! Audio generation is processing — "
+                    "your song lyrics are ready above. Full audio may take longer on free tier. "
+                    "Try again in a moment for the complete song with music.")
+
+        except Exception as e:
+            logger.error(f"Song generation error: {e}", exc_info=True)
+            await bot.send_message(chat_id, f"Song generation error: {str(e)[:100]}. Please try again.")
+        return {"ok": True}
+
+    # ── /remember COMMAND (Explicit Memory) ──────────────────────────────────
+    if user_text.startswith("/remember"):
+        memory_text = user_text[9:].strip()
+        if not memory_text or len(memory_text) < 3:
+            await bot.send_message(chat_id,
+                "Tell me what to remember!\n\n"
+                "Usage: /remember I prefer responses in Pidgin English\n"
+                "Usage: /remember My project deadline is August 30\n"
+                "I'll store it permanently and recall it in future conversations.")
+            return {"ok": True}
+
+        try:
+            # Auto-detect category
+            mem_lower = memory_text.lower()
+            if any(w in mem_lower for w in ["prefer", "like", "love", "hate", "want", "always", "never"]):
+                category = "preference"
+            elif any(w in mem_lower for w in ["must", "should", "always do", "never do", "don't"]):
+                category = "instruction"
+            elif any(w in mem_lower for w in ["my name", "i am", "i'm", "i work", "i live", "i build", "i run"]):
+                category = "fact"
+            else:
+                category = "context"
+
+            await store_user_memory(db, tg_user.id, category, memory_text, importance=8, platform="telegram")
+            await bot.send_message(chat_id, f"Got it. I'll remember: {memory_text[:200]}\n\nCategory: {category}\nThis is stored permanently.")
+        except Exception as e:
+            logger.error(f"Memory store error: {e}")
+            await bot.send_message(chat_id, "Couldn't save that memory. Please try again.")
+        return {"ok": True}
+
+    # ── /memory COMMAND (View Memories) ──────────────────────────────────────
+    if user_text.strip() == "/memory" or user_text.strip() == "/memories":
+        try:
+            memories = await get_user_memories(db, tg_user.id, limit=30)
+            if not memories:
+                await bot.send_message(chat_id,
+                    "I don't have any saved memories yet.\n\n"
+                    "Use /remember to tell me something important.\n"
+                    "Example: /remember I'm building an AI startup called ERGIO")
+                return {"ok": True}
+
+            mem_text = f"Your memories ({len(memories)} total):\n\n"
+            for i, m in enumerate(memories[:30], 1):
+                mem_text += f"{i}. [{m.category.upper()}] {m.content[:150]}\n"
+            mem_text += "\nUse /forget to clear all memories, or /remember to add new ones."
+            await bot.send_message(chat_id, mem_text)
+        except Exception as e:
+            logger.error(f"Memory list error: {e}")
+            await bot.send_message(chat_id, "Couldn't retrieve memories. Please try again.")
+        return {"ok": True}
+
+    # ── /forget COMMAND (Clear Memories) ────────────────────────────────────
+    if user_text.strip() == "/forget" or user_text.strip() == "/forgetall":
+        try:
+            from sqlalchemy import update as _upd
+            await db.execute(
+                _upd(UserMemory).where(UserMemory.user_id == tg_user.id).values(is_active=False)
+            )
+            await bot.send_message(chat_id,
+                "I've cleared all your memories.\n\n"
+                "I won't remember anything from our past conversations anymore. "
+                "Use /remember to start fresh.")
+        except Exception as e:
+            logger.error(f"Memory clear error: {e}")
+            await bot.send_message(chat_id, "Couldn't clear memories. Please try again.")
+        return {"ok": True}
 
     # ── /summarize COMMAND ─────────────────────────────────────────────────────
     if user_text.startswith("/summarize"):
@@ -4115,7 +4390,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     _existing_conv = _conv_q.scalar_one_or_none()
     conv = _existing_conv if _existing_conv else await get_or_create_conversation(db, tg_user.id, None)
 
-    recalled_tg = await get_relevant_context(tg_user.id, user_text, platform="telegram")
+    recalled_tg = await get_relevant_context(db, tg_user.id, user_text, platform="telegram")
     await append_message(db, conv, "user", user_text, platform="telegram")
     messages = build_llm_messages(conv, system, recalled_tg)
 
@@ -4124,6 +4399,20 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
         await bot.send_message(chat_id, reply, parse_mode="")
+
+        # Background memory extraction — non-blocking, never breaks the reply
+        try:
+            def _sync_llm_chat_mem(messages, max_tokens=1000):
+                llm_m = get_llm_client()
+                return llm_m.chat(messages, max_tokens=max_tokens)
+
+            await asyncio.to_thread(
+                extract_and_store_memories,
+                db, tg_user.id, user_text, reply, "telegram", conv.id, _sync_llm_chat_mem
+            )
+        except Exception as me:
+            logger.warning(f"Memory extraction failed (non-fatal): {me}")
+
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
         await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")

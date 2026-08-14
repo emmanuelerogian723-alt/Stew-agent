@@ -67,6 +67,28 @@ class TelegramBot:
             )
             return resp.json()
 
+    async def send_audio(self, chat_id: int, file_bytes: bytes,
+                          filename: str = "song.mp3", caption: str = "",
+                          performer: str = "", title: str = "") -> dict:
+        """Send an audio file to a Telegram chat."""
+        import mimetypes
+        mime_type = mimetypes.guess_type(filename)[0] or "audio/mpeg"
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(
+                f"{self.base}/sendAudio",
+                data={
+                    "chat_id": str(chat_id),
+                    "caption": caption[:1024],
+                    "performer": performer[:100],
+                    "title": title[:100],
+                },
+                files={"audio": (filename, file_bytes, mime_type)},
+            )
+            result = resp.json()
+            if not result.get("ok"):
+                logger.error(f"Telegram sendAudio failed: {result}")
+            return result
+
     async def send_photo_url(self, chat_id: int, photo_url: str,
                              caption: str = "") -> dict:
         """Send a photo by URL to a Telegram chat."""

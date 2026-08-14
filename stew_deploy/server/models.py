@@ -138,3 +138,19 @@ class SecurityEvent(Base):
     risk_score: Mapped[int] = mapped_column(Integer, default=0)
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UserMemory(Base):
+    """Persistent key-fact memory stored in PostgreSQL — survives Render restarts."""
+    __tablename__ = "user_memories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)  # fact, preference, instruction, context
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    importance: Mapped[int] = mapped_column(Integer, default=5)  # 1-10
+    source_platform: Mapped[str] = mapped_column(String(20), default="telegram")  # telegram, api
+    conversation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
