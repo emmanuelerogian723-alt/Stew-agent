@@ -3240,7 +3240,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             def _sync_llm_chat(messages, max_tokens=4000):
                 llm = get_llm_client()
                 try:
-                    return {"content": llm.chat(messages, max_tokens=max_tokens)}
+                    return llm.chat(messages, max_tokens=max_tokens)  # already returns {"content": ...}
                 except Exception:
                     return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
 
@@ -3313,7 +3313,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             def _sync_llm_chat_song(messages, max_tokens=2000):
                 llm = get_llm_client()
                 try:
-                    return {"content": llm.chat(messages, max_tokens=max_tokens)}
+                    return llm.chat(messages, max_tokens=max_tokens)  # already returns {"content": ...}
                 except Exception:
                     return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
 

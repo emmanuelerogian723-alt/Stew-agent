@@ -65,6 +65,20 @@ def _generate_cover_prompt(title: str, genre: str, is_back: bool = False) -> str
 
 # ── BOOK OUTLINE GENERATION ─────────────────────────────────────────────────
 
+def _safe_content(result) -> str:
+    """Defensively extract text content from an LLM callback result.
+    Handles: dict {"content": str}, dict {"content": dict} (double-wrap bug),
+    raw str, or anything else — always returns a str, never crashes on slicing."""
+    if isinstance(result, dict):
+        inner = result.get("content", "")
+        if isinstance(inner, dict):
+            inner = inner.get("content", "")
+        return inner if isinstance(inner, str) else str(inner) if inner else ""
+    if isinstance(result, str):
+        return result
+    return str(result) if result else ""
+
+
 def build_book_outline_prompt(topic: str, num_chapters: int, pages: int) -> str:
     """System prompt for generating a book outline."""
     return (
@@ -326,7 +340,7 @@ def generate_book(topic: str, author: str = "", pages: int = 100,
     outline_raw = None
     if llm_chat_fn:
         result = llm_chat_fn(outline_msg, max_tokens=4000)
-        outline_raw = result.get("content", "")
+        outline_raw = _safe_content(result)
     elif llm_complete_fn:
         outline_raw = llm_complete_fn(f"Book topic: {topic}", system=outline_prompt)
 
@@ -369,7 +383,7 @@ def generate_book(topic: str, author: str = "", pages: int = 100,
                  {"role": "user", "content": f"Write chapter {i+1} now."}],
                 max_tokens=8000
             )
-            chapter_content = result.get("content", "")
+            chapter_content = _safe_content(result)
         elif llm_complete_fn:
             chapter_content = llm_complete_fn(f"Write chapter {i+1} now.", system=chapter_sys)
 
@@ -410,7 +424,7 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
              {"role": "user", "content": f"Write a song about: {prompt}"}],
             max_tokens=2000
         )
-        lyrics = result.get("content", "")
+        lyrics = _safe_content(result)
     elif llm_complete_fn:
         lyrics = llm_complete_fn(f"Write a song about: {prompt}", system=lyrics_prompt)
 
