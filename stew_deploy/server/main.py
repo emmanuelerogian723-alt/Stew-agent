@@ -2879,12 +2879,80 @@ async def _transcribe_audio_bytes(file_bytes: bytes, file_name: str = "audio.ogg
             except Exception as e:
                 last_error = f"OpenAI Whisper exception: {e}"
                 logger.warning(last_error)
+
+        # Fallback #3: Hugging Face Inference API (openai/whisper-large-v3)
+        # Free tier, works even when Groq/OpenAI keys are missing or invalid.
+        hf_key = _os.getenv("HUGGINGFACE_API_KEY", "")
+        if not transcript and hf_key:
+            try:
+                with open(tmp_path, "rb") as audio_file:
+                    audio_data = audio_file.read()
+                resp = http_requests.post(
+                    "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
+                    headers={"Authorization": f"Bearer {hf_key}", "Content-Type": mime},
+                    data=audio_data,
+                    timeout=90,
+                )
+                if resp.status_code == 200:
+                    hf_result = resp.json()
+                    transcript = (hf_result.get("text") or "").strip() if isinstance(hf_result, dict) else ""
+                    if transcript:
+                        last_error = ""
+                else:
+                    last_error = f"HF Whisper error {resp.status_code}: {resp.text[:200]}"
+                    logger.warning(last_error)
+            except Exception as e:
+                last_error = f"HF Whisper exception: {e}"
+                logger.warning(last_error)
     finally:
         _os.unlink(tmp_path)
 
     if not transcript and not last_error:
         last_error = "No transcription provider configured (missing GROQ_API_KEY/OPENAI_API_KEY)."
     return transcript, ("" if transcript else last_error)
+
+
+
+# ─── Voice Synthesis (edge-tts) ─────────────────────────────────────────────────
+VOICE_OPTIONS = {
+    "aria": ("en-US-AriaNeural", "Aria — warm female (US English)"),
+    "jenny": ("en-US-JennyNeural", "Jenny — friendly female (US English)"),
+    "guy": ("en-US-GuyNeural", "Guy — confident male (US English)"),
+    "davis": ("en-US-DavisNeural", "Davis — calm male (US English)"),
+    "emma": ("en-US-EmmaNeural", "Emma — gentle female (US English)"),
+    "british_f": ("en-GB-LibbyNeural", "Libby — British female"),
+    "british_m": ("en-GB-RyanNeural", "Ryan — British male"),
+    "nigeria": ("en-NG-EzinneNeural", "Ezinne — Nigerian female"),
+    "nigeria_m": ("en-NG-AbeoNeural", "Abeo — Nigerian male"),
+    "french_f": ("fr-FR-DeniseNeural", "Denise — French female"),
+    "spanish": ("es-ES-ElviraNeural", "Elvira — Spanish female"),
+    "hindi": ("hi-IN-SwaraNeural", "Swara — Hindi female"),
+    "arabic": ("ar-SA-ZariyahNeural", "Zariyah — Arabic female"),
+}
+
+async def _synthesize_voice(text: str, voice: str = "en-US-AriaNeural") -> tuple[bytes, str]:
+    """Synthesize speech via edge-tts (free, no API key). Returns (mp3_bytes, error)."""
+    import asyncio as _aio
+    try:
+        import edge_tts
+    except ImportError:
+        return b"", "edge-tts not installed"
+    
+    # Truncate very long text to avoid timeout (edge-tts handles ~3000 chars well)
+    if len(text) > 3000:
+        text = text[:3000] + "..."
+    
+    try:
+        communicate = edge_tts.Communicate(text, voice)
+        audio_chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_chunks.append(chunk["data"])
+        if audio_chunks:
+            return b"".join(audio_chunks), ""
+        return b"", "No audio generated"
+    except Exception as e:
+        return b"", f"edge-tts error: {e}"
 
 
 @app.post("/telegram/webhook")
@@ -3046,7 +3114,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
@@ -3673,7 +3741,15 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "36. /qr <text> - Generate QR code\n"
             "37. /shorten <url> - Shorten URL\n"
             "38. /ai-image <desc> - Generate image\n"
-            "39. /wiki <topic> - Wikipedia search"
+            "39. /wiki <topic> - Wikipedia search\n\n"
+            "Voice & Audio:\n"
+            "40. /voice - Toggle voice note replies 🔊\n"
+            "41. /voice list - See available voices\n"
+            "42. /voice <name> - Set your voice (e.g. /voice nigeria)\n\n"
+            "Account:\n"
+            "43. /usage - Check your usage quota\n"
+            "44. /plan - View pricing plans\n"
+            "45. /upgrade - Upgrade to Pro"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
@@ -4702,6 +4778,35 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
 
     # ── /clear COMMAND ──────────────────────────────────────────────────────────
+    # /voice — Toggle voice note replies
+    if user_text.startswith("/voice"):
+        parts = user_text.strip().split(maxsplit=1)
+        if len(parts) > 1 and parts[1].lower() in ("on", "off", "enable", "disable"):
+            enable = parts[1].lower() in ("on", "enable")
+            tg_user.voice_enabled = enable
+            await db.commit()
+            status = "ON 🔊 — Stew will now reply with voice notes" if enable else "OFF 🔇 — Stew will reply with text"
+            await bot.send_message(chat_id, f"Voice replies: {status}\n\nTip: /voice to toggle, /voice list to see available voices, /voice <name> to pick a voice")
+            return
+        elif len(parts) > 1 and parts[1].lower() == "list":
+            voice_list = "\n".join(f"  /voice {k} — {desc}" for k, (v, desc) in VOICE_OPTIONS.items())
+            await bot.send_message(chat_id, f"Available voices:\n\n{voice_list}\n\nUse /voice <name> to set your preferred voice.")
+            return
+        elif len(parts) > 1 and parts[1].lower() in VOICE_OPTIONS:
+            voice_id, desc = VOICE_OPTIONS[parts[1].lower()]
+            tg_user.preferred_voice = voice_id
+            tg_user.voice_enabled = True
+            await db.commit()
+            await bot.send_message(chat_id, f"Voice set to {desc} ✅\nStew will now reply with voice notes using this voice.")
+            return
+        else:
+            # Toggle current state
+            tg_user.voice_enabled = not tg_user.voice_enabled
+            await db.commit()
+            status = "ON 🔊 — Stew will now reply with voice notes" if tg_user.voice_enabled else "OFF 🔇 — Stew will reply with text"
+            await bot.send_message(chat_id, f"Voice replies: {status}\n\nTip: /voice list to see available voices")
+            return
+
     if user_text.startswith("/clear"):
         try:
             conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
@@ -5270,7 +5375,18 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         result = await asyncio.to_thread(llm.chat, messages)
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
-        await bot.send_message(chat_id, reply, parse_mode="")
+
+        # If user has voice replies enabled, send as voice note
+        if getattr(tg_user, "voice_enabled", False):
+            voice_name = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
+            audio_bytes, voice_err = await _synthesize_voice(reply, voice_name)
+            if audio_bytes:
+                await bot.send_voice(chat_id, audio_bytes)
+            else:
+                logger.warning(f"Voice synthesis failed: {voice_err}")
+                await bot.send_message(chat_id, reply, parse_mode="")
+        else:
+            await bot.send_message(chat_id, reply, parse_mode="")
 
         # Show sponsored ad to free users every 5 messages
         _mc = await db.execute(select(func.count(APICall.id)).where(APICall.user_id == tg_user.id))

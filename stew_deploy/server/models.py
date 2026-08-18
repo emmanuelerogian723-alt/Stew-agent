@@ -36,6 +36,9 @@ class User(Base):
     custom_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     persona_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     response_style: Mapped[Optional[str]] = mapped_column(String(20), default="balanced", nullable=True)  # concise|balanced|detailed
+    # Voice reply settings
+    voice_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # if True, Stew replies with voice notes
+    preferred_voice: Mapped[Optional[str]] = mapped_column(String(50), default="en-US-AriaNeural", nullable=True)  # edge-tts voice name
     language: Mapped[Optional[str]] = mapped_column(String(10), default="en", nullable=True)
     preferred_model: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Mistral API key (user can bring their own)

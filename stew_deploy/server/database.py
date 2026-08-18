@@ -88,3 +88,27 @@ async def init_db():
             await conn.execute(text("PRAGMA busy_timeout=30000"))
             logger.info("SQLite WAL mode enabled with 30s busy timeout")
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight migration: add new columns if they don't exist (SQLite)
+        if IS_SQLITE:
+            await _sqlite_migrate(conn)
+
+
+async def _sqlite_migrate(conn):
+    """Add new columns to existing tables (SQLite doesn't support ALTER ADD COLUMN via create_all)."""
+    migrations = [
+        ("users", "voice_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("users", "preferred_voice", "VARCHAR(50)"),
+        ("users", "response_style", "VARCHAR(20)"),
+        ("users", "persona", "VARCHAR(50)"),
+        ("users", "custom_instructions", "TEXT"),
+        ("users", "persona_name", "VARCHAR(100)"),
+        ("users", "language", "VARCHAR(10)"),
+        ("users", "preferred_model", "VARCHAR(50)"),
+        ("users", "mistral_api_key", "VARCHAR(255)"),
+    ]
+    for table, column, coltype in migrations:
+        try:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
+            logger.info(f"Migration: added {table}.{column}")
+        except Exception:
+            pass  # Column already exists
