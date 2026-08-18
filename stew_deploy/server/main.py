@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import requests as http_requests
+import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -3331,7 +3332,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Students: /quiz /flashcards /studyguide /summarize /translate /solve\n"
                 "Lecturers: /lessonplan /rubric /grade\n"
                 "Companies: /invoice /meeting /swot /businessplan /budget\n"
-                "Tools: /research /code /menu /clear\n"
+                "Tools: /research /code /menu /clear\nQuick: /weather /currency /news /joke /quote /define /math /qr /wiki\n"
                 "Documents: /pdf /docx /xlsx /pptx\n"
                 "Books: /book topic (up to 200 pages)\n"
                 "Songs: /song topic (AI music + lyrics)\n"
@@ -3660,7 +3661,19 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "25. /features - See top requests\n"
             "26. /vote #<id> - Vote for a feature\n"
             "27. /users - See user count\n"
-            "28. /sponsor - See our sponsors"
+            "28. /sponsor - See our sponsors\n\n"
+            "Quick Tools:\n"
+            "29. /weather <city> - Live weather\n"
+            "30. /currency 100 USD to NGN - Exchange rates\n"
+            "31. /news <topic> - Latest news\n"
+            "32. /joke - Random joke\n"
+            "33. /quote - Inspirational quote\n"
+            "34. /define <word> - Dictionary\n"
+            "35. /math <expression> - Quick math\n"
+            "36. /qr <text> - Generate QR code\n"
+            "37. /shorten <url> - Shorten URL\n"
+            "38. /ai-image <desc> - Generate image\n"
+            "39. /wiki <topic> - Wikipedia search"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
@@ -4364,6 +4377,329 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         except Exception as e:
             await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
         return {"ok": True}
+
+
+    # ── /weather COMMAND ──────────────────────────────────────────────────────
+    if user_text.startswith("/weather"):
+        location = user_text[9:].strip()
+        if not location:
+            await bot.send_message(chat_id, "Send: /weather Lagos\nOr: /weather London, UK")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            async with http_requests.AsyncClient(timeout=10) as client:
+                # Geocode the location
+                geo_resp = await client.get(f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1&language=en&format=json")
+                geo_data = geo_resp.json()
+                if not geo_data.get("results"):
+                    await bot.send_message(chat_id, f"Location '{location}' not found. Try a city name.")
+                    return {"ok": True}
+                geo = geo_data["results"][0]
+                lat, lon = geo["latitude"], geo["longitude"]
+                city_name = geo["name"]
+                country = geo.get("country", "")
+                
+                # Get weather
+                weather_resp = await client.get(f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=3")
+                weather = weather_resp.json()
+                cur = weather.get("current", {})
+                daily = weather.get("daily", {})
+                
+                # Weather code mapping
+                wmo = {
+                    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+                    45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Moderate drizzle",
+                    55: "Dense drizzle", 61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+                    71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+                    80: "Rain showers", 81: "Moderate showers", 82: "Violent showers",
+                    95: "Thunderstorm", 96: "Thunderstorm + hail", 99: "Severe thunderstorm"
+                }
+                code = cur.get("weather_code", 0)
+                desc = wmo.get(code, "Unknown")
+                temp = cur.get("temperature_2m", 0)
+                feels = cur.get("apparent_temperature", 0)
+                humidity = cur.get("relative_humidity_2m", 0)
+                wind = cur.get("wind_speed_10m", 0)
+                
+                # 3-day forecast
+                forecast_lines = []
+                for i in range(min(3, len(daily.get("time", [])))):
+                    d = daily["time"][i]
+                    hi = daily["temperature_2m_max"][i]
+                    lo = daily["temperature_2m_min"][i]
+                    wc = wmo.get(daily["weather_code"][i], "?")
+                    forecast_lines.append(f"  {d}: {wc}, {lo}-{hi}°C")
+                
+                msg = (
+                    f"Weather in {city_name}, {country}\n"
+                    f"\n"
+                    f"Currently: {desc}\n"
+                    f"Temperature: {temp}°C (feels like {feels}°C)\n"
+                    f"Humidity: {humidity}%\n"
+                    f"Wind: {wind} km/h\n"
+                    f"\n3-Day Forecast:\n" + "\n".join(forecast_lines)
+                )
+                await bot.send_message(chat_id, msg)
+        except Exception as e:
+            await bot.send_message(chat_id, f"Weather error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /currency COMMAND ──────────────────────────────────────────────────────
+    if user_text.startswith("/currency"):
+        parts = user_text[10:].strip()
+        if not parts:
+            await bot.send_message(chat_id, "Send: /currency 100 USD to NGN\nOr: /currency USD NGN")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            # Parse: "100 USD to NGN" or "USD NGN" or "USD to NGN"
+            import re as _re
+            m = _re.match(r'(\d+(?:\.\d+)?)?\s*([A-Za-z]{3})\s*(?:to|=>)?\s*([A-Za-z]{3})', parts)
+            if not m:
+                await bot.send_message(chat_id, "Format: /currency 100 USD to NGN")
+                return {"ok": True}
+            amount = float(m.group(1)) if m.group(1) else 1.0
+            from_curr = m.group(2).upper()
+            to_curr = m.group(3).upper()
+            
+            async with http_requests.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"https://open.er-api.com/v6/latest/{from_curr}")
+                data = resp.json()
+                rates = data.get("rates", {})
+                if to_curr not in rates:
+                    await bot.send_message(chat_id, f"Currency {to_curr} not found.")
+                    return {"ok": True}
+                rate = rates[to_curr]
+                result = amount * rate
+                await bot.send_message(chat_id, f"{amount} {from_curr} = {result:,.2f} {to_curr}\nRate: 1 {from_curr} = {rate:,.4f} {to_curr}")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Currency error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /joke COMMAND ──────────────────────────────────────────────────────────
+    if user_text.startswith("/joke"):
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            async with http_requests.AsyncClient(timeout=10) as client:
+                resp = await client.get("https://official-joke-api.appspot.com/random_joke")
+                data = resp.json()
+                await bot.send_message(chat_id, f"{data.get('setup','')}\n\n{data.get('punchline','')}")
+        except:
+            # Fallback jokes
+            import random
+            jokes = [
+                "Why did the Python developer go broke? Because he used up all his cache! 🐍",
+                "How many programmers does it take to change a light bulb? None — that's a hardware problem! 💡",
+                "Why do Java developers wear glasses? Because they don't C#! 👓",
+                "What's an AI's favorite type of music? Heavy Meta-learning! 🎵",
+                "Why did the AI cross the road? To optimize the chicken's path! 🐔",
+            ]
+            await bot.send_message(chat_id, random.choice(jokes))
+        return {"ok": True}
+
+    # ── /quote COMMAND ──────────────────────────────────────────────────────────
+    if user_text.startswith("/quote"):
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            async with http_requests.AsyncClient(timeout=10) as client:
+                resp = await client.get("https://zenquotes.io/api/random")
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    q = data[0]
+                    await bot.send_message(chat_id, f'\"{q.get("q","")}\"\n\n— {q.get("a","")}')
+                else:
+                    raise Exception("No quote")
+        except:
+            import random
+            quotes = [
+                '"The best way to predict the future is to invent it." — Alan Kay',
+                "\"Code is like humor. When you have to explain it, it's bad.\" — Cory House",
+                '"The only way to do great work is to love what you do." — Steve Jobs',
+                '"Success is not final, failure is not fatal: it is the courage to continue that counts." — Churchill',
+                "\"Africa's future will be written by its innovators, not its history.\" — Unknown",
+            ]
+            await bot.send_message(chat_id, random.choice(quotes))
+        return {"ok": True}
+
+    # ── /define COMMAND ────────────────────────────────────────────────────────
+    if user_text.startswith("/define"):
+        word = user_text[8:].strip()
+        if not word:
+            await bot.send_message(chat_id, "Send: /define serendipity")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            async with http_requests.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}")
+                if resp.status_code != 200:
+                    await bot.send_message(chat_id, f"No definition found for '{word}'.")
+                    return {"ok": True}
+                data = resp.json()
+                entry = data[0]
+                meanings = entry.get("meanings", [])
+                if not meanings:
+                    await bot.send_message(chat_id, f"No meanings found for '{word}'.")
+                    return {"ok": True}
+                m = meanings[0]
+                pos = m.get("partOfSpeech", "")
+                defs = m.get("definitions", [])
+                result_text = f"_{word}_ ({pos})\n\n"
+                for i, d in enumerate(defs[:3]):
+                    result_text += f"{i+1}. {d.get('definition','')}\n"
+                    if d.get('example'):
+                        result_text += f"   Example: {d['example']}\n"
+                await bot.send_message(chat_id, result_text)
+        except Exception as e:
+            await bot.send_message(chat_id, f"Define error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /news COMMAND ───────────────────────────────────────────────────────────
+    if user_text.startswith("/news"):
+        topic = user_text[6:].strip()
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            search_query = f"latest news today {topic}" if topic else "top news headlines today August 2026"
+            searcher = get_searcher()
+            search_results = await asyncio.to_thread(searcher.search, search_query, 5)
+            if search_results.get("grounded"):
+                context = searcher.format_results_for_llm(search_results)
+                system = STEW_MASTER_PROMPT + "\n\nSummarize the latest news in a brief, easy-to-read format. Top 5 stories with 1-2 sentences each."
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": f"Latest news{' about ' + topic if topic else ''}:\n\n{context}"},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages, max_tokens=800)
+                await bot.send_message(chat_id, f"📰 Today's News{' — ' + topic if topic else ''}\n\n" + clean_response(result["content"]))
+            else:
+                await bot.send_message(chat_id, "Couldn't fetch news right now. Try again later.")
+        except Exception as e:
+            await bot.send_message(chat_id, f"News error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /qr COMMAND (Generate QR Code) ──────────────────────────────────────────
+    if user_text.startswith("/qr"):
+        text = user_text[4:].strip()
+        if not text:
+            await bot.send_message(chat_id, "Send: /qr https://t.me/StewAgent_bot\nOr: /qr Your text here")
+            return {"ok": True}
+        try:
+            import urllib.parse
+            encoded = urllib.parse.quote(text)
+            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded}"
+            async with http_requests.AsyncClient(timeout=15) as client:
+                resp = await client.get(qr_url)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    await bot.send_photo(chat_id, resp.content, caption=f"QR Code for: {text[:50]}")
+                else:
+                    await bot.send_message(chat_id, "Failed to generate QR code. Try again.")
+        except Exception as e:
+            await bot.send_message(chat_id, f"QR error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /math COMMAND (Quick Math) ──────────────────────────────────────────────
+    if user_text.startswith("/math"):
+        expr = user_text[6:].strip()
+        if not expr:
+            await bot.send_message(chat_id, "Send: /math 2 + 2 * 5\nSupports: + - * / ** % sqrt() sin() cos() tan() log()\nOr: /math solve 3x + 5 = 20")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            # Check if it's an equation to solve
+            if "=" in expr and any(c in expr for c in "xy"):
+                llm = get_llm_client()
+                messages = [
+                    {"role": "system", "content": "You are a math tutor. Solve the equation step by step. Show your work clearly. Keep it concise."},
+                    {"role": "user", "content": f"Solve: {expr}"},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages, max_tokens=500)
+                await bot.send_message(chat_id, f"Problem: {expr}\n\n" + clean_response(result["content"]))
+            else:
+                # Evaluate arithmetic expression safely
+                import ast
+                import math as _math
+                # Replace common math terms
+                expr_clean = expr.replace("sqrt", "_math.sqrt").replace("sin", "_math.sin").replace("cos", "_math.cos").replace("tan", "_math.tan").replace("log", "_math.log").replace("pi", str(_math.pi)).replace("e", str(_math.e))
+                # Safe eval
+                allowed = set()
+                tree = ast.parse(expr_clean, mode='eval')
+                result = eval(compile(tree, '<string>', 'eval'), {"__builtins__": {}}, {"_math": _math})
+                await bot.send_message(chat_id, f"{expr} = {result}")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Math error: {str(e)[:100]}\n\nTip: Use /math solve 3x + 5 = 20 for equations")
+        return {"ok": True}
+
+    # ── /shorten COMMAND (URL Shortener) ────────────────────────────────────────
+    if user_text.startswith("/shorten"):
+        url = user_text[9:].strip()
+        if not url:
+            await bot.send_message(chat_id, "Send: /shorten https://example.com/very/long/url")
+            return {"ok": True}
+        if not url.startswith("http"):
+            url = "https://" + url
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            async with http_requests.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"https://is.gd/create.php?format=simple&url={url}")
+                if resp.status_code == 200 and resp.text.startswith("http"):
+                    await bot.send_message(chat_id, f"Shortened URL:\n{resp.text}")
+                else:
+                    await bot.send_message(chat_id, "Failed to shorten URL. Try again.")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Shorten error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /ai-image COMMAND (Direct Image Generation) ────────────────────────────
+    if user_text.startswith("/ai-image") or user_text.startswith("/img"):
+        prompt = user_text.split(" ", 1)[1].strip() if " " in user_text else ""
+        if not prompt:
+            await bot.send_message(chat_id, "Send: /ai-image a sunset over Lagos lagoon\nOr: /img a cute robot reading a book")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "upload_photo")
+        try:
+            import urllib.parse
+            encoded = urllib.parse.quote(prompt)
+            seed = random.randint(1, 999999)
+            img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
+            async with http_requests.AsyncClient(timeout=60) as client:
+                resp = await client.get(img_url)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    await bot.send_photo(chat_id, resp.content, caption=f"AI Image: {prompt[:80]}")
+                else:
+                    await bot.send_message(chat_id, "Image generation failed. Try a different prompt.")
+        except Exception as e:
+            await bot.send_message(chat_id, f"Image error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /wikipedia COMMAND ──────────────────────────────────────────────────────
+    if user_text.startswith("/wiki") or user_text.startswith("/wikipedia"):
+        query = user_text.split(" ", 1)[1].strip() if " " in user_text else ""
+        if not query:
+            await bot.send_message(chat_id, "Send: /wiki Albert Einstein\nOr: /wiki Nigeria")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            async with http_requests.AsyncClient(timeout=10) as client:
+                # Search Wikipedia
+                search_resp = await client.get(f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json&srlimit=1")
+                search_data = search_resp.json()
+                if not search_data.get("query", {}).get("search"):
+                    await bot.send_message(chat_id, f"No Wikipedia article found for '{query}'.")
+                    return {"ok": True}
+                title = search_data["query"]["search"][0]["title"]
+                # Get summary
+                summary_resp = await client.get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}")
+                summary = summary_resp.json()
+                text = summary.get("extract", "No summary available.")
+                url = summary.get("content_urls", {}).get("desktop", {}).get("page", "")
+                msg = f"_Wikipedia: {title}_\n\n{text[:1500]}"
+                if url:
+                    msg += f"\n\nRead more: {url}"
+                await bot.send_message(chat_id, msg)
+        except Exception as e:
+            await bot.send_message(chat_id, f"Wiki error: {str(e)[:100]}")
+        return {"ok": True}
+
 
     # ── /clear COMMAND ──────────────────────────────────────────────────────────
     if user_text.startswith("/clear"):
