@@ -140,6 +140,27 @@ class SecurityEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class AdCampaign(Base):
+    """Sponsored ad campaigns for the Telegram bot — revenue feature."""
+    __tablename__ = "ad_campaigns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    advertiser_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    ad_text: Mapped[str] = mapped_column(Text, nullable=False)  # the ad message text
+    ad_link: Mapped[str] = mapped_column(String(500), nullable=True)  # URL to redirect to
+    button_text: Mapped[str] = mapped_column(String(50), default="Learn More", nullable=True)  # CTA button text
+    target_audience: Mapped[str] = mapped_column(String(50), default="free", nullable=False)  # free, all, pro
+    frequency: Mapped[int] = mapped_column(Integer, default=5, nullable=False)  # show every N messages
+    impressions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # times shown
+    clicks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # times clicked
+    budget_impressions: Mapped[int] = mapped_column(Integer, default=10000, nullable=False)  # max impressions
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)  # active, paused, ended
+    start_date: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    end_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class FeatureRequest(Base):
     """Tracks feature requests from Telegram users — what they want Stew to do."""
     __tablename__ = "feature_requests"

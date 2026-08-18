@@ -39,7 +39,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest
+from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -1009,6 +1009,84 @@ async def update_feature_status(feature_id: str, body: dict, db: AsyncSession = 
     fr.status = body.get("status", fr.status)
     await db.flush()
     return {"success": True, "feature_id": feature_id, "status": fr.status}
+
+
+@app.get("/ads/active")
+async def list_active_ads(db: AsyncSession = Depends(get_db)):
+    """Public endpoint — list all active ad campaigns."""
+    result = await db.execute(select(AdCampaign).where(AdCampaign.status == "active").limit(50))
+    ads = result.scalars().all()
+    return {"count": len(ads), "ads": [{"id": a.id, "advertiser_name": a.advertiser_name, "ad_text": a.ad_text, "ad_link": a.ad_link, "button_text": a.button_text, "impressions": a.impressions, "clicks": a.clicks, "budget_impressions": a.budget_impressions, "target_audience": a.target_audience} for a in ads]}
+
+
+@app.post("/ads/create")
+async def create_ad_campaign(body: dict, db: AsyncSession = Depends(get_db)):
+    """Admin endpoint — create a new ad campaign. Requires admin API key."""
+    api_key = body.get("api_key", "")
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        user = await _safe_get_user(api_key, db)
+        if not user or user.plan not in ("owner", "enterprise"):
+            raise HTTPException(403, "Admin access required")
+    ad = AdCampaign(
+        advertiser_name=body.get("advertiser_name", "Unknown"),
+        ad_text=body.get("ad_text", ""),
+        ad_link=body.get("ad_link"),
+        button_text=body.get("button_text", "Learn More"),
+        target_audience=body.get("target_audience", "free"),
+        frequency=body.get("frequency", 5),
+        budget_impressions=body.get("budget_impressions", 10000),
+        end_date=body.get("end_date"),
+    )
+    db.add(ad)
+    await db.flush()
+    await db.commit()
+    return {"success": True, "ad_id": ad.id, "message": f"Ad campaign created for {ad.advertiser_name}"}
+
+
+@app.post("/ads/{ad_id}/click")
+async def track_ad_click(ad_id: str, db: AsyncSession = Depends(get_db)):
+    """Track when a user clicks an ad."""
+    result = await db.execute(select(AdCampaign).where(AdCampaign.id == ad_id))
+    ad = result.scalar_one_or_none()
+    if not ad:
+        raise HTTPException(404, "Ad not found")
+    ad.clicks += 1
+    await db.flush()
+    await db.commit()
+    return {"success": True, "clicks": ad.clicks}
+
+
+@app.post("/ads/{ad_id}/status")
+async def update_ad_status(ad_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Admin endpoint — pause/resume/end an ad campaign."""
+    api_key = body.get("api_key", "")
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        user = await _safe_get_user(api_key, db)
+        if not user or user.plan not in ("owner", "enterprise"):
+            raise HTTPException(403, "Admin access required")
+    result = await db.execute(select(AdCampaign).where(AdCampaign.id == ad_id))
+    ad = result.scalar_one_or_none()
+    if not ad:
+        raise HTTPException(404, "Ad not found")
+    ad.status = body.get("status", ad.status)
+    await db.flush()
+    await db.commit()
+    return {"success": True, "ad_id": ad_id, "status": ad.status}
+
+
+@app.get("/ads/analytics")
+async def ad_analytics(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Admin endpoint — view ad performance analytics."""
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        user = await _safe_get_user(api_key, db)
+        if not user or user.plan not in ("owner", "enterprise"):
+            raise HTTPException(403, "Admin access required")
+    result = await db.execute(select(AdCampaign))
+    ads = result.scalars().all()
+    total_impressions = sum(a.impressions for a in ads)
+    total_clicks = sum(a.clicks for a in ads)
+    ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+    return {"total_campaigns": len(ads), "active_campaigns": sum(1 for a in ads if a.status == "active"), "total_impressions": total_impressions, "total_clicks": total_clicks, "ctr": round(ctr, 2), "campaigns": [{"advertiser": a.advertiser_name, "impressions": a.impressions, "clicks": a.clicks, "ctr": round(a.clicks / a.impressions * 100, 2) if a.impressions > 0 else 0, "budget_used": f"{a.impressions}/{a.budget_impressions}", "status": a.status} for a in ads]}
 
 
 @app.post("/security/fingerprint")
@@ -2847,6 +2925,64 @@ async def _process_telegram_update_safe(data: dict):
             logger.error(f"Telegram background handler error: {e}", exc_info=True)
 
 
+async def _get_active_ad(db: AsyncSession, user_plan: str):
+    """Get an active ad campaign to display to this user. Returns None if no ad available."""
+    try:
+        result = await db.execute(
+            select(AdCampaign)
+            .where(AdCampaign.status == "active")
+            .where(AdCampaign.impressions < AdCampaign.budget_impressions)
+            .order_by(AdCampaign.impressions.asc())
+            .limit(1)
+        )
+        ad = result.scalar_one_or_none()
+        if not ad:
+            return None
+        if ad.target_audience == "free" and user_plan != "free":
+            return None
+        if ad.target_audience == "pro" and user_plan not in ("pro", "business", "enterprise"):
+            return None
+        if ad.end_date and ad.end_date < datetime.now():
+            ad.status = "ended"
+            await db.flush()
+            return None
+        return ad
+    except Exception as e:
+        logger.debug(f"Ad lookup error: {e}")
+        return None
+
+
+async def _display_ad_if_needed(bot, chat_id: int, db: AsyncSession, user_plan: str, message_count: int) -> bool:
+    """Show an ad to free users every 5 messages. Pro/Owner users never see ads."""
+    try:
+        if user_plan in ("pro", "business", "enterprise", "owner"):
+            return False
+        if message_count % 5 != 0 or message_count == 0:
+            return False
+
+        ad = await _get_active_ad(db, user_plan)
+        if not ad:
+            return False
+
+        ad.impressions += 1
+        await db.flush()
+        await db.commit()
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = None
+        if ad.ad_link:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(text=ad.button_text or "Learn More", url=ad.ad_link)
+            ]])
+
+        ad_message = f"📢 *Sponsored*\n\n{ad.ad_text}\n\n_Powered by S.T.E.W Ads_"
+        await bot.send_message(chat_id, ad_message, reply_markup=keyboard, disable_web_page_preview=False)
+        return True
+    except Exception as e:
+        logger.debug(f"Ad display error: {e}")
+        return False
+
+
 async def _handle_telegram_update(data: dict, db: AsyncSession):
     """The actual Telegram update handler — all the real logic lives here.
     Called from a detached background task (see _process_telegram_update_safe),
@@ -3273,6 +3409,41 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
         return {"ok": True}
 
+    # /sponsor — show current sponsors
+    if user_text.startswith("/sponsor"):
+        ad_result = await db.execute(
+            select(AdCampaign).where(AdCampaign.status == "active").limit(5)
+        )
+        ads = ad_result.scalars().all()
+        if not ads:
+            await bot.send_message(chat_id, "No sponsors right now. Want to advertise on S.T.E.W? Contact the admin!")
+        else:
+            lines = ["📢 *Current Sponsors*\n"]
+            for a in ads:
+                lines.append(f"• {a.advertiser_name}: {a.ad_text[:60]}")
+            _uc = await _get_telegram_user_count(db)
+            lines.append(f"\n\n💡 Want to reach {_uc:,}+ users? Contact admin to advertise!")
+            await bot.send_message(chat_id, "\n".join(lines))
+        return {"ok": True}
+
+    # /ads — admin command to manage ad campaigns (owner only)
+    if user_text.startswith("/ads") and tg_user.plan == "owner":
+        ad_result = await db.execute(
+            select(AdCampaign).order_by(AdCampaign.created_at.desc()).limit(20)
+        )
+        ads = ad_result.scalars().all()
+        if not ads:
+            await bot.send_message(chat_id, "No ad campaigns yet.\n\nCreate one via API:\nPOST /ads/create\n{advertiser_name, ad_text, ad_link, budget_impressions}")
+        else:
+            lines = ["📊 *Ad Campaigns*\n"]
+            for a in ads:
+                se = "🟢" if a.status == "active" else "🔴" if a.status == "ended" else "⏸️"
+                lines.append(f"{se} {a.advertiser_name}")
+                lines.append(f"   Impressions: {a.impressions}/{a.budget_impressions} | Clicks: {a.clicks}")
+                lines.append(f"   Status: {a.status}\n")
+            await bot.send_message(chat_id, "\n".join(lines))
+        return {"ok": True}
+
     # ── FEATURE REQUEST SYSTEM ──────────────────────────────────────────────
     # /features — show top feature requests (checked BEFORE /feature to avoid prefix clash)
     if user_text.startswith("/features"):
@@ -3488,7 +3659,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "24. /feature <desc> - Request a feature\n"
             "25. /features - See top requests\n"
             "26. /vote #<id> - Vote for a feature\n"
-            "27. /users - See user count"
+            "27. /users - See user count\n"
+            "28. /sponsor - See our sponsors"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
@@ -4763,6 +4935,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
         await bot.send_message(chat_id, reply, parse_mode="")
+
+        # Show sponsored ad to free users every 5 messages
+        _mc = await db.execute(select(func.count(APICall.id)).where(APICall.user_id == tg_user.id))
+        _msg_count = _mc.scalar() or 0
+        await _display_ad_if_needed(bot, chat_id, db, tg_user.plan, _msg_count)
 
         # Background memory extraction — fire-and-forget with its own DB session
         # (was broken: async def passed to asyncio.to_thread never executed)
