@@ -82,6 +82,7 @@ from server.clean_output import clean_response
 from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
 from server.auth import create_reset_token, consume_reset_token
 from server.keepalive import start_keepalive, stop_keepalive
+from server.bot_stats import start_bot_stats, stop_bot_stats
 from server.skills_engine import run_skill, list_skills as get_skills_list
 
 
@@ -95,8 +96,10 @@ async def lifespan(app: FastAPI):
     os.makedirs("logs", exist_ok=True)
     os.makedirs("output", exist_ok=True)
     start_keepalive()
+    start_bot_stats()
     yield
     stop_keepalive()
+    stop_bot_stats()
     logger.info("S.T.E.W API shutting down.")
 
 
@@ -154,6 +157,15 @@ async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
     calls_used = result.scalar() or 0
     plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
     return (calls_used < plan_limit, calls_used, plan_limit)
+
+
+async def _get_telegram_user_count(db: AsyncSession) -> int:
+    """Count all registered Telegram users (for the live user counter shown in
+    /start, /menu, /users, and the bot's public profile description)."""
+    result = await db.execute(
+        select(func.count(User.id)).where(User.email.like("tg_%@telegram.stew"))
+    )
+    return result.scalar() or 0
 
 
 
@@ -2798,6 +2810,77 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     chat_id = msg["chat_id"]
     user_id = msg.get("user_id", 0)
 
+    # ── STEW TELEGRAM: USER LOOKUP + ADMIN UNLOCK + USAGE QUOTA ────────────────
+    # Runs before ANY processing (photos, documents, voice, text) so the free
+    # tier limit and the owner/admin bypass apply uniformly to every message.
+    _tg_username_early = msg.get("username") or msg.get("first_name", "User")
+    _tg_email_early = f"tg_{user_id}@telegram.stew"
+    tg_user_early = None
+    for _early_attempt in range(3):
+        try:
+            _early_q = await db.execute(select(User).where(User.email == _tg_email_early))
+            tg_user_early = _early_q.scalar_one_or_none()
+            if not tg_user_early:
+                from server.auth import generate_api_key as _gen_api_key_early
+                tg_user_early = User(
+                    name=_tg_username_early, email=_tg_email_early,
+                    plan="free", api_key=_gen_api_key_early()
+                )
+                db.add(tg_user_early)
+                await db.flush()
+                await db.refresh(tg_user_early)
+                await db.commit()
+            break
+        except Exception as _early_err:
+            logger.warning(f"Telegram early-user lookup attempt {_early_attempt+1} failed: {_early_err}")
+            await db.rollback()
+            if _early_attempt == 2:
+                tg_user_early = None
+            else:
+                await asyncio.sleep(0.4)
+
+    _raw_text_early = (msg.get("text") or "").strip()
+    _is_callback_early = bool(msg.get("is_callback"))
+
+    # Admin unlock: "/admin <SECRET>" grants this Telegram account permanent,
+    # unmetered access. Never counted toward quota, never rate-limited.
+    if _raw_text_early.startswith("/admin"):
+        _parts = _raw_text_early.split(maxsplit=1)
+        _code = _parts[1].strip() if len(_parts) > 1 else ""
+        _admin_secret = (settings.STEW_ADMIN_SECRET or os.environ.get("STEW_ADMIN_SECRET", "")).strip()
+        if tg_user_early and _admin_secret and _code == _admin_secret:
+            tg_user_early.plan = "owner"
+            await db.flush()
+            await db.commit()
+            await bot.send_message(chat_id, "🔓 Admin access unlocked. This account now has unlimited, unmetered access to S.T.E.W forever.")
+        else:
+            await bot.send_message(chat_id, "Invalid admin code.")
+        return {"ok": True}
+
+    # Free/meta commands never cost quota — only real work does.
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users")
+    _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
+
+    if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
+        _allowed_early, _used_early, _limit_early = await _check_quota(tg_user_early, db)
+        if not _allowed_early:
+            _upgrade_kb = [
+                [{"text": f"💎 Upgrade — Pro ₦{settings.PLAN_PRICES['pro']:,}", "callback_data": "menu_upgrade_pro"}],
+                [{"text": f"🏢 Upgrade — Business ₦{settings.PLAN_PRICES['business']:,}", "callback_data": "menu_upgrade_business"}],
+            ]
+            await bot.send_inline_keyboard(
+                chat_id,
+                f"⚠️ You've reached your free monthly limit ({_used_early}/{_limit_early} messages).\n\n"
+                f"Upgrade to keep using S.T.E.W without interruption:\n\n"
+                f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages\n"
+                f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages\n\n"
+                f"Or type /upgrade any time to see plans again.",
+                _upgrade_kb,
+            )
+            return {"ok": True}
+        # Count this message against the free-tier quota (own DB session, fire-and-forget).
+        asyncio.create_task(_log_call(db, tg_user_early.id, "/telegram/message", "POST", 0, 200))
+
     # ── HANDLE INCOMING PHOTOS (Vision-first, OCR fallback) ────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
         await bot.send_chat_action(chat_id, "typing")
@@ -3031,6 +3114,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "menu_tools": "tools",
             "menu_clear": "clear",
             "menu_help": "help",
+            "menu_upgrade_pro": "upgrade_pro",
+            "menu_upgrade_business": "upgrade_business",
         }
         action = callback_map.get(callback_data, "")
         if action == "students":
@@ -3069,6 +3154,72 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Send photos/PDFs for OCR, voice notes for transcription"
             )
             await bot.send_message(chat_id, help_text)
+        elif action in ("upgrade_pro", "upgrade_business"):
+            _plan = "pro" if action == "upgrade_pro" else "business"
+            try:
+                _pay = initialize_payment(
+                    email=tg_user.email if 'tg_user' in dir() else tg_user_early.email,
+                    amount_kobo=settings.PLAN_PRICES[_plan] * 100,
+                    plan=_plan,
+                    metadata={"user_id": (tg_user.id if 'tg_user' in dir() else tg_user_early.id), "plan": _plan},
+                )
+                await bot.send_message(
+                    chat_id,
+                    f"Complete your {_plan.title()} upgrade (₦{settings.PLAN_PRICES[_plan]:,}) here:\n\n"
+                    f"{_pay['authorization_url']}\n\n"
+                    f"Your plan upgrades automatically the moment payment is confirmed.",
+                )
+            except Exception as _pay_err:
+                logger.error(f"Telegram upgrade payment init failed: {_pay_err}")
+                await bot.send_message(chat_id, "Couldn't start the payment right now. Please try /upgrade again in a moment.")
+        return {"ok": True}
+
+    # /upgrade — show plan options with live Paystack checkout links
+    if user_text.startswith("/upgrade"):
+        _kb = [
+            [{"text": f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo", "callback_data": "menu_upgrade_pro"}],
+            [{"text": f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo", "callback_data": "menu_upgrade_business"}],
+        ]
+        await bot.send_inline_keyboard(
+            chat_id,
+            f"Choose a plan:\n\n"
+            f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
+            f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
+            f"Tap a plan to get your secure Paystack payment link.",
+            _kb,
+        )
+        return {"ok": True}
+
+    # /usage — show current plan + how much of the free tier has been used
+    if user_text.startswith("/usage"):
+        _allowed_u, _used_u, _limit_u = await _check_quota(tg_user, db)
+        if tg_user.plan == "owner":
+            await bot.send_message(chat_id, "Plan: Owner (Admin)\nUsage: Unlimited — no limits apply to this account.")
+        else:
+            await bot.send_message(
+                chat_id,
+                f"Plan: {tg_user.plan.title()}\n"
+                f"Used this month: {_used_u:,} / {_limit_u:,} messages\n"
+                f"{'✅ You have quota remaining.' if _allowed_u else '⚠️ Limit reached — type /upgrade.'}",
+            )
+        return {"ok": True}
+
+    # /plan and /pricing — show all plans
+    if user_text.startswith("/plan"):
+        await bot.send_message(
+            chat_id,
+            "S.T.E.W Plans\n\n"
+            f"Free — ₦0 — {settings.PLAN_CALL_LIMITS['free']:,} messages/month\n"
+            f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
+            f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
+            "Type /upgrade to pay with Paystack.",
+        )
+        return {"ok": True}
+
+    # /users — show the live total user count
+    if user_text.startswith("/users"):
+        _count_u = await _get_telegram_user_count(db)
+        await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
         return {"ok": True}
 
     # Handle /start command with inline menu
@@ -3087,8 +3238,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 {"text": "Help", "callback_data": "menu_help"},
             ],
         ]
+        _tg_count_start = await _get_telegram_user_count(db)
         welcome = (
             f"Hello {username}! I'm S.T.E.W.\n\n"
+            f"👥 {_tg_count_start:,} people are using S.T.E.W.\n\n"
             "I help students, lecturers, and companies get things done.\n\n"
             "Tap a button to see what I can do:"
         )
@@ -3111,7 +3264,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 {"text": "Help", "callback_data": "menu_help"},
             ],
         ]
-        await bot.send_inline_keyboard(chat_id, "Main Menu - Tap a category:", keyboard)
+        _tg_count_menu = await _get_telegram_user_count(db)
+        await bot.send_inline_keyboard(chat_id, f"Main Menu - Tap a category:\n👥 {_tg_count_menu:,} users", keyboard)
         return {"ok": True}
 
     # Handle /help command

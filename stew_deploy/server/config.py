@@ -78,7 +78,8 @@ class Settings(BaseSettings):
 
     @property
     def PLAN_CALL_LIMITS(self) -> dict:
-        return {"free": 1500, "pro": 10000, "business": 100000, "enterprise": 50000}
+        # "owner" = admin-unlocked Telegram accounts (see /admin <code>) — unmetered.
+        return {"free": 1500, "pro": 10000, "business": 100000, "enterprise": 50000, "owner": 999999999}
 
     # Fine-tune preset system prompts per persona
     @property
