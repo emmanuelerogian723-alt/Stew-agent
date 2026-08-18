@@ -140,6 +140,22 @@ class SecurityEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class FeatureRequest(Base):
+    """Tracks feature requests from Telegram users — what they want Stew to do."""
+    __tablename__ = "feature_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    telegram_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    feature_text: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(50), default="general", nullable=True)  # ai, document, creative, productivity, integration, other
+    votes: Mapped[int] = mapped_column(Integer, default=1, nullable=False)  # vote count (starts at 1 for the requester)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending, in_progress, done, rejected
+    voter_ids: Mapped[list] = mapped_column(JSON, default=list)  # list of telegram user IDs who voted
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class UserMemory(Base):
     """Persistent key-fact memory stored in PostgreSQL — survives Render restarts."""
     __tablename__ = "user_memories"

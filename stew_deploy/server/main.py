@@ -39,7 +39,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory
+from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -958,6 +958,57 @@ async def security_dashboard(api_key: str, db: AsyncSession = Depends(get_db)):
         if not user or user.plan not in ("enterprise",):
             raise HTTPException(403, "Admin access required")
     return await get_security_dashboard(db)
+
+
+@app.get("/features/requests")
+async def list_feature_requests(api_key: str, status: str = "pending", db: AsyncSession = Depends(get_db)):
+    """Admin endpoint — list all feature requests. Requires admin API key."""
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        user = await _safe_get_user(api_key, db)
+        if not user or user.plan not in ("owner", "enterprise"):
+            raise HTTPException(403, "Admin access required")
+
+    result = await db.execute(
+        select(FeatureRequest)
+        .where(FeatureRequest.status == status)
+        .order_by(FeatureRequest.votes.desc(), FeatureRequest.created_at.desc())
+        .limit(100)
+    )
+    features = result.scalars().all()
+    return {
+        "count": len(features),
+        "features": [
+            {
+                "id": f.id,
+                "feature_text": f.feature_text,
+                "category": f.category,
+                "votes": f.votes,
+                "status": f.status,
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+                "telegram_user_id": f.telegram_user_id,
+            }
+            for f in features
+        ],
+    }
+
+
+@app.post("/features/{feature_id}/status")
+async def update_feature_status(feature_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Admin endpoint — update a feature request's status."""
+    api_key = body.get("api_key", "")
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        user = await _safe_get_user(api_key, db)
+        if not user or user.plan not in ("owner", "enterprise"):
+            raise HTTPException(403, "Admin access required")
+
+    result = await db.execute(select(FeatureRequest).where(FeatureRequest.id == feature_id))
+    fr = result.scalar_one_or_none()
+    if not fr:
+        raise HTTPException(404, "Feature request not found")
+
+    fr.status = body.get("status", fr.status)
+    await db.flush()
+    return {"success": True, "feature_id": feature_id, "status": fr.status}
 
 
 @app.post("/security/fingerprint")
@@ -3222,6 +3273,134 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
         return {"ok": True}
 
+    # ── FEATURE REQUEST SYSTEM ──────────────────────────────────────────────
+    # /features — show top feature requests (checked BEFORE /feature to avoid prefix clash)
+    if user_text.startswith("/features"):
+        # Get top 10 most-voted pending features
+        fr_result = await db.execute(
+            select(FeatureRequest)
+            .where(FeatureRequest.status == "pending")
+            .order_by(FeatureRequest.votes.desc(), FeatureRequest.created_at.desc())
+            .limit(10)
+        )
+        features = fr_result.scalars().all()
+
+        if not features:
+            await bot.send_message(chat_id, "No feature requests yet! Be the first — type /feature <what you want Stew to do>")
+            return {"ok": True}
+
+        lines = ["🔥 *Top Feature Requests*\n"]
+        for i, f in enumerate(features, 1):
+            _emoji = {"creative": "🎨", "document": "📄", "image": "🖼️", "language": "🌍", "developer": "💻", "productivity": "⚡", "integration": "🔌", "general": "💡"}.get(f.category, "💡")
+            _short = f.feature_text[:60] + ("..." if len(f.feature_text) > 60 else "")
+            lines.append(f"{i}. {_emoji} ({f.votes} votes) {_short}\n   /vote #{f.id[:8]}")
+
+        lines.append(f"\n💡 Submit yours: /feature <description>")
+        await bot.send_message(chat_id, "\n".join(lines))
+        return {"ok": True}
+
+    # /vote #<id> — vote for a feature request
+    if user_text.startswith("/vote"):
+        vote_target = user_text[5:].strip()
+        if not vote_target:
+            await bot.send_message(chat_id, "Vote for a feature! Example: /vote #ab12cd34\n\nType /features to see all requests.")
+            return {"ok": True}
+
+        # Strip the # if present
+        vote_target = vote_target.lstrip("#")
+
+        # Find by ID prefix
+        fr_result = await db.execute(
+            select(FeatureRequest).where(FeatureRequest.id.like(f"{vote_target}%"))
+        )
+        fr = fr_result.scalar_one_or_none()
+
+        if not fr:
+            await bot.send_message(chat_id, "Feature not found. Type /features to see all requests.")
+            return {"ok": True}
+
+        if str(user_id) in fr.voter_ids:
+            await bot.send_message(chat_id, f"You already voted for this one! ({fr.votes} total votes)")
+            return {"ok": True}
+
+        fr.votes += 1
+        fr.voter_ids.append(str(user_id))
+        await db.flush()
+        await db.commit()
+
+        await bot.send_message(
+            chat_id,
+            f"👍 Voted! This feature now has {fr.votes} votes.\n\n"
+            f"Feature: \"{fr.feature_text[:80]}\"",
+        )
+        return {"ok": True}
+
+    # /feature <description> — submit a feature request (checked AFTER /features and /vote)
+    if user_text.startswith("/feature"):
+        feature_desc = user_text[8:].strip()
+        if not feature_desc or len(feature_desc) < 5:
+            await bot.send_message(chat_id, "Tell me what feature you want!\n\nExample: /feature I want Stew to generate PowerPoint slides from text")
+            return {"ok": True}
+
+        # Category auto-detection
+        _feat_lower = feature_desc.lower()
+        if any(w in _feat_lower for w in ["song", "music", "audio", "voice"]):
+            _cat = "creative"
+        elif any(w in _feat_lower for w in ["pdf", "docx", "xlsx", "pptx", "document", "file"]):
+            _cat = "document"
+        elif any(w in _feat_lower for w in ["image", "picture", "photo", "draw", "logo"]):
+            _cat = "image"
+        elif any(w in _feat_lower for w in ["translate", "language", "yoruba", "igbo", "hausa", "french"]):
+            _cat = "language"
+        elif any(w in _feat_lower for w in ["code", "program", "python", "javascript", "api"]):
+            _cat = "developer"
+        elif any(w in _feat_lower for w in ["reminder", "schedule", "calendar", "automate", "task"]):
+            _cat = "productivity"
+        elif any(w in _feat_lower for w in ["whatsapp", "telegram", "email", "slack", "integration"]):
+            _cat = "integration"
+        else:
+            _cat = "general"
+
+        # Check for duplicates (same feature text by same user)
+        existing = await db.execute(
+            select(FeatureRequest).where(
+                FeatureRequest.telegram_user_id == str(user_id),
+                FeatureRequest.feature_text.ilike(f"%{feature_desc[:50]}%")
+            ).limit(1)
+        )
+        existing_fr = existing.scalar_one_or_none()
+        if existing_fr:
+            await bot.send_message(chat_id, f"You already requested something similar (Status: {existing_fr.status}). I'll merge your vote! 👍")
+            existing_fr.votes += 1
+            if str(user_id) not in existing_fr.voter_ids:
+                existing_fr.voter_ids.append(str(user_id))
+            await db.flush()
+            await db.commit()
+            return {"ok": True}
+
+        # Create new feature request
+        fr = FeatureRequest(
+            user_id=tg_user.id,
+            telegram_user_id=str(user_id),
+            feature_text=feature_desc[:500],
+            category=_cat,
+            votes=1,
+            voter_ids=[str(user_id)],
+        )
+        db.add(fr)
+        await db.flush()
+        await db.commit()
+
+        await bot.send_message(
+            chat_id,
+            f"✅ Feature request logged! (ID: #{fr.id[:8]})\n\n"
+            f"Category: {_cat}\n"
+            f"Request: \"{feature_desc[:100]}\"\n\n"
+            f"Others can vote for this with: /vote #{fr.id[:8]}\n"
+            f"Type /features to see all requested features.",
+        )
+        return {"ok": True}
+
     # Handle /start command with inline menu
     if user_text.startswith("/start"):
         keyboard = [
@@ -3304,7 +3483,12 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "Images: generate image of...\n"
             "Browse: browse https://...\n"
             "Send photos/PDFs for OCR\n"
-            "Send voice notes for transcription"
+            "Send voice notes for transcription\n\n"
+            "Community:\n"
+            "24. /feature <desc> - Request a feature\n"
+            "25. /features - See top requests\n"
+            "26. /vote #<id> - Vote for a feature\n"
+            "27. /users - See user count"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
