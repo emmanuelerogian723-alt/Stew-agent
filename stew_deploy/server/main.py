@@ -29,6 +29,7 @@ from server.auth import (
 )
 from server.config import get_settings
 from server.database import get_db, init_db
+from server.video_tools import clip_video, create_video, smart_clips
 from server.document_generator import (
     generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx,
 )
@@ -2849,7 +2850,7 @@ async def _transcribe_audio_bytes(file_bytes: bytes, file_name: str = "audio.ogg
                         "https://api.groq.com/openai/v1/audio/transcriptions",
                         headers={"Authorization": f"Bearer {groq_key}"},
                         files={"file": (f"audio.{ext}", audio_file, mime)},
-                        data={"model": "whisper-large-v3"},
+                        data={"model": "whisper-large-v3-turbo"},
                         timeout=90,
                     )
                 if resp.status_code == 200:
@@ -3114,7 +3115,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
@@ -3746,10 +3747,14 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "40. /voice - Toggle voice note replies 🔊\n"
             "41. /voice list - See available voices\n"
             "42. /voice <name> - Set your voice (e.g. /voice nigeria)\n\n"
+            "Video Studio:\n"
+            "43. /clip <url> <start> <dur> - Clip a video segment\n"
+            "44. /smartclip <url> - AI smart clips (Opus Clips style)\n"
+            "45. /createvideo <topic> - AI video with images + voiceover\n\n"
             "Account:\n"
-            "43. /usage - Check your usage quota\n"
-            "44. /plan - View pricing plans\n"
-            "45. /upgrade - Upgrade to Pro"
+            "46. /usage - Check your usage quota\n"
+            "47. /plan - View pricing plans\n"
+            "48. /upgrade - Upgrade to Pro"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
@@ -4778,6 +4783,246 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
 
     # ── /clear COMMAND ──────────────────────────────────────────────────────────
+    # /clip — Clip a segment from a video URL
+    if user_text.startswith("/clip"):
+        parts = user_text.strip().split(None, 1)
+        if len(parts) < 2:
+            await bot.send_message(chat_id,
+                "Video Clipper\n\n"
+                "Clip a segment from any video URL (YouTube, mp4, etc.)\n\n"
+                "Usage: /clip <url> <start> <duration>\n\n"
+                "Examples:\n"
+                "1. /clip https://youtube.com/watch?v=xxx 00:01:30 30\n"
+                "2. /clip https://example.com/video.mp4 0:30 15\n"
+                "3. /clip https://youtube.com/watch?v=xxx 0:45 20 wide\n\n"
+                "Start: MM:SS or HH:MM:SS | Duration: seconds (max 180)\n"
+                "Add 'wide' for landscape, 'square' for 1:1"
+            )
+            return
+
+        args = parts[1].split()
+        video_url = args[0] if args else ""
+        start_time = "00:00:00"
+        duration = 30
+        aspect_ratio = "9:16"
+
+        if len(args) > 1:
+            start_time = args[1]
+        if len(args) > 2:
+            try:
+                duration = int(args[2])
+            except ValueError:
+                pass
+        if "wide" in args or "landscape" in args:
+            aspect_ratio = "16:9"
+        if "square" in args:
+            aspect_ratio = "1:1"
+
+        if not video_url.startswith("http"):
+            await bot.send_message(chat_id, "Please provide a valid video URL starting with http")
+            return
+
+        allowed, used, limit = await _check_quota(tg_user, db)
+        if not allowed:
+            await bot.send_message(chat_id,
+                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+            return
+
+        await bot.send_chat_action(chat_id, "upload_video")
+        await bot.send_message(chat_id,
+            f"Clipping video...\n"
+            f"Start: {start_time} | Duration: {duration}s | Format: {aspect_ratio}\n"
+            f"This may take 30-60 seconds...")
+
+        try:
+            import base64 as _b64
+            loop = asyncio.get_event_loop()
+            result = await loop.run_until_complete(
+                clip_video(video_url, start_time, duration, True, aspect_ratio)
+            )
+            if result.get("success") and result.get("file"):
+                video_bytes = _b64.b64decode(result["file"])
+                caption = f"Stew Clip | {duration}s | {aspect_ratio}"
+                if result.get("captions_added"):
+                    caption += " | Captions burned in"
+                await bot.send_video(chat_id, video_bytes, caption=caption)
+            else:
+                await bot.send_message(chat_id, f"Clipping failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"Clip command error: {e}")
+            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return
+
+    # /smartclip — AI smart clips (Opus Clips style)
+    if user_text.startswith("/smartclip"):
+        parts = user_text.strip().split(None, 1)
+        if len(parts) < 2:
+            await bot.send_message(chat_id,
+                "AI Smart Clips (Opus Clips style)\n\n"
+                "Downloads a video, transcribes it, finds the most interesting moments, "
+                "and creates short clips with burned-in captions.\n\n"
+                "Usage: /smartclip <url> [num_clips] [duration] [format]\n\n"
+                "Examples:\n"
+                "1. /smartclip https://youtube.com/watch?v=xxx\n"
+                "2. /smartclip https://youtube.com/watch?v=xxx 3 30\n"
+                "3. /smartclip https://youtube.com/watch?v=xxx 5 20 wide\n\n"
+                "Defaults: 3 clips, 30s each, vertical 9:16\n"
+                "Free tier: max 2 clips | Pro: up to 5"
+            )
+            return
+
+        args = parts[1].split()
+        video_url = args[0] if args else ""
+        num_clips = 3
+        clip_duration = 30
+        aspect_ratio = "9:16"
+
+        if len(args) > 1:
+            try:
+                num_clips = int(args[1])
+            except ValueError:
+                pass
+        if len(args) > 2:
+            try:
+                clip_duration = int(args[2])
+            except ValueError:
+                pass
+        if "wide" in args or "landscape" in args:
+            aspect_ratio = "16:9"
+        if "square" in args:
+            aspect_ratio = "1:1"
+
+        if tg_user.plan == "free":
+            num_clips = min(num_clips, 2)
+
+        if not video_url.startswith("http"):
+            await bot.send_message(chat_id, "Please provide a valid video URL")
+            return
+
+        allowed, used, limit = await _check_quota(tg_user, db)
+        if not allowed:
+            await bot.send_message(chat_id,
+                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+            return
+
+        await bot.send_chat_action(chat_id, "upload_video")
+        await bot.send_message(chat_id,
+            f"Creating {num_clips} smart clips...\n"
+            f"AI finds the best moments and adds captions.\n"
+            f"May take 1-3 minutes...")
+
+        try:
+            import base64 as _b64
+            loop = asyncio.get_event_loop()
+            result = await loop.run_until_complete(
+                smart_clips(video_url, num_clips, clip_duration, aspect_ratio)
+            )
+            if result.get("success") and result.get("clips"):
+                clips = result["clips"]
+                await bot.send_message(chat_id,
+                    f"Created {len(clips)} clips from {result.get('video_duration', 0):.0f}s video!")
+                for clip in clips:
+                    if clip.get("file"):
+                        video_bytes = _b64.b64decode(clip["file"])
+                        caption = f"Smart Clip | {clip.get('start_time', '?')} | {clip.get('duration', 0):.0f}s"
+                        if clip.get("preview_text"):
+                            caption += f"\n{clip['preview_text'][:80]}"
+                        await bot.send_video(chat_id, video_bytes, caption=caption)
+            else:
+                await bot.send_message(chat_id, f"Smart clipping failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"Smart clip error: {e}")
+            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return
+
+    # /createvideo — Create AI video from images + voiceover
+    if user_text.startswith("/createvideo"):
+        parts = user_text.strip().split(None, 1)
+        if len(parts) < 2:
+            await bot.send_message(chat_id,
+                "AI Video Creator\n\n"
+                "Create a video with AI-generated images and voiceover narration.\n\n"
+                "Usage: /createvideo <topic>\n\n"
+                "Examples:\n"
+                "1. /createvideo The future of AI in Africa\n"
+                "2. /createvideo 5 tips for studying effectively\n"
+                "3. /createvideo How solar energy works\n\n"
+                "Stew will:\n"
+                "1. Write a script with scenes\n"
+                "2. Generate AI images for each scene\n"
+                "3. Add voiceover narration\n"
+                "4. Combine into a video\n\n"
+                "Free tier: up to 3 scenes | Pro: up to 8 scenes"
+            )
+            return
+
+        topic = parts[1].strip()
+        max_scenes = 3 if tg_user.plan == "free" else 8
+
+        allowed, used, limit = await _check_quota(tg_user, db)
+        if not allowed:
+            await bot.send_message(chat_id,
+                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+            return
+
+        await bot.send_chat_action(chat_id, "upload_video")
+        await bot.send_message(chat_id,
+            f"Creating AI video about: {topic[:100]}\n"
+            f"This may take 2-5 minutes. Stew is writing the script, "
+            f"generating images, recording voiceover, and combining everything...")
+
+        try:
+            import base64 as _b64
+            import re as _re2
+            import json as _json2
+
+            # Step 1: Generate scenes with LLM
+            system_prompt = (
+                "You are a video script writer. Create a short video script about the given topic. "
+                f"Return ONLY a JSON array of {max_scenes} scenes. "
+                "Each scene has 'image_prompt' (a detailed description for AI image generation) "
+                "and 'narration' (the voiceover text for that scene, max 2 sentences). "
+                "Keep narrations concise (under 150 characters each). "
+                "Make images visually striking and professional."
+            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Create a {max_scenes}-scene video about: {topic}"},
+            ]
+            llm_result = await asyncio.to_thread(llm.chat, messages)
+            raw = llm_result["content"]
+
+            json_match = _re2.search(r'\[.*\]', raw, _re2.DOTALL)
+            if json_match:
+                scenes = _json2.loads(json_match.group())
+            else:
+                scenes = [{
+                    "image_prompt": f"Professional illustration about {topic}",
+                    "narration": f"Let's explore {topic}.",
+                }]
+
+            voice = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
+
+            # Step 2: Create the video
+            loop = asyncio.get_event_loop()
+            result = await loop.run_until_complete(
+                create_video(topic, scenes, voice)
+            )
+
+            if result.get("success") and result.get("file"):
+                video_bytes = _b64.b64decode(result["file"])
+                caption = (
+                    f"AI Video: {topic[:80]}\n"
+                    f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.0f}s"
+                )
+                await bot.send_video(chat_id, video_bytes, caption=caption)
+            else:
+                await bot.send_message(chat_id, f"Video creation failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"Create video error: {e}")
+            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return
+
     # /voice — Toggle voice note replies
     if user_text.startswith("/voice"):
         parts = user_text.strip().split(maxsplit=1)

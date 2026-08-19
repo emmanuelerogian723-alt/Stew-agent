@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-eng \
     libxml2 libxslt1.1 \
     libglib2.0-0 \
+    ffmpeg \
+    fonts-dejavu-core fonts-liberation \
     && apt-get clean
 
 WORKDIR /app
@@ -13,7 +15,8 @@ WORKDIR /app
 # Install Python dependencies first (layer cache)
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir yt-dlp
 
 # Copy application code
 COPY server/ ./server/

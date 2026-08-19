@@ -175,6 +175,16 @@ class TelegramBot:
             )
             return resp.json()
 
+    async def send_video(self, chat_id: int, video_bytes: bytes, caption: str = "") -> dict:
+        """Send a video message (mp4 format)."""
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{self.base}/sendVideo",
+                data={"chat_id": str(chat_id), "caption": caption[:1024]},
+                files={"video": ("video.mp4", video_bytes, "video/mp4")},
+            )
+            return resp.json()
+
     async def send_voice(self, chat_id: int, audio_bytes: bytes, caption: str = "") -> dict:
         """Send a voice message (OGG format)."""
         async with httpx.AsyncClient(timeout=60) as client:

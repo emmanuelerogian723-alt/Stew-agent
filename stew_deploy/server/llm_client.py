@@ -37,9 +37,9 @@ PROVIDER_MODELS = {
 
 # Fallback chain for Groq if primary fails
 GROQ_FALLBACKS = [
-    "openai/gpt-oss-120b",        # primary — replaced llama-3.3-70b
-    "openai/gpt-oss-20b",         # fast fallback — replaced llama-4-scout
-    "llama-3.1-8b-instant",      # emergency fallback (still alive for now)
+    "openai/gpt-oss-120b",        # primary — best Groq model
+    "openai/gpt-oss-20b",         # fast fallback
+    "qwen/qwen3.6-27b",          # reasoning model fallback
 ]
 
 
