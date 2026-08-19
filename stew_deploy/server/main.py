@@ -4853,10 +4853,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         try:
             import base64 as _b64
-            loop = asyncio.get_event_loop()
-            result = await loop.run_until_complete(
-                clip_video(video_url, start_time, duration, True, aspect_ratio)
-            )
+            result = await clip_video(video_url, start_time, duration, True, aspect_ratio)
             if result.get("success") and result.get("file"):
                 video_bytes = _b64.b64decode(result["file"])
                 caption = f"Stew Clip | {duration}s | {aspect_ratio}"
@@ -4930,10 +4927,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         try:
             import base64 as _b64
-            loop = asyncio.get_event_loop()
-            result = await loop.run_until_complete(
-                smart_clips(video_url, num_clips, clip_duration, aspect_ratio)
-            )
+            result = await smart_clips(video_url, num_clips, clip_duration, aspect_ratio)
             if result.get("success") and result.get("clips"):
                 clips = result["clips"]
                 await bot.send_message(chat_id,
@@ -5021,10 +5015,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             voice = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
 
             # Step 2: Create the video
-            loop = asyncio.get_event_loop()
-            result = await loop.run_until_complete(
-                create_video(topic, scenes, voice)
-            )
+            result = await create_video(topic, scenes, voice)
 
             if result.get("success") and result.get("file"):
                 video_bytes = _b64.b64decode(result["file"])
