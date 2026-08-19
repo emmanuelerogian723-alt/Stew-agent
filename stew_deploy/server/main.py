@@ -4860,6 +4860,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 if result.get("captions_added"):
                     caption += " | Captions burned in"
                 await bot.send_video(chat_id, video_bytes, caption=caption)
+                asyncio.create_task(_log_call(db, tg_user.id, "/telegram/clip", "POST", 0, 200))
             else:
                 await bot.send_message(chat_id, f"Clipping failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
@@ -4932,6 +4933,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 clips = result["clips"]
                 await bot.send_message(chat_id,
                     f"Created {len(clips)} clips from {result.get('video_duration', 0):.0f}s video!")
+                asyncio.create_task(_log_call(db, tg_user.id, "/telegram/smartclip", "POST", 0, 200))
                 for clip in clips:
                     if clip.get("file"):
                         video_bytes = _b64.b64decode(clip["file"])
@@ -5024,6 +5026,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.0f}s"
                 )
                 await bot.send_video(chat_id, video_bytes, caption=caption)
+                asyncio.create_task(_log_call(db, tg_user.id, "/telegram/createvideo", "POST", 0, 200))
             else:
                 await bot.send_message(chat_id, f"Video creation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
