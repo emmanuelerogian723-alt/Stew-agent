@@ -890,3 +890,318 @@ async def smart_clips(
             shutil.rmtree(tmp_dir)
         except Exception:
             pass
+
+
+# ─── AI Text-to-Video (Real video generation via Hugging Face Spaces) ─────────
+
+async def generate_ai_video(
+    prompt: str,
+    duration: float = 2.0,
+    height: int = 512,
+    width: int = 704,
+    negative_prompt: str = "worst quality, inconsistent motion, blurry, jittery, distorted",
+    add_narration: bool = False,
+    narration_text: str = "",
+    voice: str = "en-US-AriaNeural",
+) -> dict:
+    """
+    Generate a REAL AI video from a text prompt using LTX-Video on Hugging Face Spaces.
+    
+    This uses the free Gradio API to call the LTX-Video model hosted on HF Spaces.
+    The video is generated on HF's GPU servers — no local GPU needed.
+    
+    Args:
+        prompt: Text description of the video to generate
+        duration: Video duration in seconds (1-5)
+        height: Video height in pixels (256-1280)
+        width: Video width in pixels (256-1280)
+        negative_prompt: What to avoid in the video
+        add_narration: If True, add TTS voiceover to the video
+        narration_text: Text to speak for narration (uses prompt if empty)
+        voice: edge-tts voice name for narration
+    
+    Returns:
+        {"success": bool, "file": base64, "filename": str, ...}
+    """
+    import base64
+    from gradio_client import Client as GradioClient
+    
+    duration = min(max(duration, 1.0), 5.0)
+    height = min(max(height, 256), 768)
+    width = min(max(width, 256), 1280)
+    
+    tmp_dir = tempfile.mkdtemp(prefix="stew_aivideo_")
+    try:
+        # Step 1: Generate AI video using LTX-Video on Hugging Face Spaces
+        logger.info(f"Generating AI video: {prompt[:100]}...")
+        
+        def _generate():
+            client = GradioClient("Lightricks/ltx-video-distilled", verbose=False)
+            result = client.predict(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                input_image_filepath=None,
+                input_video_filepath=None,
+                height_ui=height,
+                width_ui=width,
+                mode="text-to-video",
+                duration_ui=duration,
+                ui_frames_to_use=9,
+                seed_ui=42,
+                randomize_seed=True,
+                ui_guidance_scale=1,
+                improve_texture_flag=True,
+                api_name="/text_to_video",
+            )
+            return result
+        
+        result = await asyncio.to_thread(_generate)
+        
+        if not result or not isinstance(result, tuple):
+            return {"success": False, "error": "Video generation returned no result"}
+        
+        video_data = result[0]
+        if isinstance(video_data, dict) and "video" in video_data:
+            video_path = video_data["video"]
+        else:
+            return {"success": False, "error": "Unexpected result format from LTX-Video"}
+        
+        if not os.path.exists(video_path) or os.path.getsize(video_path) < 1000:
+            return {"success": False, "error": "Generated video file is missing or too small"}
+        
+        # Step 2: Copy to our temp dir for processing
+        raw_video = os.path.join(tmp_dir, "ai_raw.mp4")
+        import shutil
+        shutil.copy(video_path, raw_video)
+        
+        video_duration = _get_video_duration(raw_video)
+        logger.info(f"AI video generated: {os.path.getsize(raw_video)/1024:.0f}KB, {video_duration:.1f}s")
+        
+        # Step 3: Optionally add narration (TTS voiceover)
+        final_path = raw_video
+        if add_narration and narration_text:
+            try:
+                import edge_tts
+                audio_path = os.path.join(tmp_dir, "narration.mp3")
+                communicate = edge_tts.Communicate(narration_text or prompt, voice)
+                audio_chunks = []
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_chunks.append(chunk["data"])
+                if audio_chunks:
+                    with open(audio_path, "wb") as f:
+                        f.write(b"".join(audio_chunks))
+                    
+                    # Merge video + audio
+                    narrated_path = os.path.join(tmp_dir, "narrated.mp4")
+                    ok, err = _run_ffmpeg([
+                        "-i", raw_video,
+                        "-i", audio_path,
+                        "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "128k",
+                        "-shortest",
+                        "-movflags", "+faststart",
+                        narrated_path,
+                    ], timeout=30)
+                    if ok and os.path.exists(narrated_path):
+                        final_path = narrated_path
+            except Exception as e:
+                logger.warning(f"Narration failed (non-fatal): {e}")
+        
+        # Step 4: Ensure it fits Telegram's size limit
+        final_path = _ensure_telegram_safe_size(final_path, tmp_dir)
+        
+        # Step 5: Read and encode
+        with open(final_path, "rb") as f:
+            video_bytes = f.read()
+        
+        if len(video_bytes) < 500:
+            return {"success": False, "error": "Output video too small"}
+        
+        b64 = base64.b64encode(video_bytes).decode()
+        filename = f"stew_aivideo_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp4"
+        
+        return {
+            "success": True,
+            "file": b64,
+            "filename": filename,
+            "mime_type": "video/mp4",
+            "size_bytes": len(video_bytes),
+            "duration": round(video_duration, 1),
+            "prompt": prompt[:200],
+            "model": "LTX-Video",
+            "narration_added": add_narration and narration_text,
+        }
+        
+    except Exception as e:
+        logger.error(f"AI video generation error: {e}")
+        return {"success": False, "error": str(e)[:300]}
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+
+
+async def generate_ai_video_with_narration(
+    topic: str,
+    scenes: list[dict],
+    voice: str = "en-US-AriaNeural",
+    clip_duration: float = 2.0,
+) -> dict:
+    """
+    Generate a multi-scene AI video with narration.
+    Each scene generates a real AI video clip + TTS narration, then stitches them together.
+    
+    Args:
+        topic: Overall topic/title
+        scenes: List of {"video_prompt": str, "narration": str} dicts
+        voice: edge-tts voice name
+        clip_duration: Duration of each AI video clip in seconds (1-5)
+    
+    Returns:
+        {"success": bool, "file": base64, ...}
+    """
+    import base64
+    from gradio_client import Client as GradioClient
+    
+    clip_duration = min(max(clip_duration, 1.0), 5.0)
+    tmp_dir = tempfile.mkdtemp(prefix="stew_aivideo_multi_")
+    
+    try:
+        scene_files = []
+        total_duration = 0
+        
+        for idx, scene in enumerate(scenes):
+            video_prompt = scene.get("video_prompt", scene.get("image_prompt", f"Scene {idx+1} for {topic}"))
+            narration = scene.get("narration", "")
+            
+            logger.info(f"Generating AI video scene {idx+1}/{len(scenes)}: {video_prompt[:80]}...")
+            
+            # Generate AI video clip
+            def _gen_clip(prompt=video_prompt):
+                client = GradioClient("Lightricks/ltx-video-distilled", verbose=False)
+                result = client.predict(
+                    prompt=prompt,
+                    negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
+                    input_image_filepath=None,
+                    input_video_filepath=None,
+                    height_ui=512,
+                    width_ui=704,
+                    mode="text-to-video",
+                    duration_ui=clip_duration,
+                    ui_frames_to_use=9,
+                    seed_ui=42 + idx,
+                    randomize_seed=True,
+                    ui_guidance_scale=1,
+                    improve_texture_flag=True,
+                    api_name="/text_to_video",
+                )
+                return result
+            
+            try:
+                result = await asyncio.to_thread(_gen_clip)
+                video_data = result[0] if isinstance(result, tuple) else None
+                if not video_data or not isinstance(video_data, dict) or "video" not in video_data:
+                    logger.warning(f"Scene {idx}: no video returned, skipping")
+                    continue
+                
+                raw_clip = os.path.join(tmp_dir, f"clip_{idx}.mp4")
+                import shutil
+                shutil.copy(video_data["video"], raw_clip)
+                
+                # Add narration audio if provided
+                if narration:
+                    try:
+                        import edge_tts
+                        audio_path = os.path.join(tmp_dir, f"audio_{idx}.mp3")
+                        communicate = edge_tts.Communicate(narration, voice)
+                        audio_chunks = []
+                        async for chunk in communicate.stream():
+                            if chunk["type"] == "audio":
+                                audio_chunks.append(chunk["data"])
+                        if audio_chunks:
+                            with open(audio_path, "wb") as f:
+                                f.write(b"".join(audio_chunks))
+                            
+                            narrated_path = os.path.join(tmp_dir, f"narrated_{idx}.mp4")
+                            ok, err = _run_ffmpeg([
+                                "-i", raw_clip,
+                                "-i", audio_path,
+                                "-c:v", "copy",
+                                "-c:a", "aac", "-b:a", "128k",
+                                "-shortest",
+                                "-movflags", "+faststart",
+                                narrated_path,
+                            ], timeout=30)
+                            if ok and os.path.exists(narrated_path):
+                                raw_clip = narrated_path
+                    except Exception as e:
+                        logger.warning(f"Scene {idx} narration failed: {e}")
+                
+                clip_dur = _get_video_duration(raw_clip)
+                total_duration += clip_dur
+                scene_files.append(raw_clip)
+                
+            except Exception as e:
+                logger.warning(f"Scene {idx} generation failed: {e}")
+                continue
+        
+        if not scene_files:
+            return {"success": False, "error": "No AI video clips could be generated"}
+        
+        # Concatenate all clips
+        if len(scene_files) == 1:
+            final_path = scene_files[0]
+        else:
+            concat_path = os.path.join(tmp_dir, "concat.txt")
+            with open(concat_path, "w") as f:
+                for sf in scene_files:
+                    f.write(f"file '{sf}'\n")
+            
+            final_path = os.path.join(tmp_dir, "final.mp4")
+            ok, err = _run_ffmpeg([
+                "-f", "concat", "-safe", "0", "-i", concat_path,
+                "-c:v", "libx264", "-preset", "fast",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                final_path,
+            ], timeout=60)
+            if not ok:
+                return {"success": False, "error": f"Concatenation failed: {err}"}
+        
+        # Ensure Telegram-safe size
+        final_path = _ensure_telegram_safe_size(final_path, tmp_dir)
+        
+        with open(final_path, "rb") as f:
+            video_bytes = f.read()
+        
+        if len(video_bytes) < 1000:
+            return {"success": False, "error": "Output video too small"}
+        
+        b64 = base64.b64encode(video_bytes).decode()
+        clean_title = re.sub(r'[^a-zA-Z0-9_]', '_', topic)[:40]
+        filename = f"{clean_title}_aivideo_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp4"
+        
+        return {
+            "success": True,
+            "file": b64,
+            "filename": filename,
+            "mime_type": "video/mp4",
+            "size_bytes": len(video_bytes),
+            "scenes": len(scene_files),
+            "total_duration": round(total_duration, 1),
+            "voice": voice,
+            "model": "LTX-Video",
+        }
+        
+    except Exception as e:
+        logger.error(f"Multi-scene AI video error: {e}")
+        return {"success": False, "error": str(e)[:300]}
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass

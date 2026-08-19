@@ -29,7 +29,7 @@ from server.auth import (
 )
 from server.config import get_settings
 from server.database import get_db, init_db
-from server.video_tools import clip_video, create_video, smart_clips
+from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration
 from server.persistent_memory import (
     is_configured as supabase_configured,
     save_memory as supa_save_memory,
@@ -3192,7 +3192,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
@@ -5131,6 +5131,193 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"Video creation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error(f"Create video error: {e}")
+            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return
+
+    # /aivideo — Generate REAL AI video from text (using LTX-Video on Hugging Face Spaces)
+    if user_text.startswith("/aivideo"):
+        parts = user_text.strip().split(None, 1)
+        if len(parts) < 2:
+            await bot.send_message(chat_id,
+                "AI Video Generator (REAL text-to-video)\n\n"
+                "Generate actual AI video clips from a text prompt using LTX-Video.\n\n"
+                "Usage:\n"
+                "1. /aivideo A serene African sunset over a savanna\n"
+                "2. /aivideo A cat playing with a ball of yarn\n"
+                "3. /aivideo A drone shot of a futuristic city at night\n\n"
+                "Options:\n"
+                "  Add 'narrate' to include voiceover narration\n"
+                "  /aivideo narrate A drone shot of a futuristic city at night\n\n"
+                "Each clip: 2-5 seconds. Free tier: 3 clips/day. Pro: 10 clips/day.\n"
+                "Video is generated on Hugging Face's free GPU servers."
+            )
+            return
+
+        raw_args = parts[1].strip()
+        add_narration = False
+        if raw_args.lower().startswith("narrate "):
+            add_narration = True
+            raw_args = raw_args[7:].strip()
+        
+        prompt = raw_args
+        if not prompt:
+            await bot.send_message(chat_id, "Please provide a text prompt for the video.")
+            return
+
+        allowed, used, limit = await _check_quota(tg_user, db)
+        if not allowed:
+            await bot.send_message(chat_id,
+                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+            return
+
+        await bot.send_chat_action(chat_id, "upload_video")
+        await bot.send_message(chat_id,
+            f"Generating AI video...\n"
+            f"Prompt: {prompt[:100]}\n"
+            f"Model: LTX-Video (Hugging Face)\n"
+            f"This may take 10-30 seconds...")
+
+        try:
+            import base64 as _b64
+            narration_text = ""
+            if add_narration:
+                # Generate narration text from the prompt using LLM
+                try:
+                    llm = get_llm_client()
+                    narr_prompt = (
+                        f"Write a single sentence (max 15 words) of narration for a video about: {prompt}. "
+                        "Return ONLY the narration text, no quotes or labels."
+                    )
+                    narr_result = await asyncio.to_thread(llm.chat, [
+                        {"role": "user", "content": narr_prompt}
+                    ])
+                    narration_text = narr_result["content"].strip()
+                    await bot.send_message(chat_id, f"Narration: \"{narration_text}\"")
+                except Exception:
+                    narration_text = prompt
+
+            result = await generate_ai_video(
+                prompt=prompt,
+                duration=3.0,
+                add_narration=add_narration,
+                narration_text=narration_text,
+                voice=getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural",
+            )
+
+            if result.get("success") and result.get("file"):
+                video_bytes = _b64.b64decode(result["file"])
+                size_kb = len(video_bytes) / 1024
+                caption = f"AI Video | LTX-Video | {result.get('duration', 0):.1f}s | {size_kb:.0f}KB"
+                if result.get("narration_added"):
+                    caption += " | with narration"
+                await bot.send_message(chat_id, f"Sending AI video ({size_kb:.0f}KB)...")
+                send_result = await bot.send_video(chat_id, video_bytes, caption=caption)
+                if send_result.get("ok"):
+                    asyncio.create_task(_log_call(db, tg_user.id, "/telegram/aivideo", "POST", 0, 200))
+                else:
+                    err_msg = send_result.get("description", "Unknown error")
+                    await bot.send_message(chat_id, f"Video generated but couldn't send: {err_msg[:150]}")
+            else:
+                await bot.send_message(chat_id, f"AI video generation failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"AI video command error: {e}")
+            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return
+
+    # /aivideos — Generate multi-scene AI video with narration
+    if user_text.startswith("/aivideos"):
+        parts = user_text.strip().split(None, 1)
+        if len(parts) < 2:
+            await bot.send_message(chat_id,
+                "Multi-Scene AI Video (REAL text-to-video)\n\n"
+                "Generate a multi-scene video with REAL AI video clips + narration.\n\n"
+                "Usage: /aivideos <topic>\n\n"
+                "Examples:\n"
+                "1. /aivideos The future of renewable energy in Africa\n"
+                "2. /aivideos A day in the life of a Lagos entrepreneur\n\n"
+                "Stew will:\n"
+                "1. Write a script with scenes\n"
+                "2. Generate REAL AI video for each scene (LTX-Video)\n"
+                "3. Add voiceover narration\n"
+                "4. Combine into one video\n\n"
+                "Each scene takes ~10-20s to generate. 2 scenes for free, 5 for Pro.\n"
+                "Total time: 30-90 seconds."
+            )
+            return
+
+        topic = parts[1].strip()
+        max_scenes = 2 if tg_user.plan == "free" else 5
+
+        allowed, used, limit = await _check_quota(tg_user, db)
+        if not allowed:
+            await bot.send_message(chat_id,
+                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+            return
+
+        await bot.send_chat_action(chat_id, "upload_video")
+        await bot.send_message(chat_id,
+            f"Creating multi-scene AI video about: {topic[:80]}\n"
+            f"Scenes: {max_scenes} | Model: LTX-Video\n"
+            f"Each scene generates a real AI video clip + narration.\n"
+            f"Estimated time: {max_scenes * 20}s...")
+
+        try:
+            import base64 as _b64
+            import re as _re2
+            import json as _json2
+
+            # Step 1: Generate scenes with LLM
+            system_prompt = (
+                "You are a video script writer. Create a short video script about the given topic. "
+                f"Return ONLY a JSON array of {max_scenes} scenes. "
+                "Each scene has 'video_prompt' (a detailed description for AI VIDEO generation — describe motion, camera movement, lighting) "
+                "and 'narration' (the voiceover text for that scene, max 1 sentence under 100 characters). "
+                "Make video prompts cinematic and visually striking."
+            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Create a {max_scenes}-scene video about: {topic}"},
+            ]
+            llm = get_llm_client()
+            llm_result = await asyncio.to_thread(llm.chat, messages)
+            raw = llm_result["content"]
+
+            json_match = _re2.search(r'\[.*\]', raw, _re2.DOTALL)
+            if json_match:
+                scenes = _json2.loads(json_match.group())
+            else:
+                scenes = [{
+                    "video_prompt": f"Cinematic shot about {topic}",
+                    "narration": f"Let's explore {topic}.",
+                }]
+
+            voice = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
+
+            await bot.send_message(chat_id,
+                f"Script ready! {len(scenes)} scenes.\n"
+                f"Generating AI video clips (this is the slow part)...")
+
+            # Step 2: Generate multi-scene AI video
+            result = await generate_ai_video_with_narration(topic, scenes, voice, clip_duration=2.5)
+
+            if result.get("success") and result.get("file"):
+                video_bytes = _b64.b64decode(result["file"])
+                size_mb = len(video_bytes) / 1024 / 1024
+                caption = (
+                    f"AI Video: {topic[:60]}\n"
+                    f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.1f}s | {size_mb:.1f}MB | LTX-Video"
+                )
+                await bot.send_message(chat_id, f"Sending video ({size_mb:.1f}MB)...")
+                send_result = await bot.send_video(chat_id, video_bytes, caption=caption)
+                if send_result.get("ok"):
+                    asyncio.create_task(_log_call(db, tg_user.id, "/telegram/aivideos", "POST", 0, 200))
+                else:
+                    err_msg = send_result.get("description", "Unknown error")
+                    await bot.send_message(chat_id, f"Video created but couldn't send: {err_msg[:150]}")
+            else:
+                await bot.send_message(chat_id, f"AI video generation failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"Multi-scene AI video error: {e}")
             await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
         return
 
