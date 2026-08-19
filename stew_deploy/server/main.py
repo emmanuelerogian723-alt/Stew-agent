@@ -4915,18 +4915,25 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_message(chat_id,
             f"Clipping video...\n"
             f"Start: {start_time} | Duration: {duration}s | Format: {aspect_ratio}\n"
-            f"This may take 30-60 seconds...")
+            f"Step 1/3: Downloading video...")
 
         try:
             import base64 as _b64
             result = await clip_video(video_url, start_time, duration, True, aspect_ratio)
             if result.get("success") and result.get("file"):
                 video_bytes = _b64.b64decode(result["file"])
+                size_mb = len(video_bytes) / 1024 / 1024
                 caption = f"Stew Clip | {duration}s | {aspect_ratio}"
                 if result.get("captions_added"):
                     caption += " | Captions burned in"
-                await bot.send_video(chat_id, video_bytes, caption=caption)
-                asyncio.create_task(_log_call(db, tg_user.id, "/telegram/clip", "POST", 0, 200))
+                caption += f" | {size_mb:.1f}MB"
+                await bot.send_message(chat_id, f"Step 3/3: Sending clip ({size_mb:.1f}MB)...")
+                send_result = await bot.send_video(chat_id, video_bytes, caption=caption)
+                if send_result.get("ok"):
+                    asyncio.create_task(_log_call(db, tg_user.id, "/telegram/clip", "POST", 0, 200))
+                else:
+                    err_msg = send_result.get("description", "Unknown error")
+                    await bot.send_message(chat_id, f"Clip processed but couldn't send: {err_msg[:150]}")
             else:
                 await bot.send_message(chat_id, f"Clipping failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
@@ -4989,8 +4996,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_chat_action(chat_id, "upload_video")
         await bot.send_message(chat_id,
             f"Creating {num_clips} smart clips...\n"
-            f"AI finds the best moments and adds captions.\n"
-            f"May take 1-3 minutes...")
+            f"Step 1/4: Downloading video...")
 
         try:
             import base64 as _b64
@@ -4998,15 +5004,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             if result.get("success") and result.get("clips"):
                 clips = result["clips"]
                 await bot.send_message(chat_id,
-                    f"Created {len(clips)} clips from {result.get('video_duration', 0):.0f}s video!")
+                    f"Step 4/4: Sending {len(clips)} clips...")
                 asyncio.create_task(_log_call(db, tg_user.id, "/telegram/smartclip", "POST", 0, 200))
+                sent_count = 0
                 for clip in clips:
                     if clip.get("file"):
                         video_bytes = _b64.b64decode(clip["file"])
-                        caption = f"Smart Clip | {clip.get('start_time', '?')} | {clip.get('duration', 0):.0f}s"
+                        size_mb = len(video_bytes) / 1024 / 1024
+                        caption = f"Smart Clip | {clip.get('start_time', '?')} | {clip.get('duration', 0):.0f}s | {size_mb:.1f}MB"
                         if clip.get("preview_text"):
                             caption += f"\n{clip['preview_text'][:80]}"
-                        await bot.send_video(chat_id, video_bytes, caption=caption)
+                        send_result = await bot.send_video(chat_id, video_bytes, caption=caption)
+                        if send_result.get("ok"):
+                            sent_count += 1
+                        else:
+                            err_msg = send_result.get("description", "Unknown error")
+                            await bot.send_message(chat_id, f"Clip {clip.get('start_time', '?')} couldn't be sent: {err_msg[:100]}")
+                await bot.send_message(chat_id, f"Done! {sent_count}/{len(clips)} clips sent.")
             else:
                 await bot.send_message(chat_id, f"Smart clipping failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
@@ -5020,22 +5034,35 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         if len(parts) < 2:
             await bot.send_message(chat_id,
                 "AI Video Creator\n\n"
-                "Create a video with AI-generated images and voiceover narration.\n\n"
-                "Usage: /createvideo <topic>\n\n"
+                "Create a video with AI-generated images, Ken Burns motion, voiceover "
+                "narration, and burned-in captions.\n\n"
+                "Usage: /createvideo <topic> [wide|square]\n\n"
                 "Examples:\n"
                 "1. /createvideo The future of AI in Africa\n"
-                "2. /createvideo 5 tips for studying effectively\n"
-                "3. /createvideo How solar energy works\n\n"
+                "2. /createvideo 5 tips for studying effectively wide\n"
+                "3. /createvideo How solar energy works square\n\n"
                 "Stew will:\n"
                 "1. Write a script with scenes\n"
-                "2. Generate AI images for each scene\n"
-                "3. Add voiceover narration\n"
-                "4. Combine into a video\n\n"
+                "2. Generate AI images for each scene (flux model)\n"
+                "3. Add voiceover narration + slow zoom motion\n"
+                "4. Burn in captions and combine into a video\n\n"
+                "Default format: vertical 9:16 (Reels/Shorts/TikTok). "
+                "Add 'wide' for 16:9 landscape or 'square' for 1:1.\n\n"
                 "Free tier: up to 3 scenes | Pro: up to 8 scenes"
             )
             return
 
-        topic = parts[1].strip()
+        raw_args = parts[1].strip()
+        aspect_ratio = "9:16"
+        arg_words = raw_args.split()
+        if arg_words and arg_words[-1].lower() in ("wide", "landscape"):
+            aspect_ratio = "16:9"
+            raw_args = " ".join(arg_words[:-1]).strip()
+        elif arg_words and arg_words[-1].lower() == "square":
+            aspect_ratio = "1:1"
+            raw_args = " ".join(arg_words[:-1]).strip()
+
+        topic = raw_args or parts[1].strip()
         max_scenes = 3 if tg_user.plan == "free" else 8
 
         allowed, used, limit = await _check_quota(tg_user, db)
@@ -5068,6 +5095,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Create a {max_scenes}-scene video about: {topic}"},
             ]
+            llm = get_llm_client()
             llm_result = await asyncio.to_thread(llm.chat, messages)
             raw = llm_result["content"]
 
@@ -5082,17 +5110,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
             voice = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
 
-            # Step 2: Create the video
-            result = await create_video(topic, scenes, voice)
+            # Step 2: Create the video (Ken Burns motion + burned-in captions + chosen aspect ratio)
+            result = await create_video(topic, scenes, voice, aspect_ratio=aspect_ratio)
 
             if result.get("success") and result.get("file"):
                 video_bytes = _b64.b64decode(result["file"])
+                size_mb = len(video_bytes) / 1024 / 1024
                 caption = (
                     f"AI Video: {topic[:80]}\n"
-                    f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.0f}s"
+                    f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.0f}s | Format: {aspect_ratio} | {size_mb:.1f}MB"
                 )
-                await bot.send_video(chat_id, video_bytes, caption=caption)
-                asyncio.create_task(_log_call(db, tg_user.id, "/telegram/createvideo", "POST", 0, 200))
+                await bot.send_message(chat_id, f"Sending video ({size_mb:.1f}MB)...")
+                send_result = await bot.send_video(chat_id, video_bytes, caption=caption)
+                if send_result.get("ok"):
+                    asyncio.create_task(_log_call(db, tg_user.id, "/telegram/createvideo", "POST", 0, 200))
+                else:
+                    err_msg = send_result.get("description", "Unknown error")
+                    await bot.send_message(chat_id, f"Video created but couldn't send: {err_msg[:150]}")
             else:
                 await bot.send_message(chat_id, f"Video creation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:

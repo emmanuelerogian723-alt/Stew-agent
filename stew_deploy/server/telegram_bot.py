@@ -176,14 +176,28 @@ class TelegramBot:
             return resp.json()
 
     async def send_video(self, chat_id: int, video_bytes: bytes, caption: str = "") -> dict:
-        """Send a video message (mp4 format)."""
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{self.base}/sendVideo",
-                data={"chat_id": str(chat_id), "caption": caption[:1024]},
-                files={"video": ("video.mp4", video_bytes, "video/mp4")},
-            )
-            return resp.json()
+        """Send a video message (mp4 format). Falls back to sendDocument if sendVideo fails."""
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    f"{self.base}/sendVideo",
+                    data={"chat_id": str(chat_id), "caption": caption[:1024]},
+                    files={"video": ("video.mp4", video_bytes, "video/mp4")},
+                )
+                result = resp.json()
+                if result.get("ok"):
+                    return result
+                # sendVideo failed — try sending as a document (less restrictive)
+                logger.warning(f"sendVideo failed ({result.get('description', '?')}), trying sendDocument...")
+                resp2 = await client.post(
+                    f"{self.base}/sendDocument",
+                    data={"chat_id": str(chat_id), "caption": caption[:1024]},
+                    files={"document": ("video.mp4", video_bytes, "video/mp4")},
+                )
+                return resp2.json()
+        except Exception as e:
+            logger.error(f"send_video error: {e}")
+            return {"ok": False, "description": str(e)}
 
     async def send_voice(self, chat_id: int, audio_bytes: bytes, caption: str = "") -> dict:
         """Send a voice message (OGG format)."""

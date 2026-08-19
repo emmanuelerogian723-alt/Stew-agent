@@ -35,20 +35,46 @@ def _run_ffmpeg(args: list[str], timeout: int = 120) -> tuple[bool, str]:
 
 
 def _run_ytdlp(url: str, output_path: str, timeout: int = 120) -> tuple[bool, str]:
-    """Download a video using yt-dlp. Returns (success, error_msg)."""
+    """Download a video using yt-dlp. Returns (success, error_msg).
+    Updates yt-dlp first to handle YouTube's frequent signature changes."""
+    try:
+        # Update yt-dlp to the latest version (handles YouTube breaking changes)
+        subprocess.run(
+            ["pip", "install", "--upgrade", "-q", "yt-dlp"],
+            capture_output=True, timeout=30,
+        )
+    except Exception:
+        pass  # non-fatal — try with whatever version we have
     try:
         cmd = [
             "yt-dlp",
             "-f", "best[ext=mp4][filesize<50M]/best[filesize<50M]/best",
             "--max-filesize", "50M",
             "--no-playlist",
+            "--no-warnings",
             "-o", output_path,
             url,
         ]
         result = subprocess.run(cmd, capture_output=True, timeout=timeout)
         if result.returncode == 0:
             return True, ""
-        return False, result.stderr.decode("utf-8", errors="replace")[:500]
+        err = result.stderr.decode("utf-8", errors="replace")[:500]
+        # If format selection failed, try with a simpler format string
+        if "format" in err.lower() or "requested format" in err.lower():
+            cmd2 = [
+                "yt-dlp",
+                "-f", "mp4/best",
+                "--max-filesize", "50M",
+                "--no-playlist",
+                "--no-warnings",
+                "-o", output_path,
+                url,
+            ]
+            result2 = subprocess.run(cmd2, capture_output=True, timeout=timeout)
+            if result2.returncode == 0:
+                return True, ""
+            err = result2.stderr.decode("utf-8", errors="replace")[:500]
+        return False, err
     except subprocess.TimeoutExpired:
         return False, "Download timed out"
     except FileNotFoundError:
@@ -68,6 +94,48 @@ def _get_video_duration(video_path: str) -> float:
         return float(result.stdout.decode().strip())
     except Exception:
         return 0.0
+
+
+# Telegram Bot API limit for sending files via sendVideo
+_TELEGRAM_MAX_VIDEO_SIZE = 48 * 1024 * 1024  # 48MB (safe margin under 50MB hard limit)
+
+
+def _ensure_telegram_safe_size(video_path: str, tmp_dir: str) -> str:
+    """If the video exceeds Telegram's 50MB bot API limit, re-encode it smaller.
+    Returns the path to use (original if already small enough, or a compressed copy)."""
+    try:
+        size = os.path.getsize(video_path)
+        if size <= _TELEGRAM_MAX_VIDEO_SIZE:
+            return video_path
+        logger.info(f"Video is {size / 1024 / 1024:.1f}MB — compressing for Telegram...")
+        compressed_path = os.path.join(tmp_dir, "compressed.mp4")
+        ok, err = _run_ffmpeg([
+            "-i", video_path,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "30",
+            "-b:v", "800k", "-maxrate", "1000k", "-bufsize", "2000k",
+            "-c:a", "aac", "-b:a", "96k",
+            "-movflags", "+faststart",
+            compressed_path,
+        ], timeout=90)
+        if ok and os.path.exists(compressed_path) and os.path.getsize(compressed_path) < size:
+            return compressed_path
+        # If compression failed or didn't help, try harder
+        ok, err = _run_ffmpeg([
+            "-i", video_path,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "35",
+            "-b:v", "500k", "-maxrate", "600k", "-bufsize", "1200k",
+            "-vf", "scale='min(720,iw)':-4",
+            "-c:a", "aac", "-b:a", "64k",
+            "-movflags", "+faststart",
+            compressed_path,
+        ], timeout=90)
+        if ok and os.path.exists(compressed_path) and os.path.getsize(compressed_path) < _TELEGRAM_MAX_VIDEO_SIZE:
+            return compressed_path
+        logger.warning(f"Video compression failed: {err}")
+        return video_path  # best effort — let Telegram reject it if still too large
+    except Exception as e:
+        logger.warning(f"Size check failed: {e}")
+        return video_path
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -232,7 +300,10 @@ async def clip_video(
             except Exception as e:
                 logger.warning(f"Caption generation failed (non-fatal): {e}")
         
-        # Step 4: Read and encode the final video
+        # Step 4: Ensure the video fits Telegram's 50MB limit
+        final_path = _ensure_telegram_safe_size(final_path, tmp_dir)
+
+        # Step 5: Read and encode the final video
         with open(final_path, "rb") as f:
             video_bytes = f.read()
         
@@ -296,66 +367,105 @@ def _format_srt_timestamp(seconds: float) -> str:
 
 # ─── Video Creation (images + voiceover → video) ────────────────────────────
 
+# Resolution presets keyed by aspect ratio, used by create_video()
+_ASPECT_SIZES = {
+    "16:9": (1280, 720),
+    "9:16": (720, 1280),
+    "1:1": (960, 960),
+}
+
+
+def _create_scene_srt(narration: str, scene_duration: float, srt_path: str, words_per_chunk: int = 6):
+    """Build an SRT file for one scene from its KNOWN narration text (no transcription needed —
+    we already have the exact text we asked edge-tts to speak, so this is 100% accurate and free)."""
+    words = narration.split()
+    if not words:
+        return False
+    chunks = [" ".join(words[i:i + words_per_chunk]) for i in range(0, len(words), words_per_chunk)]
+    n = len(chunks)
+
+    def fmt(s):
+        h = int(s // 3600); m = int((s % 3600) // 60); sec = int(s % 60); ms = int((s % 1) * 1000)
+        return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        for i, c in enumerate(chunks):
+            start = (i / n) * scene_duration
+            end = ((i + 1) / n) * scene_duration
+            f.write(f"{i+1}\n{fmt(start)} --> {fmt(end)}\n{c}\n\n")
+    return True
+
+
 async def create_video(
     topic: str,
     scenes: list[dict],
     voice: str = "en-US-AriaNeural",
     duration_per_scene: int = 5,
+    aspect_ratio: str = "16:9",  # "16:9" landscape, "9:16" vertical (Reels/Shorts/TikTok), "1:1" square
+    add_captions: bool = True,
 ) -> dict:
     """
     Create a video from scenes with AI-generated images and voiceover.
-    
+    Uses free/open tools only: Pollinations (flux model) for images, edge-tts for voice,
+    ffmpeg zoompan for Ken Burns motion (so static images feel like real video), and
+    burned-in captions generated directly from the known narration text (accurate, no
+    re-transcription needed).
+
     Args:
         topic: Overall topic/title for the video
         scenes: List of {"image_prompt": str, "narration": str} dicts
         voice: edge-tts voice name
-        duration_per_scene: seconds per scene (auto-adjusted to narration length)
-    
+        duration_per_scene: fallback seconds per scene when there's no narration audio
+        aspect_ratio: "16:9", "9:16", or "1:1"
+        add_captions: burn narration text as captions onto each scene
+
     Returns:
         {"success": bool, "file": base64, "filename": str, ...}
     """
     import base64
     import requests as req
-    
+
+    width, height = _ASPECT_SIZES.get(aspect_ratio, _ASPECT_SIZES["16:9"])
+    # Request the source image ~1.3x larger so zoompan has room to zoom/pan without upscaling artifacts
+    src_w, src_h = int(width * 1.3), int(height * 1.3)
+    fps = 24
+
     tmp_dir = tempfile.mkdtemp(prefix="stew_video_")
     try:
         scene_files = []
-        audio_files = []
         total_duration = 0
-        
+
         for idx, scene in enumerate(scenes):
             image_prompt = scene.get("image_prompt", f"Image for {topic}, scene {idx+1}")
             narration = scene.get("narration", "")
-            
-            # Step 1: Generate image with Pollinations (free)
-            image_url = f"https://image.pollinations.ai/prompt/{req.utils.quote(image_prompt[:500])}?width=1280&height=720&nologo=true&seed={idx+1}"
-            
+
+            # Step 1: Generate image with Pollinations (free), explicit flux model for quality
             image_path = os.path.join(tmp_dir, f"scene_{idx}.jpg")
             try:
-                resp = req.get(image_url, timeout=30)
+                image_url = (
+                    f"https://image.pollinations.ai/prompt/{req.utils.quote(image_prompt[:500])}"
+                    f"?width={src_w}&height={src_h}&nologo=true&seed={idx+1}&model=flux"
+                )
+                resp = req.get(image_url, timeout=40)
                 if resp.status_code == 200 and len(resp.content) > 1000:
                     with open(image_path, "wb") as f:
                         f.write(resp.content)
                 else:
-                    # Fallback: create a solid color image with ffmpeg
-                    _run_ffmpeg([
-                        "-f", "lavfi", "-i", f"color=c=0x1a1a2e:s=1280x720:d={duration_per_scene}",
-                        "-frames:v", "1", image_path,
-                    ], timeout=10)
+                    raise RuntimeError(f"Pollinations returned {resp.status_code}")
             except Exception as e:
                 logger.warning(f"Image generation failed for scene {idx}: {e}")
                 _run_ffmpeg([
-                    "-f", "lavfi", "-i", f"color=c=0x1a1a2e:s=1280x720:d={duration_per_scene}",
+                    "-f", "lavfi", "-i", f"color=c=0x1a1a2e:s={src_w}x{src_h}:d=1",
                     "-frames:v", "1", image_path,
                 ], timeout=10)
-            
+
             if not os.path.exists(image_path):
                 continue
-            
+
             # Step 2: Generate voiceover with edge-tts
             audio_path = os.path.join(tmp_dir, f"scene_{idx}.mp3")
             scene_duration = duration_per_scene
-            
+
             if narration:
                 try:
                     import edge_tts
@@ -367,47 +477,86 @@ async def create_video(
                     if audio_chunks:
                         with open(audio_path, "wb") as f:
                             f.write(b"".join(audio_chunks))
-                        # Get actual audio duration
                         dur = _get_video_duration(audio_path)
                         if dur > 0:
-                            scene_duration = dur + 0.5  # small buffer
+                            scene_duration = dur + 0.4  # small buffer so audio isn't cut off
                 except Exception as e:
                     logger.warning(f"TTS failed for scene {idx}: {e}")
-            
+
             total_duration += scene_duration
-            
-            # Step 3: Create a video segment from image + audio
+            has_audio = os.path.exists(audio_path)
+
+            # Step 3: Build the scene video with a Ken Burns zoom/pan effect (feels like real video,
+            # not a static slideshow). Falls back to a plain static-image clip if zoompan fails.
             segment_path = os.path.join(tmp_dir, f"segment_{idx}.mp4")
-            
-            if os.path.exists(audio_path):
-                ok, err = _run_ffmpeg([
-                    "-loop", "1", "-i", image_path,
-                    "-i", audio_path,
+            total_frames = max(int(scene_duration * fps), fps)
+            zoompan_vf = (
+                f"scale={src_w}:{src_h},"
+                f"zoompan=z='min(zoom+0.0015,1.2)':d={total_frames}:"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps={fps}"
+            )
+
+            base_args = ["-loop", "1", "-i", image_path]
+            if has_audio:
+                base_args += ["-i", audio_path]
+            base_args += [
+                "-vf", zoompan_vf,
+                "-c:v", "libx264", "-preset", "fast", "-tune", "stillimage",
+                "-pix_fmt", "yuv420p",
+                "-t", str(scene_duration),
+            ]
+            if has_audio:
+                base_args += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+            base_args += ["-movflags", "+faststart", segment_path]
+
+            ok, err = _run_ffmpeg(base_args, timeout=60)
+
+            if not ok:
+                # Fallback: plain static image (no zoom) if the zoompan filter fails for any reason
+                logger.warning(f"Ken Burns zoompan failed for scene {idx}, falling back to static image: {err}")
+                fallback_args = ["-loop", "1", "-i", image_path]
+                if has_audio:
+                    fallback_args += ["-i", audio_path]
+                fallback_args += [
+                    "-vf", f"scale={width}:{height}",
                     "-c:v", "libx264", "-preset", "fast", "-tune", "stillimage",
-                    "-c:a", "aac", "-b:a", "128k",
                     "-pix_fmt", "yuv420p",
                     "-t", str(scene_duration),
-                    "-movflags", "+faststart",
-                    segment_path,
-                ], timeout=60)
-            else:
-                # No audio, just static image video
-                ok, err = _run_ffmpeg([
-                    "-loop", "1", "-i", image_path,
-                    "-c:v", "libx264", "-preset", "fast", "-tune", "stillimage",
-                    "-pix_fmt", "yuv420p",
-                    "-t", str(scene_duration),
-                    "-movflags", "+faststart",
-                    segment_path,
-                ], timeout=60)
-            
-            if ok and os.path.exists(segment_path):
-                scene_files.append(segment_path)
-        
+                ]
+                if has_audio:
+                    fallback_args += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+                fallback_args += ["-movflags", "+faststart", segment_path]
+                ok, err = _run_ffmpeg(fallback_args, timeout=60)
+
+            if not (ok and os.path.exists(segment_path)):
+                continue
+
+            # Step 4: Optionally burn in captions from the KNOWN narration text (accurate, free —
+            # no re-transcription needed since we already know exactly what was spoken)
+            if add_captions and narration:
+                try:
+                    srt_path = os.path.join(tmp_dir, f"captions_{idx}.srt")
+                    if _create_scene_srt(narration, scene_duration, srt_path):
+                        captioned_path = os.path.join(tmp_dir, f"captioned_{idx}.mp4")
+                        cap_ok, cap_err = _run_ffmpeg([
+                            "-i", segment_path,
+                            "-vf", f"subtitles={srt_path}:force_style='FontSize=16,FontName=DejaVu Sans,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3,Outline=2,Alignment=2,MarginV=60'",
+                            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                            "-c:a", "copy" if has_audio else "aac",
+                            "-movflags", "+faststart",
+                            captioned_path,
+                        ], timeout=60)
+                        if cap_ok and os.path.exists(captioned_path):
+                            segment_path = captioned_path
+                except Exception as e:
+                    logger.warning(f"Caption burn failed for scene {idx} (non-fatal): {e}")
+
+            scene_files.append(segment_path)
+
         if not scene_files:
             return {"success": False, "error": "No video segments could be created"}
-        
-        # Step 4: Concatenate all segments
+
+        # Step 5: Concatenate all segments
         if len(scene_files) == 1:
             final_path = scene_files[0]
         else:
@@ -415,16 +564,16 @@ async def create_video(
             with open(concat_path, "w") as f:
                 for sf in scene_files:
                     f.write(f"file '{sf}'\n")
-            
+
             final_path = os.path.join(tmp_dir, "final.mp4")
             ok, err = _run_ffmpeg([
                 "-f", "concat", "-safe", "0", "-i", concat_path,
                 "-c", "copy",
                 final_path,
             ], timeout=60)
-            
+
             if not ok:
-                # Fallback: re-encode
+                # Fallback: re-encode (needed if segments have mismatched codec params)
                 ok, err = _run_ffmpeg([
                     "-f", "concat", "-safe", "0", "-i", concat_path,
                     "-c:v", "libx264", "-preset", "fast",
@@ -432,21 +581,24 @@ async def create_video(
                     "-movflags", "+faststart",
                     final_path,
                 ], timeout=90)
-            
+
             if not ok:
                 return {"success": False, "error": f"Concatenation failed: {err}"}
-        
-        # Step 5: Read and encode
+
+        # Step 6: Ensure the video fits Telegram's 50MB limit
+        final_path = _ensure_telegram_safe_size(final_path, tmp_dir)
+
+        # Step 7: Read and encode
         with open(final_path, "rb") as f:
             video_bytes = f.read()
-        
+
         if len(video_bytes) < 1000:
             return {"success": False, "error": "Output video too small"}
-        
+
         b64 = base64.b64encode(video_bytes).decode()
         clean_title = re.sub(r'[^a-zA-Z0-9_]', '_', topic)[:40]
         filename = f"{clean_title}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp4"
-        
+
         return {
             "success": True,
             "file": b64,
@@ -456,8 +608,9 @@ async def create_video(
             "scenes": len(scene_files),
             "total_duration": round(total_duration, 1),
             "voice": voice,
+            "aspect_ratio": aspect_ratio,
         }
-        
+
     except Exception as e:
         logger.error(f"Video creation error: {e}")
         return {"success": False, "error": str(e)}
@@ -691,6 +844,9 @@ async def smart_clips(
                     if ok and os.path.exists(captioned_path):
                         clip_path = captioned_path
             
+            # Ensure the clip fits Telegram's 50MB limit
+            clip_path = _ensure_telegram_safe_size(clip_path, tmp_dir)
+
             # Read and encode
             with open(clip_path, "rb") as f:
                 video_bytes = f.read()
