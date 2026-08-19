@@ -30,6 +30,17 @@ from server.auth import (
 from server.config import get_settings
 from server.database import get_db, init_db
 from server.video_tools import clip_video, create_video, smart_clips
+from server.persistent_memory import (
+    is_configured as supabase_configured,
+    save_memory as supa_save_memory,
+    recall_memories as supa_recall,
+    search_memories as supa_search,
+    delete_memory as supa_delete,
+    clear_all_memories as supa_clear,
+    save_conversation as supa_save_conv,
+    get_conversation_history as supa_get_conv,
+    upload_file as supa_upload_file,
+)
 from server.document_generator import (
     generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx,
 )
@@ -4025,6 +4036,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 category = "context"
 
             await store_user_memory(db, tg_user.id, category, memory_text, importance=8, platform="telegram")
+            # Also save to Supabase for persistent storage (survives redeploy)
+            if supabase_configured():
+                await supa_save_memory(str(tg_user.telegram_id), category, memory_text, category)
             await bot.send_message(chat_id, f"Got it. I'll remember: {memory_text[:200]}\n\nCategory: {category}\nThis is stored permanently.")
         except Exception as e:
             logger.error(f"Memory store error: {e}")
@@ -4059,6 +4073,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await db.execute(
                 _upd(UserMemory).where(UserMemory.user_id == tg_user.id).values(is_active=False)
             )
+            # Also clear from Supabase
+            if supabase_configured():
+                await supa_clear(str(tg_user.telegram_id))
             await bot.send_message(chat_id,
                 "I've cleared all your memories.\n\n"
                 "I won't remember anything from our past conversations anymore. "
@@ -5620,6 +5637,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         result = await asyncio.to_thread(llm.chat, messages)
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
+
+        # Save conversation to Supabase for persistent history (survives redeploy)
+        if supabase_configured():
+            asyncio.create_task(supa_save_conv(str(tg_user.telegram_id), "user", user_text))
+            asyncio.create_task(supa_save_conv(str(tg_user.telegram_id), "assistant", reply))
 
         # If user has voice replies enabled, send as voice note
         if getattr(tg_user, "voice_enabled", False):

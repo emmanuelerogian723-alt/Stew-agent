@@ -84,3 +84,4 @@ pandas>=2.2.0,<3.0.0
 
 # ── Text-to-Speech (human-like voice replies) ─────────────────────────────────
 edge-tts==7.2.8
+supabase>=2.0.0
