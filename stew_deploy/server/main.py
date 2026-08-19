@@ -972,6 +972,72 @@ async def security_dashboard(api_key: str, db: AsyncSession = Depends(get_db)):
             raise HTTPException(403, "Admin access required")
     return await get_security_dashboard(db)
 
+@app.get("/admin/debug")
+async def admin_debug(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Admin debug endpoint — check user state, quota, and DB health."""
+    if api_key != settings.STEW_ADMIN_SECRET and api_key != os.environ.get("STEW_ADMIN_SECRET", ""):
+        raise HTTPException(403, "Admin access required")
+
+    from sqlalchemy import inspect, text as sql_text
+
+    # DB type check
+    db_url = settings.DATABASE_URL
+    db_type = "postgresql" if "postgresql" in db_url or "postgres" in db_url else "sqlite"
+
+    # Total users
+    total_users = await db.execute(select(func.count(User.id)))
+    total_users = total_users.scalar() or 0
+
+    # Telegram users
+    tg_users = await db.execute(select(func.count(User.id)).where(User.email.like("tg_%@telegram.stew")))
+    tg_users = tg_users.scalar() or 0
+
+    # Users by plan
+    plan_result = await db.execute(select(User.plan, func.count(User.id)).group_by(User.plan))
+    plans = {row[0]: row[1] for row in plan_result}
+
+    # Emmanuel's account specifically
+    emmanuel = await db.execute(select(User).where(User.email == "tg_5547996257@telegram.stew"))
+    emmanuel_row = emmanuel.scalars().first()
+
+    # API calls this month
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    calls_result = await db.execute(select(func.count(APICall.id)).where(APICall.timestamp >= month_start))
+    calls_this_month = calls_result.scalar() or 0
+
+    # Feature requests count
+    try:
+        fr_result = await db.execute(select(func.count(FeatureRequest.id)))
+        feature_requests = fr_result.scalar() or 0
+    except:
+        feature_requests = -1
+
+    # Ad campaigns count
+    try:
+        ad_result = await db.execute(select(func.count(AdCampaign.id)))
+        ad_campaigns = ad_result.scalar() or 0
+    except:
+        ad_campaigns = -1
+
+    return {
+        "db_type": db_type,
+        "db_url_preview": db_url[:30] + "..." if len(db_url) > 30 else db_url,
+        "total_users": total_users,
+        "telegram_users": tg_users,
+        "users_by_plan": plans,
+        "emmanuel": {
+            "found": emmanuel_row is not None,
+            "email": emmanuel_row.email if emmanuel_row else None,
+            "plan": emmanuel_row.plan if emmanuel_row else None,
+            "preferred_voice": getattr(emmanuel_row, "preferred_voice", None) if emmanuel_row else None,
+        },
+        "api_calls_this_month": calls_this_month,
+        "feature_requests": feature_requests,
+        "ad_campaigns": ad_campaigns,
+        "plan_limits": settings.PLAN_CALL_LIMITS,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
 
 @app.get("/features/requests")
 async def list_feature_requests(api_key: str, status: str = "pending", db: AsyncSession = Depends(get_db)):
