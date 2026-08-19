@@ -439,21 +439,32 @@ async def create_video(
             image_prompt = scene.get("image_prompt", f"Image for {topic}, scene {idx+1}")
             narration = scene.get("narration", "")
 
-            # Step 1: Generate image with Pollinations (free), explicit flux model for quality
+            # Step 1: Generate image with Pollinations (free), explicit flux model for quality.
+            # Retry with backoff since Pollinations frequently rate-limits (429) or times out
+            # under shared cloud IPs (common on Render) — a single attempt isn't reliable enough.
             image_path = os.path.join(tmp_dir, f"scene_{idx}.jpg")
-            try:
-                image_url = (
-                    f"https://image.pollinations.ai/prompt/{req.utils.quote(image_prompt[:500])}"
-                    f"?width={src_w}&height={src_h}&nologo=true&seed={idx+1}&model=flux"
-                )
-                resp = req.get(image_url, timeout=40)
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    with open(image_path, "wb") as f:
-                        f.write(resp.content)
-                else:
-                    raise RuntimeError(f"Pollinations returned {resp.status_code}")
-            except Exception as e:
-                logger.warning(f"Image generation failed for scene {idx}: {e}")
+            image_url = (
+                f"https://image.pollinations.ai/prompt/{req.utils.quote(image_prompt[:500])}"
+                f"?width={src_w}&height={src_h}&nologo=true&seed={idx+1}&model=flux"
+            )
+            got_image = False
+            for attempt in range(3):
+                try:
+                    if attempt > 0:
+                        await asyncio.sleep(3 * attempt)  # 3s, 6s backoff between retries
+                    resp = req.get(image_url, timeout=45)
+                    if resp.status_code == 200 and len(resp.content) > 1000:
+                        with open(image_path, "wb") as f:
+                            f.write(resp.content)
+                        got_image = True
+                        break
+                    else:
+                        logger.warning(f"Pollinations returned {resp.status_code} for scene {idx} (attempt {attempt+1}/3)")
+                except Exception as e:
+                    logger.warning(f"Image generation failed for scene {idx} (attempt {attempt+1}/3): {e}")
+
+            if not got_image:
+                # Final fallback: plain color background so the scene can still be produced
                 _run_ffmpeg([
                     "-f", "lavfi", "-i", f"color=c=0x1a1a2e:s={src_w}x{src_h}:d=1",
                     "-frames:v", "1", image_path,
