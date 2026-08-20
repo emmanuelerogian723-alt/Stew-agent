@@ -484,6 +484,69 @@ def generate_xlsx(
         raise HTTPException(500, f"XLSX generation failed: {e}")
 
 
+
+
+# ── PPTX ──────────────────────────────────────────────────────────────────────
+
+def generate_pptx(slides: list[dict], title: str = "Presentation", theme: str = None,
+                   use_images: bool = True) -> dict:
+    """Generate a premium PPTX with 50+ professional themes.
+    Theme is auto-detected from the title/topic, or can be specified by name.
+    When use_images is True (default), fetches a real AI-generated hero photo
+    for the title and closing slides.
+    Image fetch failures are silent."""
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt, Emu
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+        from pptx.enum.shapes import MSO_SHAPE
+        from pptx.oxml.ns import qn
+        from server.slide_themes import render_pptx, auto_select_theme, THEMES, _fetch_hero_image
+
+        prs = Presentation()
+        SLIDE_W = 13.333
+        SLIDE_H = 7.5
+        prs.slide_width = Inches(SLIDE_W)
+        prs.slide_height = Inches(SLIDE_H)
+
+        if not theme:
+            theme = auto_select_theme(title)
+
+        category = THEMES.get(theme, {}).get("category", "corporate")
+
+        hero_image = None
+        closing_image = None
+        if use_images:
+            import time as _time
+            hero_image = _fetch_hero_image(title, category, seed=1)
+            if len(slides) > 3:
+                _time.sleep(1.5)
+                closing_image = _fetch_hero_image(title, category, seed=2)
+
+        render_pptx(prs, slides, title, theme_name=theme, hero_image=hero_image, closing_image=closing_image)
+
+        buf = io.BytesIO()
+        prs.save(buf)
+        clean_title = title.replace(" ", "_").replace("/", "_")[:40]
+        filename = f"{clean_title}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pptx"
+        return {
+            "file": _to_base64(buf),
+            "filename": filename,
+            "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "success": True,
+            "theme": theme,
+            "theme_category": category,
+            "available_themes": len(THEMES),
+            "hero_image_used": hero_image is not None,
+            "closing_image_used": closing_image is not None,
+        }
+    except ImportError:
+        raise HTTPException(500, "python-pptx not installed")
+    except Exception as e:
+        logger.error(f"PPTX generation error: {e}")
+        raise HTTPException(500, f"PPTX generation failed: {e}")
+
 # ── HTML ──────────────────────────────────────────────────────────────────────
 
 def generate_html(content: str, title: str = "Report") -> dict:
