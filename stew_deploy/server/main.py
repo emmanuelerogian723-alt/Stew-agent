@@ -29,7 +29,7 @@ from server.auth import (
 )
 from server.config import get_settings
 from server.database import get_db, init_db
-from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration
+from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration, generate_ai_video_multi_provider
 from server.webbuilder import build_motion_website
 from server.persistent_memory import (
     is_configured as supabase_configured,
@@ -225,6 +225,145 @@ def _tiered_limit(plan: str, by_tier: dict) -> int:
         if tier >= t:
             chosen = t
     return by_tier[chosen]
+
+
+# ── Daily AI Video Generation Limits ─────────────────────────────────────────
+# Free users get 2 AI video generations per day (across /aivideo + /aivideos).
+# Pro/Owner get unlimited. When the free limit is reached, the user sees a
+# Paystack upgrade prompt instead of a bare "limit reached" message.
+
+async def _count_daily_ai_videos(db: AsyncSession, user_id: str) -> int:
+    """Count how many AI video generations this user has made today."""
+    from sqlalchemy import select, func as sql_func
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(sql_func.count(APICall.id)).where(
+            APICall.user_id == user_id,
+            APICall.endpoint.in_(["/telegram/aivideo", "/telegram/aivideos",
+                                  "/telegram/aivideo_fallback", "/telegram/aivideos_fallback"]),
+            APICall.timestamp >= today_start,
+        )
+    )
+    return result.scalar() or 0
+
+
+def _daily_video_limit(plan: str) -> int:
+    """Max AI video generations per day by plan."""
+    tier = _plan_tier(plan)
+    if tier >= 2:  # pro, business, enterprise, owner
+        return 999  # effectively unlimited
+    if tier == 1:  # student
+        return 5
+    return 2  # free
+
+
+# Paystack upgrade prompt shown after free AI video limit is reached.
+def _video_upgrade_prompt(user_name: str, plan: str) -> str:
+    """Build the upgrade prompt shown when free AI video limit is reached."""
+    return (
+        "You have used all your free AI video generations for today!\n\n"
+        "Free tier: 2 AI videos/day\n"
+        "Student tier: 5 AI videos/day\n"
+        "Pro tier: Unlimited AI videos\n\n"
+        "Upgrade to Pro for unlimited AI video generation:\n"
+        "Pro: ₦9,900/month\n"
+        "Business: ₦29,000/month\n\n"
+        "Use /upgrade to pay via Paystack and unlock unlimited videos instantly.\n"
+        "Or use /plan to see all available plans."
+    )
+
+
+
+# ── Prompt Fidelity / "Smarter Thinking" Helpers ────────────────────────────
+# These exist to fix a class of bugs where an LLM script-writing step (used by
+# /createvideo, /aivideos, generic /pptx, etc.) drifts away from what the user
+# actually asked for — e.g. user asks for "a Pixar 3D cartoon orange kitten"
+# and the LLM hallucinates an unrelated scene about "a magical butterfly".
+# We can't fully stop a weak/fast model from hallucinating, but we CAN detect
+# drift after the fact and force the user's literal words + style back in.
+
+_STOPWORDS_FOR_ANCHORING = {
+    "a", "an", "the", "of", "for", "on", "in", "to", "and", "with", "about",
+    "please", "can", "you", "could", "me", "us", "second", "seconds", "sec",
+    "video", "animation", "clip", "create", "make", "generate", "write",
+    "compose", "produce", "draft", "author", "cartoon", "movie", "scene",
+    "scenes", "quality", "please", "is", "are", "it", "that", "this",
+}
+
+# Recognized visual style modifiers — when present in the user's topic, they
+# MUST be preserved in every generated image/video prompt, because a style
+# request ("Pixar 3D cartoon", "anime", "watercolor", "cinematic realism") is
+# exactly the kind of instruction models drop first when they drift.
+_STYLE_MODIFIERS = [
+    "pixar", "3d cartoon", "3d animation", "disney", "anime", "manga",
+    "watercolor", "oil painting", "cinematic", "photorealistic", "realistic",
+    "claymation", "stop motion", "pixel art", "cyberpunk", "noir",
+    "minimalist", "flat design", "isometric", "low poly", "vaporwave",
+    "studio ghibli", "comic book", "sketch", "line art", "3d render",
+    "hand drawn", "vintage", "retro", "surreal", "hyperrealistic",
+]
+
+
+def _extract_topic_keywords(topic: str) -> list[str]:
+    """Pull out the significant nouns/subjects from a user's topic string,
+    dropping filler verbs, connectors, and duration/quality words that aren't
+    the actual subject."""
+    words = re.findall(r"[a-zA-Z]+", topic.lower())
+    return [w for w in words if w not in _STOPWORDS_FOR_ANCHORING and len(w) > 2]
+
+
+def _extract_style_modifiers(topic: str) -> list[str]:
+    """Detect explicit visual style requests in the topic (e.g. 'Pixar-quality
+    3D cartoon') so they can be force-injected into every scene prompt."""
+    topic_lower = topic.lower()
+    return [s for s in _STYLE_MODIFIERS if s in topic_lower]
+
+
+def _anchor_scene_prompt(topic: str, generated_prompt: str, keywords: list[str],
+                          styles: list[str]) -> str:
+    """Guarantee a scene's image/video prompt stays grounded in what the user
+    actually asked for. If the LLM's generated prompt shares none of the
+    topic's keywords (a sign of hallucination/drift), we don't trust it —
+    we rebuild the prompt from the raw topic instead. Either way, any style
+    modifiers the user explicitly requested are force-appended so they can
+    never silently get dropped."""
+    gen_lower = (generated_prompt or "").lower()
+    has_overlap = any(kw in gen_lower for kw in keywords) if keywords else True
+
+    if not has_overlap or not generated_prompt:
+        # Drift detected (or no prompt at all) — rebuild directly from topic.
+        base = topic.strip()
+    else:
+        base = generated_prompt.strip()
+
+    missing_styles = [s for s in styles if s not in gen_lower and s not in base.lower()]
+    if missing_styles:
+        base = f"{base}, {', '.join(missing_styles)} style"
+
+    return base
+
+
+def _anchor_scenes(topic: str, scenes: list[dict], prompt_key: str) -> list[dict]:
+    """Apply _anchor_scene_prompt across a full list of LLM-generated scenes.
+    prompt_key is 'image_prompt' or 'video_prompt' depending on the pipeline."""
+    keywords = _extract_topic_keywords(topic)
+    styles = _extract_style_modifiers(topic)
+    fixed = []
+    for scene in scenes:
+        scene = dict(scene)
+        original = scene.get(prompt_key, "")
+        scene[prompt_key] = _anchor_scene_prompt(topic, original, keywords, styles)
+        fixed.append(scene)
+    return fixed
+
+
+def _is_gpu_quota_error(error_text: str) -> bool:
+    """Detect Hugging Face ZeroGPU quota-exceeded errors so we can gracefully
+    fall back to a non-GPU video pipeline instead of just failing the user."""
+    if not error_text:
+        return False
+    low = error_text.lower()
+    return any(sig in low for sig in ["zerogpu", "gpu quota", "quota exceeded", "exceeded your"])
 
 
 async def _get_telegram_user_count(db: AsyncSession) -> int:
@@ -5229,9 +5368,36 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return
 
     # /createvideo — Create AI video from images + voiceover
-    if user_text.startswith("/createvideo"):
-        parts = user_text.strip().split(None, 1)
-        if len(parts) < 2:
+    # Natural-language detection: catches phrases like "create a 10-second Pixar
+    # video of a kitten" / "make me a video about X" without requiring the exact
+    # /createvideo command — this is what most users actually type.
+    _video_intent = re.search(
+        r'\b(write|create|make|generate|produce|build)\b.{0,25}\b(video|animation|clip|movie)\b'
+        r'|\b(video|animation|clip|movie)\b.{0,15}\b(about|of|for|showing|titled|called)\b'
+        r'|^/createvideo\b',
+        user_lower
+    )
+    if (user_text.startswith("/createvideo") or _video_intent) and not user_text.startswith("/aivideo"):
+        if user_text.startswith("/createvideo"):
+            parts = user_text.strip().split(None, 1)
+            raw_topic_input = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            # Strip ONLY the leading verb phrase + optional article — never touch
+            # anything after it, so style descriptors ("Pixar-quality 3D cartoon")
+            # and duration ("10-second") survive intact for the anchoring step below.
+            _step1 = re.sub(
+                r'^\s*(please\s+)?(can you\s+|could you\s+)?(write|create|make|generate|produce|build)\s+'
+                r'(me\s+|us\s+)?(a\s+|an\s+|the\s+)?',
+                '', user_text, flags=re.IGNORECASE, count=1
+            )
+            # Remove just the bare noun ("video"/"animation"/"clip"/"movie") plus an
+            # immediately-following preposition, wherever it first appears.
+            raw_topic_input = re.sub(
+                r'\b(video|animation|clip|movie)\b\s*(of|about|on|for|showing|titled|called)?\s*',
+                '', _step1, flags=re.IGNORECASE, count=1
+            ).strip() or user_text.strip()
+
+        if not raw_topic_input or len(raw_topic_input) < 3:
             await bot.send_message(chat_id,
                 "AI Video Creator\n\n"
                 "Create a video with AI-generated images, Ken Burns motion, voiceover "
@@ -5252,7 +5418,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             )
             return
 
-        raw_args = parts[1].strip()
+        raw_args = raw_topic_input
         aspect_ratio = "9:16"
         arg_words = raw_args.split()
         if arg_words and arg_words[-1].lower() in ("wide", "landscape"):
@@ -5262,18 +5428,20 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             aspect_ratio = "1:1"
             raw_args = " ".join(arg_words[:-1]).strip()
 
-        topic = raw_args or parts[1].strip()
+        topic = raw_args or raw_topic_input
         max_scenes = _tiered_limit(tg_user.plan, {0: 3, 1: 4, 2: 8, 3: 8})
 
-        allowed, used, limit = await _check_quota(tg_user, db)
-        if not allowed:
-            await bot.send_message(chat_id,
-                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+        # Check daily AI video limit (free: 2/day, student: 5, pro: unlimited)
+        _vid_used = await _count_daily_ai_videos(db, tg_user.id)
+        _vid_limit = _daily_video_limit(tg_user.plan)
+        if _vid_used >= _vid_limit:
+            await bot.send_message(chat_id, _video_upgrade_prompt(username, tg_user.plan))
             return
 
         await bot.send_chat_action(chat_id, "upload_video")
         await bot.send_message(chat_id,
             f"Creating AI video about: {topic[:100]}\n"
+            f"Free videos used: {_vid_used}/{_vid_limit} today\n"
             f"This may take 2-5 minutes. Stew is writing the script, "
             f"generating images, recording voiceover, and combining everything...")
 
@@ -5283,17 +5451,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             import json as _json2
 
             # Step 1: Generate scenes with LLM
+            _kw = _extract_topic_keywords(topic)
+            _styles = _extract_style_modifiers(topic)
+            _style_note = f" The user explicitly requested this visual style: {', '.join(_styles)} — every single image_prompt MUST include it." if _styles else ""
             system_prompt = (
-                "You are a video script writer. Create a short video script about the given topic. "
+                f"You are a video script writer. The user's EXACT request is: \"{topic}\". "
+                f"Every scene you write MUST be directly, literally about this request — "
+                f"never invent unrelated subjects, characters, or scenarios that aren't part of it.{_style_note} "
                 f"Return ONLY a JSON array of {max_scenes} scenes. "
-                "Each scene has 'image_prompt' (a detailed description for AI image generation) "
+                "Each scene has 'image_prompt' (a detailed description for AI image generation, "
+                "must reference the exact subject from the request above) "
                 "and 'narration' (the voiceover text for that scene, max 2 sentences). "
                 "Keep narrations concise (under 150 characters each). "
                 "Make images visually striking and professional."
             )
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Create a {max_scenes}-scene video about: {topic}"},
+                {"role": "user", "content": f"Create a {max_scenes}-scene video about exactly this: {topic}"},
             ]
             llm = get_llm_client()
             llm_result = await asyncio.to_thread(llm.chat, messages)
@@ -5301,12 +5475,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
             json_match = _re2.search(r'\[.*\]', raw, _re2.DOTALL)
             if json_match:
-                scenes = _json2.loads(json_match.group())
+                try:
+                    scenes = _json2.loads(json_match.group())
+                except Exception:
+                    scenes = []
             else:
+                scenes = []
+
+            if not scenes:
                 scenes = [{
-                    "image_prompt": f"Professional illustration about {topic}",
+                    "image_prompt": f"{topic}, professional illustration",
                     "narration": f"Let's explore {topic}.",
                 }]
+
+            # Safety net: force every scene's image_prompt to stay grounded in what
+            # the user actually asked for (topic keywords + any explicit style),
+            # regardless of how well the script-writing LLM followed instructions.
+            scenes = _anchor_scenes(topic, scenes, "image_prompt")
 
             voice = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
 
@@ -5340,7 +5525,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         if len(parts) < 2:
             await bot.send_message(chat_id,
                 "AI Video Generator (REAL text-to-video)\n\n"
-                "Generate actual AI video clips from a text prompt using LTX-Video.\n\n"
+                "Generate actual AI video clips from a text prompt.\n"
+                "Multi-provider: LTX-Video -> Wan2.1 -> Ken Burns fallback.\n\n"
                 "Usage:\n"
                 "1. /aivideo A serene African sunset over a savanna\n"
                 "2. /aivideo A cat playing with a ball of yarn\n"
@@ -5348,8 +5534,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Options:\n"
                 "  Add 'narrate' to include voiceover narration\n"
                 "  /aivideo narrate A drone shot of a futuristic city at night\n\n"
-                "Each clip: 2-5 seconds. Free tier: 3 clips/day. Pro: 10 clips/day.\n"
-                "Video is generated on Hugging Face's free GPU servers."
+                "Each clip: 2-5 seconds. Free tier: 2 videos/day. Student: 5. Pro: unlimited.\n"
+                "When free videos run out, use /upgrade to unlock unlimited generation."
             )
             return
 
@@ -5364,18 +5550,20 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await bot.send_message(chat_id, "Please provide a text prompt for the video.")
             return
 
-        allowed, used, limit = await _check_quota(tg_user, db)
-        if not allowed:
-            await bot.send_message(chat_id,
-                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+        # Check daily AI video limit (free: 2/day, student: 5, pro: unlimited)
+        _vid_used = await _count_daily_ai_videos(db, tg_user.id)
+        _vid_limit = _daily_video_limit(tg_user.plan)
+        if _vid_used >= _vid_limit:
+            await bot.send_message(chat_id, _video_upgrade_prompt(username, tg_user.plan))
             return
 
         await bot.send_chat_action(chat_id, "upload_video")
         await bot.send_message(chat_id,
             f"Generating AI video...\n"
             f"Prompt: {prompt[:100]}\n"
-            f"Model: LTX-Video (Hugging Face)\n"
-            f"This may take 10-30 seconds...")
+            f"Model: Multi-provider (LTX-Video / Wan2.1 / Ken Burns fallback)\n"
+            f"Free videos used: {_vid_used}/{_vid_limit} today\n"
+            f"This may take 10-60 seconds...")
 
         try:
             import base64 as _b64
@@ -5396,18 +5584,20 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 except Exception:
                     narration_text = prompt
 
-            result = await generate_ai_video(
+            result = await generate_ai_video_multi_provider(
                 prompt=prompt,
                 duration=3.0,
                 add_narration=add_narration,
                 narration_text=narration_text,
                 voice=getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural",
+                aspect_ratio="9:16",
             )
 
             if result.get("success") and result.get("file"):
                 video_bytes = _b64.b64decode(result["file"])
                 size_kb = len(video_bytes) / 1024
-                caption = f"AI Video | LTX-Video | {result.get('duration', 0):.1f}s | {size_kb:.0f}KB"
+                _provider = result.get("provider", result.get("model", "AI Video"))
+                caption = f"AI Video | {_provider} | {result.get('duration', 0):.1f}s | {size_kb:.0f}KB"
                 if result.get("narration_added"):
                     caption += " | with narration"
                 await bot.send_message(chat_id, f"Sending AI video ({size_kb:.0f}KB)...")
@@ -5417,6 +5607,37 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 else:
                     err_msg = send_result.get("description", "Unknown error")
                     await bot.send_message(chat_id, f"Video generated but couldn't send: {err_msg[:150]}")
+            elif _is_gpu_quota_error(result.get("error", "")):
+                # LTX-Video's free GPU quota is exhausted — fall back to the
+                # AI-images + Ken Burns pipeline so the user still gets a video
+                # instead of a bare failure. This delivers on intent even when
+                # the fancier model is temporarily unavailable.
+                await bot.send_message(chat_id,
+                    "Real AI video generation hit its free GPU limit right now — "
+                    "building your video a different way instead (AI images + motion + voiceover)...")
+                try:
+                    _styles = _extract_style_modifiers(prompt)
+                    _image_prompt = prompt if not _styles else f"{prompt}"
+                    fallback_scenes = [{
+                        "image_prompt": _image_prompt,
+                        "narration": narration_text if add_narration else "",
+                    }]
+                    fb_result = await create_video(
+                        prompt, fallback_scenes,
+                        getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural",
+                        aspect_ratio="9:16",
+                    )
+                    if fb_result.get("success") and fb_result.get("file"):
+                        fb_bytes = _b64.b64decode(fb_result["file"])
+                        fb_size_mb = len(fb_bytes) / 1024 / 1024
+                        fb_caption = f"AI Video: {prompt[:80]}\n{fb_size_mb:.1f}MB (fallback — GPU quota was full)"
+                        await bot.send_video(chat_id, fb_bytes, caption=fb_caption)
+                        asyncio.create_task(_log_call(db, tg_user.id, "/telegram/aivideo_fallback", "POST", 0, 200))
+                    else:
+                        await bot.send_message(chat_id, "Fallback video also failed. Please try again in a few minutes.")
+                except Exception as fb_e:
+                    logger.error(f"aivideo fallback error: {fb_e}")
+                    await bot.send_message(chat_id, "Fallback video also failed. Please try again in a few minutes.")
             else:
                 await bot.send_message(chat_id, f"AI video generation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
@@ -5448,17 +5669,18 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         topic = parts[1].strip()
         max_scenes = _tiered_limit(tg_user.plan, {0: 2, 1: 3, 2: 5, 3: 5})
 
-        allowed, used, limit = await _check_quota(tg_user, db)
-        if not allowed:
-            await bot.send_message(chat_id,
-                f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+        # Check daily AI video limit (free: 2/day, student: 5, pro: unlimited)
+        _vid_used = await _count_daily_ai_videos(db, tg_user.id)
+        _vid_limit = _daily_video_limit(tg_user.plan)
+        if _vid_used >= _vid_limit:
+            await bot.send_message(chat_id, _video_upgrade_prompt(username, tg_user.plan))
             return
 
         await bot.send_chat_action(chat_id, "upload_video")
         await bot.send_message(chat_id,
             f"Creating multi-scene AI video about: {topic[:80]}\n"
-            f"Scenes: {max_scenes} | Model: LTX-Video\n"
-            f"Each scene generates a real AI video clip + narration.\n"
+            f"Scenes: {max_scenes} | Model: Multi-provider (LTX / Wan2.1 / Ken Burns)\n"
+            f"Free videos used: {_vid_used}/{_vid_limit} today\n"
             f"Estimated time: {max_scenes * 20}s...")
 
         try:
@@ -5467,16 +5689,22 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             import json as _json2
 
             # Step 1: Generate scenes with LLM
+            _kw = _extract_topic_keywords(topic)
+            _styles = _extract_style_modifiers(topic)
+            _style_note = f" The user explicitly requested this visual style: {', '.join(_styles)} — every single video_prompt MUST include it." if _styles else ""
             system_prompt = (
-                "You are a video script writer. Create a short video script about the given topic. "
+                f"You are a video script writer. The user's EXACT request is: \"{topic}\". "
+                f"Every scene you write MUST be directly, literally about this request — "
+                f"never invent unrelated subjects, characters, or scenarios that aren't part of it.{_style_note} "
                 f"Return ONLY a JSON array of {max_scenes} scenes. "
-                "Each scene has 'video_prompt' (a detailed description for AI VIDEO generation — describe motion, camera movement, lighting) "
+                "Each scene has 'video_prompt' (a detailed description for AI VIDEO generation — describe motion, "
+                "camera movement, lighting, and must reference the exact subject from the request above) "
                 "and 'narration' (the voiceover text for that scene, max 1 sentence under 100 characters). "
                 "Make video prompts cinematic and visually striking."
             )
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Create a {max_scenes}-scene video about: {topic}"},
+                {"role": "user", "content": f"Create a {max_scenes}-scene video about exactly this: {topic}"},
             ]
             llm = get_llm_client()
             llm_result = await asyncio.to_thread(llm.chat, messages)
@@ -5484,12 +5712,22 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
             json_match = _re2.search(r'\[.*\]', raw, _re2.DOTALL)
             if json_match:
-                scenes = _json2.loads(json_match.group())
+                try:
+                    scenes = _json2.loads(json_match.group())
+                except Exception:
+                    scenes = []
             else:
+                scenes = []
+
+            if not scenes:
                 scenes = [{
-                    "video_prompt": f"Cinematic shot about {topic}",
+                    "video_prompt": f"Cinematic shot of {topic}",
                     "narration": f"Let's explore {topic}.",
                 }]
+
+            # Safety net: force every scene's video_prompt to stay grounded in what
+            # the user actually asked for (topic keywords + any explicit style).
+            scenes = _anchor_scenes(topic, scenes, "video_prompt")
 
             voice = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
 
@@ -5503,9 +5741,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             if result.get("success") and result.get("file"):
                 video_bytes = _b64.b64decode(result["file"])
                 size_mb = len(video_bytes) / 1024 / 1024
+                _provider = result.get("provider", result.get("model", "LTX-Video"))
                 caption = (
                     f"AI Video: {topic[:60]}\n"
-                    f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.1f}s | {size_mb:.1f}MB | LTX-Video"
+                    f"Scenes: {result.get('scenes', 0)} | Duration: {result.get('total_duration', 0):.1f}s | {size_mb:.1f}MB | {_provider}"
                 )
                 await bot.send_message(chat_id, f"Sending video ({size_mb:.1f}MB)...")
                 send_result = await bot.send_video(chat_id, video_bytes, caption=caption)
@@ -5514,6 +5753,33 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 else:
                     err_msg = send_result.get("description", "Unknown error")
                     await bot.send_message(chat_id, f"Video created but couldn't send: {err_msg[:150]}")
+            elif _is_gpu_quota_error(result.get("error", "")):
+                # LTX-Video's free GPU quota is exhausted — fall back to the
+                # AI-images + Ken Burns pipeline (reuse the same anchored scenes,
+                # just swap video_prompt -> image_prompt) so the user still gets
+                # a finished video instead of a bare failure.
+                await bot.send_message(chat_id,
+                    "Real AI video generation hit its free GPU limit right now — "
+                    "building your video a different way instead (AI images + motion + voiceover)...")
+                try:
+                    fallback_scenes = [
+                        {"image_prompt": s.get("video_prompt", topic), "narration": s.get("narration", "")}
+                        for s in scenes
+                    ]
+                    fb_result = await create_video(
+                        topic, fallback_scenes, voice, aspect_ratio="9:16",
+                    )
+                    if fb_result.get("success") and fb_result.get("file"):
+                        fb_bytes = _b64.b64decode(fb_result["file"])
+                        fb_size_mb = len(fb_bytes) / 1024 / 1024
+                        fb_caption = f"AI Video: {topic[:60]}\n{fb_size_mb:.1f}MB (fallback — GPU quota was full)"
+                        await bot.send_video(chat_id, fb_bytes, caption=fb_caption)
+                        asyncio.create_task(_log_call(db, tg_user.id, "/telegram/aivideos_fallback", "POST", 0, 200))
+                    else:
+                        await bot.send_message(chat_id, "Fallback video also failed. Please try again in a few minutes.")
+                except Exception as fb_e:
+                    logger.error(f"aivideos fallback error: {fb_e}")
+                    await bot.send_message(chat_id, "Fallback video also failed. Please try again in a few minutes.")
             else:
                 await bot.send_message(chat_id, f"AI video generation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:

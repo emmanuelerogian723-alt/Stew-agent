@@ -1079,37 +1079,42 @@ async def generate_ai_video_with_narration(
             
             logger.info(f"Generating AI video scene {idx+1}/{len(scenes)}: {video_prompt[:80]}...")
             
-            # Generate AI video clip
-            def _gen_clip(prompt=video_prompt):
-                client = GradioClient("Lightricks/ltx-video-distilled", verbose=False)
-                result = client.predict(
-                    prompt=prompt,
-                    negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
-                    input_image_filepath=None,
-                    input_video_filepath=None,
-                    height_ui=512,
-                    width_ui=704,
-                    mode="text-to-video",
-                    duration_ui=clip_duration,
-                    ui_frames_to_use=9,
-                    seed_ui=42 + idx,
-                    randomize_seed=True,
-                    ui_guidance_scale=1,
-                    improve_texture_flag=True,
-                    api_name="/text_to_video",
-                )
-                return result
-            
+            # Generate AI video clip — multi-provider with fallback
             try:
-                result = await asyncio.to_thread(_gen_clip)
-                video_data = result[0] if isinstance(result, tuple) else None
-                if not video_data or not isinstance(video_data, dict) or "video" not in video_data:
-                    logger.warning(f"Scene {idx}: no video returned, skipping")
+                # Try LTX-Video first
+                clip_path = None
+                try:
+                    ltx_r = await _generate_ltx_video(
+                        prompt=video_prompt,
+                        duration=clip_duration,
+                        height=512,
+                        width=704,
+                        negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
+                        seed=42 + idx,
+                    )
+                    if ltx_r.get("success"):
+                        clip_path = ltx_r["video_path"]
+                        logger.info(f"Scene {idx}: LTX-Video succeeded")
+                except Exception as ltx_err:
+                    logger.warning(f"Scene {idx}: LTX-Video failed: {str(ltx_err)[:100]}")
+
+                # Fallback: Wan2.1
+                if not clip_path:
+                    try:
+                        wan_r = await _generate_wan21_video(video_prompt, seed=42 + idx)
+                        if wan_r.get("success"):
+                            clip_path = wan_r["video_path"]
+                            logger.info(f"Scene {idx}: Wan2.1 succeeded")
+                    except Exception as wan_err:
+                        logger.warning(f"Scene {idx}: Wan2.1 failed: {str(wan_err)[:100]}")
+
+                if not clip_path:
+                    logger.warning(f"Scene {idx}: all GPU providers failed, skipping")
                     continue
-                
+
                 raw_clip = os.path.join(tmp_dir, f"clip_{idx}.mp4")
                 import shutil
-                shutil.copy(video_data["video"], raw_clip)
+                shutil.copy(clip_path, raw_clip)
                 
                 # Add narration audio if provided
                 if narration:
@@ -1198,6 +1203,259 @@ async def generate_ai_video_with_narration(
         
     except Exception as e:
         logger.error(f"Multi-scene AI video error: {e}")
+        return {"success": False, "error": str(e)[:300]}
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+
+
+# ─── Multi-Provider AI Video (Fallback Chain) ─────────────────────────────
+# Providers tried in order: LTX-Video → Wan2.1 → Ken Burns (guaranteed).
+# Each provider has different GPU quotas — rotating between them means even
+# if one quota is exhausted, the other may still work.
+
+async def _generate_ltx_video(
+    prompt: str, duration: float, height: int, width: int,
+    negative_prompt: str, seed: int = 42,
+) -> dict:
+    """Provider 1: LTX-Video on HuggingFace Spaces (free ZeroGPU)."""
+    from gradio_client import Client as GradioClient
+    import shutil
+
+    def _gen():
+        client = GradioClient("Lightricks/ltx-video-distilled", verbose=False)
+        result = client.predict(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            input_image_filepath=None,
+            input_video_filepath=None,
+            height_ui=height,
+            width_ui=width,
+            mode="text-to-video",
+            duration_ui=min(duration, 5.0),
+            ui_frames_to_use=9,
+            seed_ui=seed,
+            randomize_seed=True,
+            ui_guidance_scale=1,
+            improve_texture_flag=True,
+            api_name="/text_to_video",
+        )
+        return result
+
+    result = await asyncio.to_thread(_gen)
+    if not result or not isinstance(result, tuple):
+        return {"success": False, "error": "LTX returned no result"}
+
+    video_data = result[0]
+    if isinstance(video_data, dict) and "video" in video_data:
+        video_path = video_data["video"]
+    elif isinstance(video_data, (str,)) and os.path.exists(video_data):
+        video_path = video_data
+    else:
+        return {"success": False, "error": "Unexpected LTX result format"}
+
+    if not os.path.exists(video_path) or os.path.getsize(video_path) < 1000:
+        return {"success": False, "error": "LTX video file missing/too small"}
+
+    return {"success": True, "video_path": video_path, "provider": "LTX-Video"}
+
+
+async def _generate_wan21_video(
+    prompt: str, seed: int = 42,
+) -> dict:
+    """Provider 2: Wan2.1 on HuggingFace Spaces (free ZeroGPU, async polling)."""
+    from gradio_client import Client as GradioClient
+    import shutil
+
+    def _gen():
+        client = GradioClient("Wan-AI/Wan2.1", verbose=False)
+        # Wan2.1 uses async generation — submit, then poll for status
+        result = client.predict(
+            prompt=prompt,
+            size="832*1088",  # vertical (good for Reels/Shorts)
+            watermark_wan=False,
+            seed=seed,
+            api_name="/t2v_generation_async",
+        )
+        return result
+
+    result = await asyncio.to_thread(_gen)
+    if not result:
+        return {"success": False, "error": "Wan2.1 returned no result"}
+
+    # Wan2.1 async returns (cost_time, estimated_wait) — need to poll for the video
+    # The actual video file appears after generation completes
+    est_wait = 0
+    if isinstance(result, tuple) and len(result) >= 2:
+        est_wait = float(result[1]) if result[1] else 60
+
+    # Poll the status endpoint
+    def _poll():
+        client = GradioClient("Wan-AI/Wan2.1", verbose=False)
+        for _ in range(30):  # max ~150 seconds
+            status = client.predict(api_name="/status_refresh")
+            # Status returns gallery/video data when ready
+            if isinstance(status, tuple) and len(status) >= 1:
+                gallery = status[0]
+                if gallery and isinstance(gallery, list) and len(gallery) > 0:
+                    item = gallery[0]
+                    if isinstance(item, (list, tuple)) and len(item) >= 1:
+                        video_info = item[0]
+                        if isinstance(video_info, dict) and "video" in video_info:
+                            return video_info["video"]
+                        elif isinstance(video_info, str) and os.path.exists(video_info):
+                            return video_info
+            import time as _t
+            _t.sleep(5)
+        return None
+
+    max_wait = min(est_wait + 30, 150)
+    video_path = await asyncio.to_thread(_poll)
+
+    if not video_path or not os.path.exists(str(video_path)):
+        return {"success": False, "error": "Wan2.1 polling timed out"}
+
+    if os.path.getsize(str(video_path)) < 1000:
+        return {"success": False, "error": "Wan2.1 video file too small"}
+
+    return {"success": True, "video_path": str(video_path), "provider": "Wan2.1"}
+
+
+async def generate_ai_video_multi_provider(
+    prompt: str,
+    duration: float = 2.0,
+    height: int = 512,
+    width: int = 704,
+    negative_prompt: str = "worst quality, inconsistent motion, blurry, jittery, distorted",
+    add_narration: bool = False,
+    narration_text: str = "",
+    voice: str = "en-US-AriaNeural",
+    aspect_ratio: str = "9:16",
+) -> dict:
+    """
+    Multi-provider AI video generation with automatic fallback.
+    
+    Tries: LTX-Video → Wan2.1 → Ken Burns (AI images + motion + TTS).
+    Guarantees a video is returned unless all providers fail.
+    """
+    import base64
+
+    duration = min(max(duration, 1.0), 5.0)
+    tmp_dir = tempfile.mkdtemp(prefix="stew_aivideo_mp_")
+
+    try:
+        video_path = None
+        provider_used = None
+
+        # Provider 1: LTX-Video
+        try:
+            logger.info(f"[multi-provider] Trying LTX-Video...")
+            ltx_result = await _generate_ltx_video(
+                prompt, duration, height, width, negative_prompt, seed=42
+            )
+            if ltx_result.get("success"):
+                video_path = ltx_result["video_path"]
+                provider_used = "LTX-Video"
+                logger.info(f"[multi-provider] LTX-Video succeeded")
+        except Exception as e:
+            logger.warning(f"[multi-provider] LTX-Video failed: {str(e)[:150]}")
+
+        # Provider 2: Wan2.1 (only if LTX failed or quota exceeded)
+        if not video_path:
+            try:
+                logger.info(f"[multi-provider] Trying Wan2.1...")
+                wan_result = await _generate_wan21_video(prompt, seed=42)
+                if wan_result.get("success"):
+                    video_path = wan_result["video_path"]
+                    provider_used = "Wan2.1"
+                    logger.info(f"[multi-provider] Wan2.1 succeeded")
+            except Exception as e:
+                logger.warning(f"[multi-provider] Wan2.1 failed: {str(e)[:150]}")
+
+        # Provider 3: Ken Burns fallback (guaranteed — uses AI images + motion)
+        if not video_path:
+            logger.info(f"[multi-provider] All GPU providers failed — using Ken Burns fallback")
+            from video_tools import create_video
+            scenes = [{"image_prompt": prompt, "narration": narration_text if add_narration else ""}]
+            kb_result = await create_video(
+                prompt, scenes, voice, duration_per_scene=int(duration),
+                aspect_ratio=aspect_ratio, add_captions=False,
+            )
+            if kb_result.get("success") and kb_result.get("file"):
+                # Ken Burns returns base64 — decode and write to file for uniform processing
+                kb_bytes = base64.b64decode(kb_result["file"])
+                video_path = os.path.join(tmp_dir, "kenburns.mp4")
+                with open(video_path, "wb") as f:
+                    f.write(kb_bytes)
+                provider_used = "Ken Burns (fallback)"
+            else:
+                return {"success": False, "error": "All video providers failed"}
+
+        # Copy to our temp dir
+        raw_video = os.path.join(tmp_dir, "ai_raw.mp4")
+        import shutil
+        shutil.copy(video_path, raw_video)
+
+        video_duration = _get_video_duration(raw_video)
+        logger.info(f"[multi-provider] Video ready: {os.path.getsize(raw_video)/1024:.0f}KB, {video_duration:.1f}s, via {provider_used}")
+
+        # Add narration if requested
+        final_path = raw_video
+        if add_narration and narration_text:
+            try:
+                import edge_tts
+                audio_path = os.path.join(tmp_dir, "narration.mp3")
+                communicate = edge_tts.Communicate(narration_text or prompt, voice)
+                audio_chunks = []
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_chunks.append(chunk["data"])
+                if audio_chunks:
+                    with open(audio_path, "wb") as f:
+                        f.write(b"".join(audio_chunks))
+
+                    narrated_path = os.path.join(tmp_dir, "narrated.mp4")
+                    ok, err = _run_ffmpeg([
+                        "-i", raw_video, "-i", audio_path,
+                        "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+                        "-shortest", "-movflags", "+faststart",
+                        narrated_path,
+                    ], timeout=30)
+                    if ok and os.path.exists(narrated_path):
+                        final_path = narrated_path
+            except Exception as e:
+                logger.warning(f"[multi-provider] Narration failed (non-fatal): {e}")
+
+        # Ensure Telegram-safe size
+        final_path = _ensure_telegram_safe_size(final_path, tmp_dir)
+
+        with open(final_path, "rb") as f:
+            video_bytes = f.read()
+
+        if len(video_bytes) < 500:
+            return {"success": False, "error": "Output video too small"}
+
+        b64 = base64.b64encode(video_bytes).decode()
+        filename = f"stew_aivideo_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp4"
+
+        return {
+            "success": True,
+            "file": b64,
+            "filename": filename,
+            "mime_type": "video/mp4",
+            "size_bytes": len(video_bytes),
+            "duration": round(video_duration, 1),
+            "prompt": prompt[:200],
+            "model": provider_used,
+            "narration_added": add_narration and narration_text,
+            "provider": provider_used,
+        }
+
+    except Exception as e:
+        logger.error(f"[multi-provider] AI video error: {e}")
         return {"success": False, "error": str(e)[:300]}
     finally:
         import shutil
