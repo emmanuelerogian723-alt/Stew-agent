@@ -3677,7 +3677,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # /meme — AI Meme Generator (trending feature)
     if user_text.startswith("/meme"):
-        logger.info(f"DEBUG: /meme handler reached! text={user_text[:80]}")
         _meme_text = user_text.strip()[5:].strip()
         if not _meme_text:
             await bot.send_message(
@@ -5608,26 +5607,22 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 style=_wb_style,
             )
             db.add(_wb_site)
-            logger.info(f"WEBBUILD: About to commit to DB. site_id will be {_wb_site.id}")
             await db.commit()
-            logger.info(f"WEBBUILD: DB commit succeeded. site_id={_wb_site.id}")
             await db.refresh(_wb_site)
 
             _wb_url = f"https://stew-agent.onrender.com/site/{_wb_site.id}"
             _wb_size_kb = _wb_result["size_bytes"] // 1024
-            # Sanitize title — remove markdown special chars that break Telegram formatting
+            # Sanitize title for Telegram
             _wb_safe_title = _wb_result['title'].replace("*", "").replace("_", "").replace("`", "").replace("[", "").replace("]", "").replace("(", "").replace(")", "")[:100]
-            _wb_msg = (
-                "Your website is live!\n\n"
+            await bot.send_message(
+                chat_id,
+                f"Your website is live!\n\n"
                 f"Title: {_wb_safe_title}\n"
                 f"Size: {_wb_size_kb}KB\n"
                 f"Style: {('Auto-matched' if _wb_style == 'auto' else _wb_style)}\n\n"
                 f"Link: {_wb_url}\n\n"
-                f"Share it with anyone. Open it on your phone to see the animations."
+                f"Share it with anyone. Open it on your phone to see the animations and scroll effects.",
             )
-            logger.info(f"WEBBUILD: Sending message. Length={len(_wb_msg)}. First 100 chars: {_wb_msg[:100]}")
-            await bot.send_message(chat_id, _wb_msg)
-            logger.info(f"WEBBUILD: Message sent successfully!")
             asyncio.create_task(_log_call(db, tg_user.id, "/telegram/webbuild", "POST", 0, 200))
         except Exception as e:
             logger.error(f"Webbuild error: {e}")
