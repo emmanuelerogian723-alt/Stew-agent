@@ -9,15 +9,16 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from server.config import get_settings
-from server.database import Base
+from server.database import Base, _get_async_url
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the SQLAlchemy URL from settings
+# Set the SQLAlchemy URL from settings — convert to async URL
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+_async_url = _get_async_url(settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", _async_url)
 
 target_metadata = Base.metadata
 
