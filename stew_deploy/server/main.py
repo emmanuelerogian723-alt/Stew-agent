@@ -3267,7 +3267,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/about", "/owner")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
@@ -3562,6 +3562,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Songs: /song topic (AI music + lyrics)\n"
                 "Images: generate image of...\n"
                 "Sites: /webbuild a coffee shop in Lagos\n"
+                "About: /about (who built S.T.E.W)\n"
+                "Owner: /owner (MUTYINT info)\n"
+                "About: /about\n"
+                "Owner: /owner\n"
                 "Memes: /meme when the code finally works\n"
                 "Captions: /caption viral social media text\n"
                 "Browse: browse https://...\n"
@@ -3638,6 +3642,37 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.startswith("/users"):
         _count_u = await _get_telegram_user_count(db)
         await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
+        return {"ok": True}
+
+    # /about — About S.T.E.W and its creator
+    if user_text.startswith("/about"):
+        await bot.send_message(
+            chat_id,
+            "S.T.E.W — Special Task Execution Worker\n\n"
+            "Built by Emmanuel Ene Rejoice Gideon\n"
+            "Founder & CEO, MUTYINT Company\n\n"
+            "S.T.E.W is an autonomous AI agent designed to help students, "
+            "businesses, and entrepreneurs across Africa and beyond. "
+            "It can generate websites, videos, images, documents, memes, "
+            "captions, and more — all from your Telegram chat.\n\n"
+            "Powered by: Groq AI, Pollinations, Hugging Face, Edge-TTS\n"
+            "Platform: Telegram (@StewAgent_bot)\n"
+            "Version: 6.0.0\n\n"
+            "Type /help to see everything I can do."
+        )
+        return {"ok": True}
+
+    # /owner — Show owner info (MUTYINT)
+    if user_text.startswith("/owner"):
+        await bot.send_message(
+            chat_id,
+            "MUTYINT Company\n\n"
+            "Founder & CEO: Emmanuel Ene Rejoice Gideon\n"
+            "Focus: AI-powered tools for African markets and beyond\n"
+            "Products: S.T.E.W Agent, Slime AI, OminiAssist, ERGIO\n\n"
+            "MUTYINT builds real-world problem-solving tools with "
+            "African language capabilities to gain a competitive edge."
+        )
         return {"ok": True}
 
     # /meme — AI Meme Generator (trending feature)
