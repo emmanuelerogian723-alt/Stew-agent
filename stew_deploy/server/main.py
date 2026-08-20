@@ -3561,7 +3561,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Books: /book topic (up to 200 pages)\n"
                 "Songs: /song topic (AI music + lyrics)\n"
                 "Images: generate image of...\n"
-                "Sites: /webbuild a coffee shop in Lagos\n"
+                "Sites: /webbuild a coffee shop in Lagos (any style — describe what you want)\n"
                 "About: /about (who built S.T.E.W)\n"
                 "Owner: /owner (MUTYINT info)\n"
                 "About: /about\n"
@@ -5540,8 +5540,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             )
             return
 
-        # Parse optional style keyword
-        _wb_style = "premium-dark"
+        # Style detection — pass "auto" by default so the LLM picks the best aesthetic
+        # based on the business type. Only override if the user explicitly says a known style.
+        _wb_style = "auto"
         _wb_styles_map = {
             "dark": "premium-dark", "premium": "premium-dark",
             "vibrant": "vibrant", "bold": "vibrant",
@@ -5549,12 +5550,12 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "corporate": "corporate", "professional": "corporate",
             "warm": "warm", "cozy": "warm",
         }
-        _wb_words = _wb_desc.lower().split()
+        # Only strip if it's clearly a standalone style keyword (e.g. "— dark" or just "dark")
+        _wb_words = _wb_desc.lower().replace(",", " ").split()
         for _wb_w in _wb_words:
-            if _wb_w in _wb_styles_map:
-                _wb_style = _wb_styles_map[_wb_w]
-                _wb_desc = _wb_desc.replace(_wb_w, "").strip()
-                break
+            if _wb_w.strip("—-,.!") in _wb_styles_map:
+                _wb_style = _wb_styles_map[_wb_w.strip("—-,.!")]
+                break  # Don't strip from description — the LLM needs the full context
 
         # Tier gating: free users get 1 webbuild/month, student 3, pro+ unlimited
         _wb_tier = _plan_tier(tg_user.plan)
@@ -5588,8 +5589,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_message(
             chat_id,
             f"🏗️ Building your motion-design website...\n"
-            f"Style: {_wb_style}\n"
-            f"Topic: {_wb_desc[:80]}\n"
+            f"Style: {('Auto — matching your description' if _wb_style == 'auto' else _wb_style)}\n"
+            f"Topic: {_wb_desc[:100]}\n"
             f"This takes ~15-30 seconds. I'll send you a live link when it's ready.",
         )
 
