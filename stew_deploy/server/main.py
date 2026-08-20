@@ -3659,8 +3659,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         try:
             # Generate the meme image via Pollinations with text overlay style
             _meme_prompt = f"funny meme illustration about: {_meme_text}, cartoon style, bold text overlay, internet meme format, viral, humorous, high contrast"
-            _meme_url = f"https://image.pollinations.ai/prompt/{httpx.URL(_meme_prompt, encoding='utf-8').quote()}"
-            _meme_resp = await asyncio.to_thread(http_requests.get, _meme_url, {"timeout": 30})
+            from urllib.parse import quote as _url_quote
+            _meme_url = f"https://image.pollinations.ai/prompt/{_url_quote(_meme_prompt, safe='')}"
+            _meme_resp = await asyncio.to_thread(http_requests.get, _meme_url, timeout=30)
             if _meme_resp.status_code == 200 and len(_meme_resp.content) > 1000:
                 await bot.send_photo(chat_id, _meme_resp.content, caption=f"Meme: {_meme_text[:80]}")
                 asyncio.create_task(_log_call(db, tg_user.id, "/telegram/meme", "POST", 0, 200))
@@ -3688,6 +3689,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return
 
         try:
+            llm = get_llm_client()
             _cap_result = await asyncio.to_thread(
                 llm.chat,
                 [
