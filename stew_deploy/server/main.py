@@ -5523,7 +5523,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         if _wb_tier == 0:  # free
             _wb_count = await db.execute(
                 select(func.count(GeneratedWebsite.id)).where(
-                    GeneratedWebsite.telegram_user_id == str(tg_user.telegram_id),
+                    GeneratedWebsite.telegram_user_id == str(tg_user.id),
                 )
             )
             if (_wb_count.scalar() or 0) >= 1:
@@ -5536,7 +5536,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif _wb_tier == 1:  # student
             _wb_count = await db.execute(
                 select(func.count(GeneratedWebsite.id)).where(
-                    GeneratedWebsite.telegram_user_id == str(tg_user.telegram_id),
+                    GeneratedWebsite.telegram_user_id == str(tg_user.id),
                 )
             )
             if (_wb_count.scalar() or 0) >= 3:
@@ -5562,7 +5562,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 return
 
             _wb_site = GeneratedWebsite(
-                telegram_user_id=str(tg_user.telegram_id),
+                telegram_user_id=str(tg_user.id),
                 title=_wb_result["title"],
                 description=_wb_desc[:500],
                 html=_wb_result["html"],
