@@ -5613,12 +5613,14 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
             _wb_url = f"https://stew-agent.onrender.com/site/{_wb_site.id}"
             _wb_size_kb = _wb_result["size_bytes"] // 1024
+            # Sanitize title — remove markdown special chars that break Telegram formatting
+            _wb_safe_title = _wb_result['title'].replace("*", "").replace("_", "").replace("`", "").replace("[", "").replace("]", "")[:100]
             await bot.send_message(
                 chat_id,
                 f"✅ *Your website is live!*\n\n"
-                f"Title: {_wb_result['title']}\n"
+                f"Title: {_wb_safe_title}\n"
                 f"Size: {_wb_size_kb}KB\n"
-                f"Style: {_wb_style}\n\n"
+                f"Style: {('Auto-matched' if _wb_style == 'auto' else _wb_style)}\n\n"
                 f"Link: {_wb_url}\n\n"
                 f"Share it with anyone — it's a real website, not a screenshot. "
                 f"Open it on your phone to see the animations and scroll effects.",
