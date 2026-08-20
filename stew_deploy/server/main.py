@@ -5750,8 +5750,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             # Generate content with LLM first
             if doc_type == "xlsx":
                 # For spreadsheets, ask LLM for structured data
-                system_prompt = "You are a data analyst. Generate structured spreadsheet data as a JSON array of objects. Return ONLY valid JSON, no explanation."
-                user_msg = f"Create spreadsheet data about: {doc_topic}. Return an array of 5-15 row objects with appropriate column names. Return ONLY the JSON array."
+                system_prompt = """You are a world-class data analyst. Generate rich, realistic structured spreadsheet data as a JSON array of objects. Return ONLY valid JSON, no explanation.
+
+Rules:
+- Include 8-20 rows of realistic, specific data (not generic placeholders)
+- Use descriptive column names that make sense for the topic
+- Include a mix of text, numbers, and dates where appropriate
+- Make the data tell a story or support analysis
+- If the topic is business-related, include financial metrics
+- If the topic is educational, include scores, grades, or categories
+- Numbers should be realistic (e.g. revenue in thousands, percentages 0-100)"""
+                user_msg = f"Create detailed, realistic spreadsheet data about: {doc_topic}. Return a JSON array of 8-20 row objects with appropriate, descriptive column names. Make the data specific and realistic — not generic. Return ONLY the JSON array."
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
@@ -5825,7 +5834,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 else:
                     # Generic template, respecting a requested slide count if the user gave one
                     target_count = requested_count or 10
-                    system_prompt = "You are a presentation designer. Return ONLY a JSON array of slides. Each slide has 'title' and 'content'. Content should be bullet points separated by newlines, with '- ' prefix for each bullet. Keep bullets concise (max 10 words each). Max 6 bullets per slide."
+                    system_prompt = "You are a world-class presentation designer and content strategist. Return ONLY a JSON array of slides. Each slide has 'title' and 'content'. Content should be impactful bullet points separated by newlines, with '- ' prefix for each bullet. Keep bullets concise (max 12 words each) but meaningful. Max 6 bullets per slide. Make the content specific and insightful — not generic filler. Each slide should convey a clear, memorable point."
                     user_msg = (
                         f"Create a {target_count}-slide presentation about: {doc_topic}. "
                         f"Design the slide structure to fit the topic \u2014 do NOT default to a startup pitch deck. "
@@ -5856,8 +5865,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 doc_result = await asyncio.to_thread(generate_pptx, slides, doc_topic)
             else:
                 # For PDF and DOCX, generate text content
-                system_prompt = f"You are a professional writer. Create a well-structured, concise document (under 1200 words) about: {doc_topic}. Use markdown: # for title, ## for headings, - for bullet points. Do NOT use tables. Do NOT use special unicode symbols, subscripts, or superscripts — write exponents as 'x10^9' and use plain ASCII only. Write a complete document that ends with a proper conclusion — never cut off mid-sentence."
-                user_msg = f"Write a complete, well-structured document about: {doc_topic}. Include an introduction, 3-5 main sections with headings, and a conclusion. Keep it focused and under 1200 words so it fits completely."
+                system_prompt = f"""You are a world-class professional writer and subject matter expert. Create a comprehensive, well-structured document about: {doc_topic}.
+
+Requirements:
+- Use markdown: # for the main title, ## for section headings, ### for subheadings
+- Use - for bullet points where appropriate
+- Include a compelling introduction that hooks the reader
+- Include 4-6 main sections with detailed, substantive content (not just bullet points)
+- Use specific facts, examples, statistics, and real-world context
+- Include a proper conclusion that summarizes key takeaways
+- Do NOT use tables
+- Do NOT use special unicode symbols, subscripts, or superscripts — write exponents as 'x10^9' and use plain ASCII only
+- Write a COMPLETE document that ends with a proper conclusion — never cut off mid-sentence
+- Target 1500-2500 words for a rich, professional document
+- Write in a confident, authoritative tone appropriate for the topic
+- If the topic involves a business, include market context and actionable insights
+- If the topic is educational, include clear explanations and examples"""
+                user_msg = f"Write a complete, professional, well-structured document about: {doc_topic}. Make it detailed and informative with real substance — not just a summary. Include an introduction, 4-6 main sections with headings, specific examples, and a conclusion."
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
