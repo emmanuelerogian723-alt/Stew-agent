@@ -3642,6 +3642,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # /meme — AI Meme Generator (trending feature)
     if user_text.startswith("/meme"):
+        logger.info(f"DEBUG: /meme handler reached! text={user_text[:80]}")
         _meme_text = user_text.strip()[5:].strip()
         if not _meme_text:
             await bot.send_message(
