@@ -74,12 +74,18 @@ class Settings(BaseSettings):
 
     @property
     def PLAN_PRICES(self) -> dict:
-        return {"free": 0, "pro": 9900, "business": 29000, "enterprise": 49000}
+        return {"free": 0, "student": 2000, "pro": 9900, "business": 29000, "enterprise": 49000}
 
     @property
     def PLAN_CALL_LIMITS(self) -> dict:
         # "owner" = admin-unlocked Telegram accounts (see /admin <code>) — unmetered.
-        return {"free": 50, "pro": 10000, "business": 100000, "enterprise": 50000, "owner": 999999999}
+        # "student" = budget tier for students — fewer messages than Pro but way cheaper.
+        return {"free": 50, "student": 400, "pro": 10000, "business": 100000, "enterprise": 50000, "owner": 999999999}
+
+    @property
+    def PLAN_TIER_ORDER(self) -> dict:
+        """Numeric tier rank per plan — used to gate premium features (video, webbuild, etc)."""
+        return {"free": 0, "student": 1, "pro": 2, "business": 3, "enterprise": 4, "owner": 5}
 
     # Fine-tune preset system prompts per persona
     @property

@@ -30,6 +30,7 @@ from server.auth import (
 from server.config import get_settings
 from server.database import get_db, init_db
 from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration
+from server.webbuilder import build_motion_website
 from server.persistent_memory import (
     is_configured as supabase_configured,
     save_memory as supa_save_memory,
@@ -52,7 +53,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign
+from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -110,6 +111,41 @@ async def lifespan(app: FastAPI):
     os.makedirs("output", exist_ok=True)
     start_keepalive()
     start_bot_stats()
+
+    # Register bot commands on Telegram (includes new /webbuild, /meme, /caption)
+    try:
+        import httpx as _httpx
+        _cmds = [
+            {"command": "start", "description": "Start using Stew Agent"},
+            {"command": "menu", "description": "Show all commands and features"},
+            {"command": "help", "description": "Get help and usage info"},
+            {"command": "upgrade", "description": "Upgrade your plan (Student, Pro, Business)"},
+            {"command": "usage", "description": "Check your usage and quota"},
+            {"command": "plan", "description": "View pricing plans"},
+            {"command": "voice", "description": "Toggle voice note replies"},
+            {"command": "clip", "description": "Clip a video segment from URL"},
+            {"command": "smartclip", "description": "AI smart clips with captions"},
+            {"command": "createvideo", "description": "AI video with images + voiceover"},
+            {"command": "aivideo", "description": "REAL AI video from text (LTX-Video)"},
+            {"command": "aivideos", "description": "Multi-scene AI video with narration"},
+            {"command": "webbuild", "description": "Build a motion-design website (Kimi style)"},
+            {"command": "meme", "description": "Generate an AI meme image"},
+            {"command": "caption", "description": "Generate viral social media captions"},
+            {"command": "feature", "description": "Request a new feature"},
+            {"command": "features", "description": "View feature requests"},
+            {"command": "vote", "description": "Vote for a feature request"},
+            {"command": "sponsor", "description": "Sponsor an ad on Stew"},
+            {"command": "admin", "description": "Admin access (owner only)"},
+        ]
+        async with _httpx.AsyncClient(timeout=10) as _client:
+            await _client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setMyCommands",
+                json={"commands": _cmds},
+            )
+        logger.info(f"Registered {len(_cmds)} Telegram bot commands")
+    except Exception as _cmd_err:
+        logger.warning(f"Failed to register bot commands: {_cmd_err}")
+
     yield
     stop_keepalive()
     stop_bot_stats()
@@ -170,6 +206,25 @@ async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
     calls_used = result.scalar() or 0
     plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
     return (calls_used < plan_limit, calls_used, plan_limit)
+
+
+def _plan_tier(plan: str) -> int:
+    """Numeric rank of a plan: free=0, student=1, pro=2, business=3, enterprise=4, owner=5.
+    Use for feature gating (e.g. video scene counts, webbuild access) that scales
+    smoothly with plan level instead of a flat free-vs-paid check."""
+    return settings.PLAN_TIER_ORDER.get(plan, 0)
+
+
+def _tiered_limit(plan: str, by_tier: dict) -> int:
+    """Pick a limit from a {tier_rank: value} map for the user's plan tier,
+    falling back to the highest defined tier at or below the user's rank."""
+    tier = _plan_tier(plan)
+    available = sorted(by_tier.keys())
+    chosen = available[0]
+    for t in available:
+        if tier >= t:
+            chosen = t
+    return by_tier[chosen]
 
 
 async def _get_telegram_user_count(db: AsyncSession) -> int:
@@ -338,6 +393,26 @@ async def heartbeat():
             "image_generation": "operational",
         },
     }
+
+
+@app.get("/site/{site_id}", response_class=HTMLResponse, include_in_schema=False)
+async def serve_generated_website(site_id: str, db: AsyncSession = Depends(get_db)):
+    """Serve a /webbuild-generated motion-design website — publicly viewable, no auth needed."""
+    result = await db.execute(select(GeneratedWebsite).where(GeneratedWebsite.id == site_id))
+    site = result.scalars().first()
+    if not site:
+        return HTMLResponse(
+            content="<html><body style='font-family:sans-serif;text-align:center;padding:80px;"
+                    "background:#0a0a0f;color:#fff;'><h1>404</h1><p>This site doesn't exist or was removed."
+                    "</p><p style='opacity:0.6'>Built with S.T.E.W — Telegram: @StewAgent_bot</p></body></html>",
+            status_code=404,
+        )
+    try:
+        site.views = (site.views or 0) + 1
+        await db.commit()
+    except Exception:
+        pass
+    return HTMLResponse(content=site.html)
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -3192,13 +3267,14 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
         _allowed_early, _used_early, _limit_early = await _check_quota(tg_user_early, db)
         if not _allowed_early:
             _upgrade_kb = [
+                [{"text": f"🎓 Upgrade — Student ₦{settings.PLAN_PRICES['student']:,}", "callback_data": "menu_upgrade_student"}],
                 [{"text": f"💎 Upgrade — Pro ₦{settings.PLAN_PRICES['pro']:,}", "callback_data": "menu_upgrade_pro"}],
                 [{"text": f"🏢 Upgrade — Business ₦{settings.PLAN_PRICES['business']:,}", "callback_data": "menu_upgrade_business"}],
             ]
@@ -3206,6 +3282,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 chat_id,
                 f"⚠️ You've reached your free monthly limit ({_used_early}/{_limit_early} messages).\n\n"
                 f"Upgrade to keep using S.T.E.W without interruption:\n\n"
+                f"Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} messages (budget-friendly)\n"
                 f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages\n"
                 f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages\n\n"
                 f"Or type /upgrade any time to see plans again.",
@@ -3448,6 +3525,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "menu_tools": "tools",
             "menu_clear": "clear",
             "menu_help": "help",
+            "menu_upgrade_student": "upgrade_student",
             "menu_upgrade_pro": "upgrade_pro",
             "menu_upgrade_business": "upgrade_business",
         }
@@ -3459,7 +3537,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif action == "companies":
             await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN")
         elif action == "tools":
-            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx\nGenerate images: 'generate image of...'\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
+            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
         elif action == "clear":
             try:
                 conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
@@ -3482,14 +3560,16 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Documents: /pdf /docx /xlsx /pptx\n"
                 "Books: /book topic (up to 200 pages)\n"
                 "Songs: /song topic (AI music + lyrics)\n"
-                "Books: /book topic (up to 200 pages)\n"
                 "Images: generate image of...\n"
+                "Sites: /webbuild a coffee shop in Lagos\n"
+                "Memes: /meme when the code finally works\n"
+                "Captions: /caption viral social media text\n"
                 "Browse: browse https://...\n"
                 "Send photos/PDFs for OCR, voice notes for transcription"
             )
             await bot.send_message(chat_id, help_text)
-        elif action in ("upgrade_pro", "upgrade_business"):
-            _plan = "pro" if action == "upgrade_pro" else "business"
+        elif action in ("upgrade_student", "upgrade_pro", "upgrade_business"):
+            _plan = {"upgrade_student": "student", "upgrade_pro": "pro", "upgrade_business": "business"}[action]
             try:
                 _pay = initialize_payment(
                     email=tg_user.email if 'tg_user' in dir() else tg_user_early.email,
@@ -3511,14 +3591,16 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # /upgrade — show plan options with live Paystack checkout links
     if user_text.startswith("/upgrade"):
         _kb = [
+            [{"text": f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo", "callback_data": "menu_upgrade_student"}],
             [{"text": f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo", "callback_data": "menu_upgrade_pro"}],
             [{"text": f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo", "callback_data": "menu_upgrade_business"}],
         ]
         await bot.send_inline_keyboard(
             chat_id,
             f"Choose a plan:\n\n"
-            f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
-            f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
+            f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} messages/month\n"
+            f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
+            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
             f"Tap a plan to get your secure Paystack payment link.",
             _kb,
         )
@@ -3544,8 +3626,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             chat_id,
             "S.T.E.W Plans\n\n"
             f"Free — ₦0 — {settings.PLAN_CALL_LIMITS['free']:,} messages/month\n"
-            f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
-            f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
+            f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} messages/month\n"
+            f"   (budget tier — great for coursework, quizzes, small AI videos)\n"
+            f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
+            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
             "Type /upgrade to pay with Paystack.",
         )
         return {"ok": True}
@@ -3555,6 +3639,79 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         _count_u = await _get_telegram_user_count(db)
         await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
         return {"ok": True}
+
+    # /meme — AI Meme Generator (trending feature)
+    if user_text.startswith("/meme"):
+        _meme_text = user_text.strip()[5:].strip()
+        if not _meme_text:
+            await bot.send_message(
+                chat_id,
+                "🤣 *AI Meme Generator*\n\n"
+                "I create a meme image with text overlay from your description.\n\n"
+                "*Usage:*\n"
+                "1. /meme when the code finally works on the first try\n"
+                "2. /meme me explaining AI to my grandma\n"
+                "3. /meme Monday motivation: AI doing my homework",
+            )
+            return
+
+        await bot.send_chat_action(chat_id, "upload_photo")
+        try:
+            # Generate the meme image via Pollinations with text overlay style
+            _meme_prompt = f"funny meme illustration about: {_meme_text}, cartoon style, bold text overlay, internet meme format, viral, humorous, high contrast"
+            _meme_url = f"https://image.pollinations.ai/prompt/{httpx.URL(_meme_prompt, encoding='utf-8').quote()}"
+            _meme_resp = await asyncio.to_thread(http_requests.get, _meme_url, {"timeout": 30})
+            if _meme_resp.status_code == 200 and len(_meme_resp.content) > 1000:
+                await bot.send_photo(chat_id, _meme_resp.content, caption=f"Meme: {_meme_text[:80]}")
+                asyncio.create_task(_log_call(db, tg_user.id, "/telegram/meme", "POST", 0, 200))
+            else:
+                await bot.send_message(chat_id, f"Meme generation failed. Try a different prompt! (HTTP {_meme_resp.status_code})")
+        except Exception as e:
+            logger.error(f"Meme generation error: {e}")
+            await bot.send_message(chat_id, f"Meme error: {str(e)[:150]}")
+        return
+
+    # /caption — Viral Social Media Caption Generator (trending feature)
+    if user_text.startswith("/caption"):
+        _cap_context = user_text.strip()[8:].strip()
+        if not _cap_context:
+            await bot.send_message(
+                chat_id,
+                "📸 *Viral Caption Generator*\n\n"
+                "I write scroll-stopping social media captions with hashtags.\n\n"
+                "*Usage:*\n"
+                "1. /caption a photo of my startup team launching our app\n"
+                "2. /caption a plate of jollof rice at a Lagos restaurant\n"
+                "3. /caption announcing my new AI product\n\n"
+                "I generate captions optimized for Instagram, Twitter/X, and TikTok.",
+            )
+            return
+
+        try:
+            _cap_result = await asyncio.to_thread(
+                llm.chat,
+                [
+                    {"role": "system", "content": "You are a viral social media caption writer. "
+                     "Generate 3 different caption options for the user's described post. "
+                     "Each caption should be optimized for a different platform: "
+                     "Option 1 for Instagram (with emojis + hashtags), "
+                     "Option 2 for Twitter/X (short, punchy, max 280 chars), "
+                     "Option 3 for TikTok (trendy, Gen Z voice, with hooks). "
+                     "Output ONLY the 3 captions, clearly labeled. No extra explanation."},
+                    {"role": "user", "content": f"Write captions for: {_cap_context}"},
+                ],
+            )
+            _caps = clean_response(_cap_result.get("content", ""))
+            await bot.send_message(
+                chat_id,
+                f"📸 *Viral Captions*\n\n{_caps}\n\n"
+                f"Pick your favorite and post it. The hashtags are optimized for reach.",
+            )
+            asyncio.create_task(_log_call(db, tg_user.id, "/telegram/caption", "POST", 0, 200))
+        except Exception as e:
+            logger.error(f"Caption generation error: {e}")
+            await bot.send_message(chat_id, f"Caption error: {str(e)[:150]}")
+        return
 
     # /sponsor — show current sponsors
     if user_text.startswith("/sponsor"):
@@ -3827,11 +3984,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "Video Studio:\n"
             "43. /clip <url> <start> <dur> - Clip a video segment\n"
             "44. /smartclip <url> - AI smart clips (Opus Clips style)\n"
-            "45. /createvideo <topic> - AI video with images + voiceover\n\n"
+            "45. /createvideo <topic> - AI video with images + voiceover\n"
+            "46. /aivideo <prompt> - REAL AI video from text\n"
+            "47. /aivideos <prompt> - Multi-scene AI video with narration\n\n"
+            "Creative:\n"
+            "48. /webbuild <desc> - Build a motion-design website (live link)\n"
+            "49. /meme <text> - Generate an AI meme image\n"
+            "50. /caption <context> - Viral social media captions\n\n"
             "Account:\n"
-            "46. /usage - Check your usage quota\n"
-            "47. /plan - View pricing plans\n"
-            "48. /upgrade - Upgrade to Pro"
+            "51. /usage - Check your usage quota\n"
+            "52. /plan - View pricing plans\n"
+            "53. /upgrade - Upgrade (Student, Pro, Business)"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
@@ -4980,8 +5143,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         if "square" in args:
             aspect_ratio = "1:1"
 
-        if tg_user.plan == "free":
-            num_clips = min(num_clips, 2)
+        _smartclip_max = _tiered_limit(tg_user.plan, {0: 2, 1: 3, 2: 5, 3: 8})
+        num_clips = min(num_clips, _smartclip_max)
 
         if not video_url.startswith("http"):
             await bot.send_message(chat_id, "Please provide a valid video URL")
@@ -5063,7 +5226,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             raw_args = " ".join(arg_words[:-1]).strip()
 
         topic = raw_args or parts[1].strip()
-        max_scenes = 3 if tg_user.plan == "free" else 8
+        max_scenes = _tiered_limit(tg_user.plan, {0: 3, 1: 4, 2: 8, 3: 8})
 
         allowed, used, limit = await _check_quota(tg_user, db)
         if not allowed:
@@ -5246,7 +5409,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return
 
         topic = parts[1].strip()
-        max_scenes = 2 if tg_user.plan == "free" else 5
+        max_scenes = _tiered_limit(tg_user.plan, {0: 2, 1: 3, 2: 5, 3: 5})
 
         allowed, used, limit = await _check_quota(tg_user, db)
         if not allowed:
@@ -5319,6 +5482,112 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         except Exception as e:
             logger.error(f"Multi-scene AI video error: {e}")
             await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+        return
+
+    # /webbuild — Motion Design Website Builder (Kimi K2 style)
+    if user_text.startswith("/webbuild"):
+        _wb_desc = user_text.strip()[8:].strip()  # remove "/webbuild"
+        if not _wb_desc:
+            await bot.send_message(
+                chat_id,
+                "🏗️ *Motion Design Website Builder*\n\n"
+                "I generate a premium, animated single-page website from your description "
+                "and host it live — you get a real shareable link instantly.\n\n"
+                "*Usage:*\n"
+                "1. /webbuild a boutique coffee roastery in Lagos\n"
+                "2. /webbuild a tech startup that builds AI agents for African businesses\n"
+                "3. /webbuild a fitness coaching service with online booking\n\n"
+                "Styles (optional, add at end): dark, vibrant, minimal, corporate, warm\n"
+                "Example: /webbuild a fashion brand for Gen Z — vibrant",
+            )
+            return
+
+        # Parse optional style keyword
+        _wb_style = "premium-dark"
+        _wb_styles_map = {
+            "dark": "premium-dark", "premium": "premium-dark",
+            "vibrant": "vibrant", "bold": "vibrant",
+            "minimal": "minimal", "clean": "minimal",
+            "corporate": "corporate", "professional": "corporate",
+            "warm": "warm", "cozy": "warm",
+        }
+        _wb_words = _wb_desc.lower().split()
+        for _wb_w in _wb_words:
+            if _wb_w in _wb_styles_map:
+                _wb_style = _wb_styles_map[_wb_w]
+                _wb_desc = _wb_desc.replace(_wb_w, "").strip()
+                break
+
+        # Tier gating: free users get 1 webbuild/month, student 3, pro+ unlimited
+        _wb_tier = _plan_tier(tg_user.plan)
+        if _wb_tier == 0:  # free
+            _wb_count = await db.execute(
+                select(func.count(GeneratedWebsite.id)).where(
+                    GeneratedWebsite.telegram_user_id == str(msg["from"]["id"]),
+                )
+            )
+            if (_wb_count.scalar() or 0) >= 1:
+                await bot.send_message(
+                    chat_id,
+                    "🚫 Free tier allows 1 website build. Upgrade with /upgrade to build more "
+                    "(Student plan: 3 sites, Pro: unlimited).",
+                )
+                return
+        elif _wb_tier == 1:  # student
+            _wb_count = await db.execute(
+                select(func.count(GeneratedWebsite.id)).where(
+                    GeneratedWebsite.telegram_user_id == str(msg["from"]["id"]),
+                )
+            )
+            if (_wb_count.scalar() or 0) >= 3:
+                await bot.send_message(
+                    chat_id,
+                    "🚫 Student plan allows 3 website builds. Upgrade to Pro for unlimited. /upgrade",
+                )
+                return
+
+        await bot.send_chat_action(chat_id, "upload_document")
+        await bot.send_message(
+            chat_id,
+            f"🏗️ Building your motion-design website...\n"
+            f"Style: {_wb_style}\n"
+            f"Topic: {_wb_desc[:80]}\n"
+            f"This takes ~15-30 seconds. I'll send you a live link when it's ready.",
+        )
+
+        try:
+            _wb_result = await build_motion_website(_wb_desc, _wb_style)
+            if not _wb_result.get("success"):
+                await bot.send_message(chat_id, f"Build failed: {_wb_result.get('error', 'Unknown error')}. Try again with more detail.")
+                return
+
+            _wb_site = GeneratedWebsite(
+                telegram_user_id=str(msg["from"]["id"]),
+                title=_wb_result["title"],
+                description=_wb_desc[:500],
+                html=_wb_result["html"],
+                style=_wb_style,
+            )
+            db.add(_wb_site)
+            await db.commit()
+            await db.refresh(_wb_site)
+
+            _wb_url = f"https://stew-agent.onrender.com/site/{_wb_site.id}"
+            _wb_size_kb = _wb_result["size_bytes"] // 1024
+            await bot.send_message(
+                chat_id,
+                f"✅ *Your website is live!*\n\n"
+                f"Title: {_wb_result['title']}\n"
+                f"Size: {_wb_size_kb}KB\n"
+                f"Style: {_wb_style}\n\n"
+                f"Link: {_wb_url}\n\n"
+                f"Share it with anyone — it's a real website, not a screenshot. "
+                f"Open it on your phone to see the animations and scroll effects.",
+            )
+            asyncio.create_task(_log_call(db, tg_user.id, "/telegram/webbuild", "POST", 0, 200))
+        except Exception as e:
+            logger.error(f"Webbuild error: {e}")
+            await bot.send_message(chat_id, f"Build error: {str(e)[:200]}")
         return
 
     # /voice — Toggle voice note replies

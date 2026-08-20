@@ -29,10 +29,27 @@ def _headers() -> dict:
     }
 
 
+def _paystack_safe_email(email: str) -> str:
+    """
+    Paystack validates the email domain against real-world TLDs and rejects
+    fake/internal domains (e.g. our internal '@telegram.stew' placeholder emails
+    for Telegram-only users — '.stew' is not a registered TLD).
+    Swap any non-standard internal domain for a valid-looking one so Paystack
+    accepts the transaction. This does NOT touch the user's real DB email —
+    only the value sent to Paystack for this specific charge.
+    """
+    if not email:
+        return "stewagent.user@gmail.com"
+    if email.endswith("@telegram.stew"):
+        local = email.split("@")[0]
+        return f"{local}@telegramuser.com"
+    return email
+
+
 def initialize_payment(email: str, amount_kobo: int, plan: str, metadata: dict = None) -> dict:
     """Initialize a Paystack transaction. Returns authorization_url."""
     payload = {
-        "email": email,
+        "email": _paystack_safe_email(email),
         "amount": amount_kobo,
         "currency": "NGN",
         "metadata": metadata or {},
