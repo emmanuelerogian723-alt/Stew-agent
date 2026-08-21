@@ -84,41 +84,55 @@ def _friendly_ytdlp_error(raw_err: str) -> str:
     return cleaned
 
 
-def _run_ytdlp(url: str, output_path: str, timeout: int = 120) -> tuple[bool, str]:
+def _run_ytdlp(url: str, output_path: str, timeout: int = 150) -> tuple[bool, str]:
     """Download a video using yt-dlp. Returns (success, error_msg).
-    YouTube aggressively blocks datacenter/cloud IPs from its default 'web' client
-    with HTTP 403 — the 'android' player client reliably bypasses this and is
-    tried first for YouTube URLs. Other platforms (TikTok, Twitter/X, Instagram,
-    direct mp4 links, Vimeo, etc.) use yt-dlp's generic/native extractors, which
-    work fine without any special client flag."""
+
+    Root-cause note (fixed): --max-filesize was previously capping the SOURCE
+    video download at 50MB, but clip_video() downloads the FULL source video
+    and trims it with ffmpeg AFTERWARDS — so any source video longer than a
+    few minutes at normal quality exceeded that cap and failed outright, even
+    though the actual clip needed (e.g. 30s) is tiny. The cap now only guards
+    against truly absurd downloads (e.g. a 3-hour 4K livestream VOD); real
+    clips are limited by ffmpeg's trim step, not this download step.
+
+    YouTube aggressively blocks datacenter/cloud IPs (like Render's) from its
+    default client with HTTP 403 or a "sign in to confirm you're not a bot"
+    error. This is adversarial and evolving on YouTube's side — no single
+    client flag works 100% of the time from a shared cloud IP. We try several
+    single-client fallbacks in sequence (mixing multiple clients in one
+    --extractor-args call was tested and caused MORE format-availability
+    errors, not fewer, so each attempt uses exactly one client). Every
+    failure is logged so patterns can be diagnosed from Render logs. Other
+    platforms (TikTok, Twitter/X, Instagram, direct mp4 links, Vimeo, etc.)
+    use yt-dlp's generic/native extractors, which work fine without any
+    special client flag."""
     _update_ytdlp_once()
 
     is_yt = _is_youtube_url(url)
+    _max_filesize = "300M"  # generous safety net, not a per-clip limit — see docstring
+    _fmt = "best[ext=mp4]/best"
 
-    # Build an ordered list of attempts: (extra_args, format_string)
-    attempts = []
     if is_yt:
-        # 'android' client bypasses YouTube's cloud-IP bot detection (HTTP 403).
-        # 'android_music' and a plain retry are fallbacks if the first fails.
         attempts = [
-            (["--extractor-args", "youtube:player_client=android"], "best[ext=mp4]/best"),
-            (["--extractor-args", "youtube:player_client=android_music"], "best[ext=mp4]/best"),
-            (["--extractor-args", "youtube:player_client=ios,web"], "best[ext=mp4]/best"),
-            ([], "best[ext=mp4][filesize<50M]/best[filesize<50M]/best"),
+            (["--extractor-args", "youtube:player_client=android"], _fmt),
+            (["--extractor-args", "youtube:player_client=ios"], _fmt),
+            (["--extractor-args", "youtube:player_client=tv"], _fmt),
+            (["--extractor-args", "youtube:player_client=android_music"], _fmt),
+            ([], _fmt),
         ]
     else:
         attempts = [
-            ([], "best[ext=mp4][filesize<50M]/best[filesize<50M]/best"),
+            ([], "best[ext=mp4][filesize<200M]/best[filesize<200M]/best"),
             ([], "mp4/best"),
         ]
 
     last_err = ""
-    for extra_args, fmt in attempts:
+    for attempt_num, (extra_args, fmt) in enumerate(attempts, 1):
         try:
             cmd = [
                 "yt-dlp",
                 "-f", fmt,
-                "--max-filesize", "50M",
+                "--max-filesize", _max_filesize,
                 "--no-playlist",
                 "--no-warnings",
                 *extra_args,
@@ -127,9 +141,11 @@ def _run_ytdlp(url: str, output_path: str, timeout: int = 120) -> tuple[bool, st
             ]
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)
             if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                if attempt_num > 1:
+                    logger.info(f"yt-dlp succeeded on attempt {attempt_num} for {url}")
                 return True, ""
             last_err = result.stderr.decode("utf-8", errors="replace")
-            # Clean up any partial/empty file before the next attempt
+            logger.warning(f"yt-dlp attempt {attempt_num}/{len(attempts)} failed for {url}: {last_err[-300:]}")
             if os.path.exists(output_path):
                 try:
                     os.remove(output_path)
@@ -137,13 +153,36 @@ def _run_ytdlp(url: str, output_path: str, timeout: int = 120) -> tuple[bool, st
                     pass
         except subprocess.TimeoutExpired:
             last_err = "Download timed out"
+            logger.warning(f"yt-dlp attempt {attempt_num}/{len(attempts)} timed out for {url}")
             continue
         except FileNotFoundError:
             return False, "yt-dlp not installed"
         except Exception as e:
             last_err = str(e)
+            logger.warning(f"yt-dlp attempt {attempt_num}/{len(attempts)} raised for {url}: {e}")
             continue
 
+    # All attempts failed — one short-delay retry, since YouTube's cloud-IP
+    # rate limiting is often transient (clears within seconds).
+    if is_yt:
+        time.sleep(3)
+        try:
+            cmd = [
+                "yt-dlp", "-f", _fmt, "--max-filesize", _max_filesize, "--no-playlist", "--no-warnings",
+                "--extractor-args", "youtube:player_client=android",
+                "-o", output_path, url,
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                logger.info(f"yt-dlp succeeded on delayed retry for {url}")
+                return True, ""
+            retry_err = result.stderr.decode("utf-8", errors="replace")
+            logger.warning(f"yt-dlp delayed retry also failed for {url}: {retry_err[-300:]}")
+            last_err = retry_err or last_err
+        except Exception as e:
+            logger.warning(f"yt-dlp delayed retry raised for {url}: {e}")
+
+    logger.error(f"yt-dlp: all attempts exhausted for {url}. Final error: {last_err[-500:]}")
     return False, _friendly_ytdlp_error(last_err)
 
 
@@ -261,7 +300,7 @@ async def clip_video(
                     raw_video,
                 ], timeout=90)
         else:
-            ok, err = _run_ytdlp(video_url, raw_video, timeout=90)
+            ok, err = _run_ytdlp(video_url, raw_video, timeout=150)
         
         if not ok:
             return {"success": False, "error": f"Download failed: {err}"}
@@ -741,7 +780,7 @@ async def smart_clips(
                     raw_video,
                 ], timeout=90)
         else:
-            ok, err = _run_ytdlp(video_url, raw_video, timeout=120)
+            ok, err = _run_ytdlp(video_url, raw_video, timeout=150)
         
         if not ok:
             return {"success": False, "error": f"Download failed: {err}"}

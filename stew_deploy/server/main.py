@@ -4656,6 +4656,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     except Exception as fe:
                         logger.error(f"Agent file send error: {fe}")
 
+            # Also send any files created by terminal code execution
+            for tc in agent_result.get("tool_calls", []):
+                if tc.get("result", {}).get("files"):
+                    import base64 as _b64_term
+                    for f in tc["result"]["files"]:
+                        try:
+                            file_bytes = _b64_term.b64decode(f["base64"])
+                            await bot.send_document(chat_id, file_bytes, f.get("filename", "stew_output"), "S.T.E.W terminal output")
+                        except Exception as fe:
+                            logger.error(f"Terminal file send error: {fe}")
+
             response = agent_result.get("response", "")
             if response:
                 import re as _re_agent
@@ -5094,7 +5105,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
         await bot.send_chat_action(chat_id, "typing")
         try:
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 # Geocode the location
                 geo_resp = await client.get(f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1&language=en&format=json")
                 geo_data = geo_resp.json()
@@ -5169,7 +5180,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             from_curr = m.group(2).upper()
             to_curr = m.group(3).upper()
             
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"https://open.er-api.com/v6/latest/{from_curr}")
                 data = resp.json()
                 rates = data.get("rates", {})
@@ -5187,7 +5198,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.startswith("/joke"):
         await bot.send_chat_action(chat_id, "typing")
         try:
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get("https://official-joke-api.appspot.com/random_joke")
                 data = resp.json()
                 await bot.send_message(chat_id, f"{data.get('setup','')}\n\n{data.get('punchline','')}")
@@ -5208,7 +5219,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.startswith("/quote"):
         await bot.send_chat_action(chat_id, "typing")
         try:
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get("https://zenquotes.io/api/random")
                 data = resp.json()
                 if isinstance(data, list) and data:
@@ -5236,7 +5247,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
         await bot.send_chat_action(chat_id, "typing")
         try:
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}")
                 if resp.status_code != 200:
                     await bot.send_message(chat_id, f"No definition found for '{word}'.")
@@ -5294,7 +5305,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             import urllib.parse
             encoded = urllib.parse.quote(text)
             qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded}"
-            async with http_requests.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(qr_url)
                 if resp.status_code == 200 and len(resp.content) > 100:
                     await bot.send_photo(chat_id, resp.content, caption=f"QR Code for: {text[:50]}")
@@ -5346,7 +5357,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             url = "https://" + url
         await bot.send_chat_action(chat_id, "typing")
         try:
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"https://is.gd/create.php?format=simple&url={url}")
                 if resp.status_code == 200 and resp.text.startswith("http"):
                     await bot.send_message(chat_id, f"Shortened URL:\n{resp.text}")
@@ -5368,7 +5379,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             encoded = urllib.parse.quote(prompt)
             seed = random.randint(1, 999999)
             img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
-            async with http_requests.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.get(img_url)
                 if resp.status_code == 200 and len(resp.content) > 1000:
                     await bot.send_photo(chat_id, resp.content, caption=f"AI Image: {prompt[:80]}")
@@ -5386,7 +5397,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
         await bot.send_chat_action(chat_id, "typing")
         try:
-            async with http_requests.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 # Search Wikipedia
                 search_resp = await client.get(f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json&srlimit=1")
                 search_data = search_resp.json()

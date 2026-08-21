@@ -30,6 +30,7 @@ from server.config import get_settings
 from server.llm_client import get_llm_client
 from server.search import get_searcher
 from server.code_sandbox import execute_code
+from server.terminal_sandbox import execute_shell, execute_python as execute_terminal_python
 from server.clean_output import clean_response
 from server.document_generator import (
     generate_pdf, generate_docx, generate_xlsx, generate_pptx, generate_html
@@ -79,6 +80,23 @@ Rules:
 16. NEVER call browse_url more than ONCE per conversation.
 17. For open-ended, multi-step or research-heavy goals, break the goal into smaller steps and chain multiple DIFFERENT tools in sequence (e.g. web_search to find facts, then run_python_code to compute something, then generate_document to produce a deliverable). Think like an autonomous agent completing a real task end-to-end, not a one-shot Q&A bot.
 18. For unknown facts, historical/biographical info, or general knowledge lookups — prefer wikipedia_search over web_search (faster, more reliable for encyclopedic facts). Use web_search only for time-sensitive or very recent info.
+
+TOOL_CALL: {"tool": "run_shell", "args": {"command": "pip install sympy && python3 -c 'import sympy; print(sympy.sqrt(8))'"}}
+TOOL_CALL: {"tool": "run_terminal_code", "args": {"code": "import requests\nr = requests.get('https://api.github.com')\nprint(r.json())"}}
+
+19. TERMINAL ACCESS: You have TWO powerful terminal tools for real-world execution:
+    a) run_shell(command) - Execute real shell commands. You can: install packages (pip install), run scripts, fetch data (curl, wget), use git, process files with ffmpeg/jq, compile code (gcc, go, cargo), and chain commands with pipes (|) and (&&). Each command runs in a fresh temp directory.
+    b) run_terminal_code(code) - Execute Python with FULL access: file I/O, network requests (requests, urllib), subprocess, numpy, pandas, matplotlib. Can write files, make API calls, scrape data, generate charts, and save output files that get sent to the user.
+
+20. USE TERMINAL TOOLS for complex multi-step tasks:
+    - Need to install a library and use it? Use run_shell to pip install, then run_terminal_code to use it
+    - Need to fetch data from an API and process it? Use run_terminal_code with requests
+    - Need to compile and run code in another language? Use run_shell (python3, node, gcc, go)
+    - Need to download a file and process it? Use run_shell with curl, then run_terminal_code to process
+    - Need to scrape a website? Use run_terminal_code with requests + regex
+    - Need to create a data file (CSV, JSON)? Use run_terminal_code to write it, it gets sent to the user
+
+21. When using run_terminal_code, if you create a file (e.g. data.csv, report.json), it will automatically be sent to the user as a downloadable file. You do not need a separate generate_document call.
 
 When you don't need a tool, just answer directly.
 After using a tool and getting results, your final answer should be BRIEF (2-3 sentences max).
