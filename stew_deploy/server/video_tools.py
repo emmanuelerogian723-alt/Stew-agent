@@ -34,53 +34,117 @@ def _run_ffmpeg(args: list[str], timeout: int = 120) -> tuple[bool, str]:
         return False, str(e)
 
 
-def _run_ytdlp(url: str, output_path: str, timeout: int = 120) -> tuple[bool, str]:
-    """Download a video using yt-dlp. Returns (success, error_msg).
-    Updates yt-dlp first to handle YouTube's frequent signature changes."""
+# ── yt-dlp self-update (once per process, not per-request — avoids adding
+#    ~1-2s pip overhead to every single /clip call) ─────────────────────────
+_YTDLP_UPDATED = False
+
+
+def _update_ytdlp_once():
+    global _YTDLP_UPDATED
+    if _YTDLP_UPDATED:
+        return
+    _YTDLP_UPDATED = True
     try:
-        # Update yt-dlp to the latest version (handles YouTube breaking changes)
         subprocess.run(
             ["pip", "install", "--upgrade", "-q", "yt-dlp"],
             capture_output=True, timeout=30,
         )
     except Exception:
         pass  # non-fatal — try with whatever version we have
-    try:
-        cmd = [
-            "yt-dlp",
-            "-f", "best[ext=mp4][filesize<50M]/best[filesize<50M]/best",
-            "--max-filesize", "50M",
-            "--no-playlist",
-            "--no-warnings",
-            "-o", output_path,
-            url,
+
+
+_YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com")
+
+
+def _is_youtube_url(url: str) -> bool:
+    return any(h in url.lower() for h in _YOUTUBE_HOSTS)
+
+
+def _friendly_ytdlp_error(raw_err: str) -> str:
+    """Map common yt-dlp/YouTube failure signatures to a clear user-facing message."""
+    low = raw_err.lower()
+    if "sign in" in low or "confirm you" in low or "not a bot" in low:
+        return "YouTube is blocking automated downloads for this video right now. Try a different video or try again in a bit."
+    if "403" in low or "forbidden" in low:
+        return "YouTube blocked the download (403). This can happen with certain videos — try a different link."
+    if "private" in low:
+        return "That video is private and can't be downloaded."
+    if "unavailable" in low or "removed" in low:
+        return "That video is unavailable or has been removed."
+    if "requested format is not available" in low or "no video formats" in low:
+        return "Couldn't find a downloadable format for that video."
+    if "requestsdependencywarning" in low or "warnings.warn" in low:
+        return "Video download hit a temporary error. Please try again."
+    if "timed out" in low:
+        return "Download timed out — the video may be too long or the connection too slow."
+    if "geo" in low and "restrict" in low:
+        return "That video is geo-restricted and can't be downloaded from here."
+    # Fall back to a trimmed, cleaned version of the real error
+    cleaned = raw_err.strip().split("\n")[-1][:200] if raw_err.strip() else "Unknown error"
+    return cleaned
+
+
+def _run_ytdlp(url: str, output_path: str, timeout: int = 120) -> tuple[bool, str]:
+    """Download a video using yt-dlp. Returns (success, error_msg).
+    YouTube aggressively blocks datacenter/cloud IPs from its default 'web' client
+    with HTTP 403 — the 'android' player client reliably bypasses this and is
+    tried first for YouTube URLs. Other platforms (TikTok, Twitter/X, Instagram,
+    direct mp4 links, Vimeo, etc.) use yt-dlp's generic/native extractors, which
+    work fine without any special client flag."""
+    _update_ytdlp_once()
+
+    is_yt = _is_youtube_url(url)
+
+    # Build an ordered list of attempts: (extra_args, format_string)
+    attempts = []
+    if is_yt:
+        # 'android' client bypasses YouTube's cloud-IP bot detection (HTTP 403).
+        # 'android_music' and a plain retry are fallbacks if the first fails.
+        attempts = [
+            (["--extractor-args", "youtube:player_client=android"], "best[ext=mp4]/best"),
+            (["--extractor-args", "youtube:player_client=android_music"], "best[ext=mp4]/best"),
+            (["--extractor-args", "youtube:player_client=ios,web"], "best[ext=mp4]/best"),
+            ([], "best[ext=mp4][filesize<50M]/best[filesize<50M]/best"),
         ]
-        result = subprocess.run(cmd, capture_output=True, timeout=timeout)
-        if result.returncode == 0:
-            return True, ""
-        err = result.stderr.decode("utf-8", errors="replace")[:500]
-        # If format selection failed, try with a simpler format string
-        if "format" in err.lower() or "requested format" in err.lower():
-            cmd2 = [
+    else:
+        attempts = [
+            ([], "best[ext=mp4][filesize<50M]/best[filesize<50M]/best"),
+            ([], "mp4/best"),
+        ]
+
+    last_err = ""
+    for extra_args, fmt in attempts:
+        try:
+            cmd = [
                 "yt-dlp",
-                "-f", "mp4/best",
+                "-f", fmt,
                 "--max-filesize", "50M",
                 "--no-playlist",
                 "--no-warnings",
+                *extra_args,
                 "-o", output_path,
                 url,
             ]
-            result2 = subprocess.run(cmd2, capture_output=True, timeout=timeout)
-            if result2.returncode == 0:
+            result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                 return True, ""
-            err = result2.stderr.decode("utf-8", errors="replace")[:500]
-        return False, err
-    except subprocess.TimeoutExpired:
-        return False, "Download timed out"
-    except FileNotFoundError:
-        return False, "yt-dlp not installed"
-    except Exception as e:
-        return False, str(e)
+            last_err = result.stderr.decode("utf-8", errors="replace")
+            # Clean up any partial/empty file before the next attempt
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
+        except subprocess.TimeoutExpired:
+            last_err = "Download timed out"
+            continue
+        except FileNotFoundError:
+            return False, "yt-dlp not installed"
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    return False, _friendly_ytdlp_error(last_err)
 
 
 def _get_video_duration(video_path: str) -> float:
