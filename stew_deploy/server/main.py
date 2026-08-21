@@ -135,6 +135,7 @@ async def lifespan(app: FastAPI):
             {"command": "features", "description": "View feature requests"},
             {"command": "vote", "description": "Vote for a feature request"},
             {"command": "sponsor", "description": "Sponsor an ad on Stew"},
+            {"command": "agent", "description": "Supercomputer Agent Mode - multi-step tool use"},
             {"command": "admin", "description": "Admin access (owner only)"},
         ]
         async with _httpx.AsyncClient(timeout=10) as _client:
@@ -4108,69 +4109,70 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "3. /translate - Translate languages\n"
             "4. /research - Deep research\n"
             "5. /code - Run Python code\n"
-            "6. /clear - Clear chat history\n\n"
+            "6. /agent - Supercomputer Agent Mode (multi-step reasoning + tools)\n"
+            "7. /clear - Clear chat history\n\n"
             "For Students:\n"
-            "7. /quiz - Generate quiz questions\n"
-            "8. /flashcards - Create flashcards\n"
-            "9. /studyguide - Study guide with PDF\n"
-            "10. /solve - Solve math problems\n\n"
+            "8. /quiz - Generate quiz questions\n"
+            "9. /flashcards - Create flashcards\n"
+            "10. /studyguide - Study guide with PDF\n"
+            "11. /solve - Solve math problems\n\n"
             "For Lecturers:\n"
-            "11. /lessonplan - Create lesson plan PDF\n"
-            "12. /rubric - Grading rubric PDF\n"
-            "13. /grade - Calculate grades\n\n"
+            "12. /lessonplan - Create lesson plan PDF\n"
+            "13. /rubric - Grading rubric PDF\n"
+            "14. /grade - Calculate grades\n\n"
             "For Companies:\n"
-            "14. /invoice - Invoice generator PDF\n"
-            "15. /meeting - Meeting minutes PDF\n"
-            "16. /swot - SWOT analysis PDF\n"
-            "17. /businessplan - Business plan PDF\n"
-            "18. /budget - Budget planner\n\n"
+            "15. /invoice - Invoice generator PDF\n"
+            "16. /meeting - Meeting minutes PDF\n"
+            "17. /swot - SWOT analysis PDF\n"
+            "18. /businessplan - Business plan PDF\n"
+            "19. /budget - Budget planner\n\n"
             "Creative Pro Tools:\n"
-            "19. /book - Write a book (up to 200 pages)\n"
-            "20. /song - Create AI song with music\n"
-            "21. /remember - Tell Stew to remember something\n"
-            "22. /memory - View what Stew remembers\n"
-            "23. /forget - Clear all memories\n\n"
+            "20. /book - Write a book (up to 200 pages)\n"
+            "21. /song - Create AI song with music\n"
+            "22. /remember - Tell Stew to remember something\n"
+            "23. /memory - View what Stew remembers\n"
+            "24. /forget - Clear all memories\n\n"
             "Documents: /pdf /docx /xlsx /pptx\n"
             "Images: generate image of...\n"
             "Browse: browse https://...\n"
             "Send photos/PDFs for OCR\n"
             "Send voice notes for transcription\n\n"
             "Community:\n"
-            "24. /feature <desc> - Request a feature\n"
-            "25. /features - See top requests\n"
-            "26. /vote #<id> - Vote for a feature\n"
-            "27. /users - See user count\n"
-            "28. /sponsor - See our sponsors\n\n"
+            "25. /feature <desc> - Request a feature\n"
+            "26. /features - See top requests\n"
+            "27. /vote #<id> - Vote for a feature\n"
+            "28. /users - See user count\n"
+            "29. /sponsor - See our sponsors\n\n"
             "Quick Tools:\n"
-            "29. /weather <city> - Live weather\n"
-            "30. /currency 100 USD to NGN - Exchange rates\n"
-            "31. /news <topic> - Latest news\n"
-            "32. /joke - Random joke\n"
-            "33. /quote - Inspirational quote\n"
-            "34. /define <word> - Dictionary\n"
-            "35. /math <expression> - Quick math\n"
-            "36. /qr <text> - Generate QR code\n"
-            "37. /shorten <url> - Shorten URL\n"
-            "38. /ai-image <desc> - Generate image\n"
-            "39. /wiki <topic> - Wikipedia search\n\n"
+            "30. /weather <city> - Live weather\n"
+            "31. /currency 100 USD to NGN - Exchange rates\n"
+            "32. /news <topic> - Latest news\n"
+            "33. /joke - Random joke\n"
+            "34. /quote - Inspirational quote\n"
+            "35. /define <word> - Dictionary\n"
+            "36. /math <expression> - Quick math\n"
+            "37. /qr <text> - Generate QR code\n"
+            "38. /shorten <url> - Shorten URL\n"
+            "39. /ai-image <desc> - Generate image\n"
+            "40. /wiki <topic> - Wikipedia search\n\n"
             "Voice & Audio:\n"
-            "40. /voice - Toggle voice note replies 🔊\n"
-            "41. /voice list - See available voices\n"
-            "42. /voice <name> - Set your voice (e.g. /voice nigeria)\n\n"
+            "41. /voice - Toggle voice note replies 🔊\n"
+            "42. /voice list - See available voices\n"
+            "43. /voice <name> - Set your voice (e.g. /voice nigeria)\n\n"
             "Video Studio:\n"
-            "43. /clip <url> <start> <dur> - Clip a video segment\n"
-            "44. /smartclip <url> - AI smart clips (Opus Clips style)\n"
-            "45. /createvideo <topic> - AI video with images + voiceover\n"
-            "46. /aivideo <prompt> - REAL AI video from text\n"
-            "47. /aivideos <prompt> - Multi-scene AI video with narration\n\n"
+            "44. /clip <url> <start> <dur> - Clip a video segment\n"
+            "45. /smartclip <url> - AI smart clips (Opus Clips style)\n"
+            "46. /createvideo <topic> - AI video with images + voiceover\n"
+            "47. /aivideo <prompt> - REAL AI video from text\n"
+            "48. /aivideos <prompt> - Multi-scene AI video with narration\n\n"
             "Creative:\n"
-            "48. /webbuild <desc> - Build a motion-design website (live link)\n"
-            "49. /meme <text> - Generate an AI meme image\n"
-            "50. /caption <context> - Viral social media captions\n\n"
+            "49. /webbuild <desc> - Build a motion-design website (live link)\n"
+            "50. /meme <text> - Generate an AI meme image\n"
+            "51. /caption <context> - Viral social media captions\n\n"
             "Account:\n"
-            "51. /usage - Check your usage quota\n"
-            "52. /plan - View pricing plans\n"
-            "53. /upgrade - Upgrade (Student, Pro, Business)"
+            "52. /usage - Check your usage quota\n"
+            "53. /plan - View pricing plans\n"
+            "54. /upgrade - Upgrade (Student, Pro, Business)"
         )
         await bot.send_message(chat_id, help_text)
         return {"ok": True}
@@ -4618,6 +4620,60 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, clean_response(result))
         except Exception as e:
             await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+    # ── /agent COMMAND (Supercomputer Agent Mode) ──────────────────────────────
+    # Direct access to S.T.E.W's full autonomous tool-calling loop — the same
+    # ReAct-style architecture Codex/agentic coding tools use: the LLM decides
+    # which tool to call, we execute it, feed the result back, and it keeps
+    # reasoning/acting until the goal is done or iterations run out.
+    if user_text.startswith("/agent"):
+        goal = user_text[6:].strip()
+        if not goal:
+            await bot.send_message(
+                chat_id,
+                "🤖 *Supercomputer Agent Mode*\n\n"
+                "Give me a goal and I'll break it down, use real tools (code execution, "
+                "web search, live prices/weather, Wikipedia, document generation, QR codes, "
+                "URL shortening) and chain them together to get it done.\n\n"
+                "Example: /agent Research the current price of bitcoin, calculate what ₦500,000 "
+                "would buy in BTC, and summarize it for me"
+            )
+            return {"ok": True}
+        await bot.send_message(chat_id, "🤖 Supercomputer Agent Mode activated. Working on it...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            from server.tool_agent import run_agent_loop
+            agent_result = await run_agent_loop(goal, bot=bot, chat_id=chat_id, max_iterations=8)
+
+            if agent_result.get("files"):
+                import base64 as _b64_agent
+                for f in agent_result["files"]:
+                    try:
+                        file_bytes = _b64_agent.b64decode(f["base64"])
+                        filename = f.get("filename", f"stew_document.{f.get('doc_type','pdf')}")
+                        await bot.send_document(chat_id, file_bytes, filename, "S.T.E.W generated this for you")
+                    except Exception as fe:
+                        logger.error(f"Agent file send error: {fe}")
+
+            response = agent_result.get("response", "")
+            if response:
+                import re as _re_agent
+                response = _re_agent.sub(r'TOOL_CALL:\s*\{.*?\}', '', response, flags=_re_agent.DOTALL).strip()
+                response = _re_agent.sub(r'TOOL_RESULT[\s\S]*', '', response).strip()
+                if len(response) > 1500:
+                    response = response[:1500] + "..."
+                await bot.send_message(chat_id, response)
+            elif agent_result.get("files"):
+                await bot.send_message(chat_id, "Done! Your file is ready above.")
+            else:
+                await bot.send_message(chat_id, "Task completed.")
+
+            if tg_user:
+                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/agent", "POST", 0, 200)
+        except Exception as e:
+            logger.error(f"/agent error: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Agent hit an error working on that. Try rephrasing the goal or break it into smaller steps.")
         return {"ok": True}
 
     # ── /lessonplan COMMAND (Lecturers) ────────────────────────────────────────

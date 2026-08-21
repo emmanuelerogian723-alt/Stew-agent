@@ -15,6 +15,10 @@ Tools available:
   7. get_stock_price(symbol)         — Live stock price via Yahoo Finance (AAPL, TSLA, WIX, etc.)
   8. get_weather(city)               — Live weather via wttr.in
   9. get_exchange_rate(base, target) — Live currency exchange rates
+  10. wikipedia_search(query)         — Look up facts/summaries from Wikipedia
+  11. define_word(word)               — Dictionary definitions
+  12. generate_qr_code(text)          — Generate a QR code image
+  13. shorten_url(url)                — Shorten a long URL
 """
 import json
 import re
@@ -50,6 +54,10 @@ TOOL_CALL: {"tool": "get_crypto_price", "args": {"symbol": "bitcoin"}}
 TOOL_CALL: {"tool": "get_stock_price", "args": {"symbol": "AAPL"}}
 TOOL_CALL: {"tool": "get_weather", "args": {"city": "Lagos"}}
 TOOL_CALL: {"tool": "get_exchange_rate", "args": {"base": "USD", "target": "NGN"}}
+TOOL_CALL: {"tool": "wikipedia_search", "args": {"query": "Nigeria"}}
+TOOL_CALL: {"tool": "define_word", "args": {"word": "serendipity"}}
+TOOL_CALL: {"tool": "generate_qr_code", "args": {"text": "https://t.me/StewAgent_bot"}}
+TOOL_CALL: {"tool": "shorten_url", "args": {"url": "https://example.com/very/long/link"}}
 
 Rules:
 1. You can call MULTIPLE tools in sequence — wait for each result before deciding the next step.
@@ -69,6 +77,8 @@ Rules:
 14. After a document is generated and you receive the TOOL_RESULT confirming success, tell the user the file is ready and they can download it. Do NOT repeat the TOOL_CALL.
 15. NEVER call web_search more than ONCE per conversation. If the first search returns no results or fails, answer based on your own knowledge instead of searching again.
 16. NEVER call browse_url more than ONCE per conversation.
+17. For open-ended, multi-step or research-heavy goals, break the goal into smaller steps and chain multiple DIFFERENT tools in sequence (e.g. web_search to find facts, then run_python_code to compute something, then generate_document to produce a deliverable). Think like an autonomous agent completing a real task end-to-end, not a one-shot Q&A bot.
+18. For unknown facts, historical/biographical info, or general knowledge lookups — prefer wikipedia_search over web_search (faster, more reliable for encyclopedic facts). Use web_search only for time-sensitive or very recent info.
 
 When you don't need a tool, just answer directly.
 After using a tool and getting results, your final answer should be BRIEF (2-3 sentences max).
@@ -326,6 +336,102 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
             output = f"Exchange rates for {base.upper()}: " + ", ".join(f"{k}={v}" for k, v in rates.items())
         return {"tool": tool, "success": True, "output": output, "data": data}
 
+    elif tool == "wikipedia_search":
+        query = args.get("query", "")
+        if not query:
+            return {"error": "No query provided"}
+        try:
+            import httpx as _httpx
+            _wiki_headers = {"User-Agent": "STEW-Agent/1.0 (https://stew-agent.onrender.com; contact@mutyint.com) httpx"}
+            async with _httpx.AsyncClient(timeout=10, headers=_wiki_headers) as client:
+                search_resp = await client.get(
+                    f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json&srlimit=1"
+                )
+                search_data = search_resp.json()
+                results = search_data.get("query", {}).get("search", [])
+                if not results:
+                    return {"tool": tool, "success": False, "output": f"No Wikipedia article found for '{query}'."}
+                title = results[0]["title"]
+                summary_resp = await client.get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}")
+                summary = summary_resp.json()
+                text = summary.get("extract", "No summary available.")
+                url = summary.get("content_urls", {}).get("desktop", {}).get("page", "")
+                return {
+                    "tool": tool,
+                    "success": True,
+                    "output": f"Wikipedia: {title}\n\n{text}\n\nSource: {url}",
+                }
+        except Exception as e:
+            return {"tool": tool, "success": False, "error": str(e)}
+
+    elif tool == "define_word":
+        word = args.get("word", "")
+        if not word:
+            return {"error": "No word provided"}
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}")
+                if resp.status_code != 200:
+                    return {"tool": tool, "success": False, "output": f"No definition found for '{word}'."}
+                data = resp.json()
+                entry = data[0]
+                meanings = entry.get("meanings", [])
+                if not meanings:
+                    return {"tool": tool, "success": False, "output": f"No meanings found for '{word}'."}
+                m = meanings[0]
+                pos = m.get("partOfSpeech", "")
+                defs = m.get("definitions", [])
+                lines = [f"{word} ({pos})"]
+                for i, d in enumerate(defs[:3]):
+                    lines.append(f"{i+1}. {d.get('definition','')}")
+                return {"tool": tool, "success": True, "output": "\n".join(lines)}
+        except Exception as e:
+            return {"tool": tool, "success": False, "error": str(e)}
+
+    elif tool == "generate_qr_code":
+        text = args.get("text", "")
+        if not text:
+            return {"error": "No text provided"}
+        try:
+            import httpx as _httpx
+            import urllib.parse as _urlparse
+            encoded = _urlparse.quote(text)
+            qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded}"
+            async with _httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(qr_url)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    import base64 as _b64_qr
+                    return {
+                        "tool": tool,
+                        "success": True,
+                        "output": f"QR code generated for: {text[:60]}",
+                        "figures": [{"base64": _b64_qr.b64encode(resp.content).decode()}],
+                    }
+                return {"tool": tool, "success": False, "output": "Failed to generate QR code."}
+        except Exception as e:
+            return {"tool": tool, "success": False, "error": str(e)}
+
+    elif tool == "shorten_url":
+        url = args.get("url", "")
+        if not url:
+            return {"error": "No URL provided"}
+        if not url.startswith("http"):
+            url = "https://" + url
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"https://tinyurl.com/api-create.php?url={url}")
+                if resp.status_code == 200 and resp.text.strip().startswith("http"):
+                    return {"tool": tool, "success": True, "output": f"Shortened URL: {resp.text.strip()}"}
+                # Fallback to is.gd if TinyURL fails for any reason
+                resp2 = await client.get(f"https://is.gd/create.php?format=simple&url={url}")
+                if resp2.status_code == 200 and resp2.text.strip().startswith("http"):
+                    return {"tool": tool, "success": True, "output": f"Shortened URL: {resp2.text.strip()}"}
+                return {"tool": tool, "success": False, "output": "Failed to shorten URL."}
+        except Exception as e:
+            return {"tool": tool, "success": False, "error": str(e)}
+
     else:
         return {"error": f"Unknown tool: {tool}"}
 
@@ -429,10 +535,11 @@ async def run_agent_loop(
             # Send figures to chat
             if bot and chat_id and tool_result.get("figures"):
                 import base64 as _b64
+                fig_caption = "QR code generated by S.T.E.W" if tool_name == "generate_qr_code" else "Chart generated by S.T.E.W"
                 for fig in tool_result["figures"]:
                     try:
                         fig_bytes = _b64.b64decode(fig["base64"])
-                        await bot.send_photo(chat_id, fig_bytes, "Chart generated by S.T.E.W")
+                        await bot.send_photo(chat_id, fig_bytes, fig_caption)
                     except:
                         pass
 
