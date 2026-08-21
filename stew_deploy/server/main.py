@@ -3406,7 +3406,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/about", "/owner")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/about", "/owner", "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ", "/weather", "/qr", "/joke", "/quote", "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
@@ -4707,28 +4707,176 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.startswith("/invoice"):
         details = user_text[8:].strip()
         if not details:
-            await bot.send_message(chat_id, "Send: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000")
+            await bot.send_message(chat_id,
+                "Invoice Generator\n\n"
+                "Usage: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000\n"
+                "Or with multiple items:\n"
+                "/invoice Client: Acme Corp, Items: Web Design 150000, Hosting 25000, Maintenance 30000\n\n"
+                "VAT 7.5% is automatically calculated.\n"
+                "Currency: NGN (Naira)")
             return {"ok": True}
-        await bot.send_message(chat_id, "Generating invoice...")
+        await bot.send_message(chat_id, "Generating professional invoice...")
         await bot.send_chat_action(chat_id, "upload_document")
         try:
             import random as _rand
+            import re as _re
             inv_num = f"INV-{_rand.randint(10000,99999)}"
-            llm = get_llm_client()
-            result = await asyncio.to_thread(llm.chat, [
-                {"role": "system", "content": "Invoice generator. Create professional invoice with: invoice number, date, client info, service description, amount in Naira, subtotal, VAT 7.5%, total, payment terms."},
-                {"role": "user", "content": f"Invoice {inv_num}. Details: {details}. Date: {datetime.now().strftime('%Y-%m-%d')}"},
-            ])
-            invoice_text = clean_response(result["content"])
-            doc_result = generate_pdf(invoice_text, f"Invoice {inv_num}")
-            if doc_result.get("success") and doc_result.get("file"):
-                import base64 as _b64
-                file_bytes = _b64.b64decode(doc_result["file"])
-                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", f"invoice_{inv_num}.pdf"), f"Invoice {inv_num}")
+            inv_date = datetime.now().strftime('%Y-%m-%d')
+            due_date = (datetime.now().replace(day=min(datetime.now().day + 14, 28))).strftime('%Y-%m-%d')
+
+            # Parse details from user input
+            client_name = "Valued Client"
+            client_match = _re.search(r'client\s*:\s*([^,]+)', details, _re.IGNORECASE)
+            if client_match:
+                client_name = client_match.group(1).strip()
+
+            # Parse items: "Items: Web Design 150000, Hosting 25000"
+            items = []
+            items_match = _re.search(r'items\s*:\s*(.+)', details, _re.IGNORECASE)
+            if items_match:
+                items_str = items_match.group(1)
+                # Split by comma, each item has description + amount
+                for item_part in items_str.split(","):
+                    item_part = item_part.strip()
+                    # Find the last number in the string
+                    amt_match = _re.search(r'(\d[\d,]*\.?\d*)\s*$', item_part)
+                    if amt_match:
+                        amount = float(amt_match.group(1).replace(",", ""))
+                        desc = item_part[:amt_match.start()].strip()
+                        items.append({"description": desc, "amount": amount})
             else:
-                await bot.send_message(chat_id, invoice_text[:3800])
+                # Single item: "Service: Web Design, Amount: 250000"
+                service_match = _re.search(r'service\s*:\s*([^,]+)', details, _re.IGNORECASE)
+                amount_match = _re.search(r'amount\s*:\s*([\d,]+)', details, _re.IGNORECASE)
+                if service_match and amount_match:
+                    service_desc = service_match.group(1).strip()
+                    amount = float(amount_match.group(1).replace(",", ""))
+                    items.append({"description": service_desc, "amount": amount})
+                else:
+                    # Try to extract any amount from the details
+                    any_amount = _re.search(r'(\d[\d,]*\.?\d*)', details)
+                    if any_amount:
+                        items.append({"description": details[:100], "amount": float(any_amount.group(1).replace(",", ""))})
+                    else:
+                        items.append({"description": details[:100], "amount": 0})
+
+            # Calculate totals
+            subtotal = sum(item["amount"] for item in items)
+            vat_rate = 0.075
+            vat_amount = subtotal * vat_rate
+            total = subtotal + vat_amount
+
+            # Generate structured PDF directly with reportlab
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import cm
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+            from reportlab.lib import colors
+            from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+            buf = io.BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm, title=f"Invoice {inv_num}", author="S.T.E.W Agent")
+            styles = getSampleStyleSheet()
+            story = []
+
+            # Header bar
+            header_data = [[
+                Paragraph("<b>S.T.E.W</b>", ParagraphStyle("Logo", parent=styles["Normal"], fontSize=22, textColor=colors.HexColor("#1E3A5F"), fontName="Helvetica-Bold")),
+                Paragraph(f"<b>INVOICE</b><br/>{inv_num}", ParagraphStyle("InvHdr", parent=styles["Normal"], fontSize=14, alignment=TA_RIGHT, textColor=colors.HexColor("#1E3A5F"))),
+            ]]
+            header_table = Table(header_data, colWidths=[8*cm, 8*cm])
+            header_table.setStyle(TableStyle([
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("LINEBELOW", (0,0), (-1,-1), 2, colors.HexColor("#1E3A5F")),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 12),
+            ]))
+            story.append(header_table)
+            story.append(Spacer(1, 0.6*cm))
+
+            # Bill To + Date section
+            bill_data = [[
+                Paragraph(f"<b>BILL TO</b><br/>{client_name}", ParagraphStyle("BillTo", parent=styles["Normal"], fontSize=10, leading=14)),
+                Paragraph(f"<b>Date:</b> {inv_date}<br/><b>Due Date:</b> {due_date}<br/><b>Status:</b> Unpaid", ParagraphStyle("DateInfo", parent=styles["Normal"], fontSize=10, alignment=TA_RIGHT, leading=14)),
+            ]]
+            bill_table = Table(bill_data, colWidths=[8*cm, 8*cm])
+            bill_table.setStyle(TableStyle([
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#F8FAFC")),
+                ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+                ("TOPPADDING", (0,0), (-1,-1), 10),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+                ("LEFTPADDING", (0,0), (-1,-1), 10),
+                ("RIGHTPADDING", (0,0), (-1,-1), 10),
+            ]))
+            story.append(bill_table)
+            story.append(Spacer(1, 0.6*cm))
+
+            # Items table
+            item_header = ["Description", "Amount (NGN)"]
+            item_rows = [item_header]
+            for item in items:
+                item_rows.append([
+                    item["description"],
+                    f"{item['amount']:,.2f}",
+                ])
+
+            item_table = Table(item_rows, colWidths=[12*cm, 4*cm])
+            item_table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#2563EB")),
+                ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTSIZE", (0,0), (-1,-1), 10),
+                ("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#CBD5E1")),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#EFF6FF")]),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("TOPPADDING", (0,0), (-1,-1), 8),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+                ("LEFTPADDING", (0,0), (-1,-1), 10),
+                ("RIGHTPADDING", (0,0), (-1,-1), 10),
+                ("ALIGN", (1,0), (1,-1), "RIGHT"),
+            ]))
+            story.append(item_table)
+            story.append(Spacer(1, 0.4*cm))
+
+            # Totals table
+            totals_data = [
+                ["Subtotal:", f"NGN {subtotal:,.2f}"],
+                ["VAT (7.5%):", f"NGN {vat_amount:,.2f}"],
+                ["TOTAL:", f"NGN {total:,.2f}"],
+            ]
+            totals_table = Table(totals_data, colWidths=[12*cm, 4*cm])
+            totals_table.setStyle(TableStyle([
+                ("FONTSIZE", (0,0), (-1,-1), 10),
+                ("ALIGN", (1,0), (1,-1), "RIGHT"),
+                ("LINEABOVE", (0,0), (-1,0), 0.5, colors.HexColor("#CBD5E1")),
+                ("TOPPADDING", (0,0), (-1,-1), 6),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+                ("FONTNAME", (0,2), (-1,2), "Helvetica-Bold"),
+                ("FONTSIZE", (0,2), (-1,2), 12),
+                ("BACKGROUND", (0,2), (-1,2), colors.HexColor("#1E3A5F")),
+                ("TEXTCOLOR", (0,2), (-1,2), colors.white),
+                ("LEFTPADDING", (1,0), (-1,-1), 10),
+                ("RIGHTPADDING", (0,0), (-1,-1), 10),
+            ]))
+            story.append(totals_table)
+            story.append(Spacer(1, 0.8*cm))
+
+            # Payment terms
+            story.append(Paragraph("<b>Payment Terms</b>", ParagraphStyle("TermsHdr", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.HexColor("#334155"))))
+            story.append(Paragraph("Payment is due within 14 days of invoice date. Late payments may incur additional charges. Please include the invoice number with your payment.", ParagraphStyle("Terms", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#64748B"))))
+            story.append(Spacer(1, 0.4*cm))
+
+            # Footer
+            story.append(Paragraph("Generated by S.T.E.W Agent | Thank you for your business!", ParagraphStyle("Footer", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER, textColor=colors.HexColor("#94A3B8"))))
+
+            doc.build(story)
+
+            file_bytes = buf.getvalue()
+            filename = f"Invoice_{inv_num}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            await bot.send_document(chat_id, file_bytes, filename, f"Invoice {inv_num} - {client_name} - NGN {total:,.2f}")
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            logger.error(f"Invoice generation error: {e}", exc_info=True)
+            await bot.send_message(chat_id, f"Invoice error: {str(e)[:150]}\n\nTip: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000")
         return {"ok": True}
 
     # ── /meeting COMMAND (Companies) ────────────────────────────────────────────
@@ -5964,6 +6112,133 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "Not enough sources found. Try a different query.")
         except Exception as e:
             await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+        return {"ok": True}
+
+
+    # ── /pdf /docx /xlsx /pptx SLASH COMMANDS ─────────────────────────────────
+    if user_text.startswith("/pdf ") or user_text.startswith("/docx ") or user_text.startswith("/xlsx ") or user_text.startswith("/pptx ") or user_text.startswith("/slides "):
+        parts = user_text.split(" ", 1)
+        doc_type = parts[0].lstrip("/").strip()  # pdf, docx, xlsx, pptx, slides
+        if doc_type == "slides":
+            doc_type = "pptx"
+        doc_topic = parts[1].strip().rstrip(".") if len(parts) > 1 else ""
+
+        if not doc_topic or len(doc_topic) < 3:
+            usage_msg = {
+                "pdf": "Send: /pdf The Impact of AI on African Agriculture",
+                "docx": "Send: /docx Business Proposal for Solar Energy in Rural Nigeria",
+                "xlsx": "Send: /xlsx Monthly Sales Report with revenue and expenses",
+                "pptx": "Send: /pptx Introduction to Machine Learning\nor: /pptx 10 slides about Climate Change",
+            }
+            await bot.send_message(chat_id, usage_msg.get(doc_type, f"Send: /{doc_type} <topic>"))
+            return {"ok": True}
+
+        await bot.send_message(chat_id, f"Creating {doc_type.upper()} about: {doc_topic[:100]}...")
+        await bot.send_chat_action(chat_id, "upload_document")
+
+        try:
+            llm = get_llm_client()
+
+            if doc_type == "xlsx":
+                system_prompt = "You are a world-class data analyst. Generate rich, realistic structured spreadsheet data as a JSON array of objects. Return ONLY valid JSON, no explanation.\n\nRules:\n- Include 8-20 rows of realistic, specific data (not generic placeholders)\n- Use descriptive column names that make sense for the topic\n- Include a mix of text, numbers, and dates where appropriate\n- Make the data tell a story or support analysis\n- If the topic is business-related, include financial metrics\n- If the topic is educational, include scores, grades, or categories\n- Numbers should be realistic (e.g. revenue in thousands, percentages 0-100)"
+                user_msg = f"Create detailed, realistic spreadsheet data about: {doc_topic}. Return a JSON array of 8-20 row objects with appropriate, descriptive column names. Make the data specific and realistic — not generic. Return ONLY the JSON array."
+                messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+                result = await asyncio.to_thread(llm.chat, messages)
+                content_raw = clean_response(result["content"])
+                import json as _json
+                import re as _re
+                json_match = _re.search(r'\[.*\]', content_raw, _re.DOTALL)
+                if json_match:
+                    try:
+                        data = _json.loads(json_match.group())
+                    except Exception:
+                        data = [{"Info": "Could not parse data", "Topic": doc_topic}]
+                else:
+                    data = [{"Topic": doc_topic, "Status": "Generated by S.T.E.W", "Date": datetime.now().strftime('%Y-%m-%d')}]
+                doc_result = generate_xlsx(data, "Sheet1", doc_topic)
+
+            elif doc_type == "pptx":
+                import json as _json
+                import re as _re
+
+                # Check for explicit slide count
+                count_match = _re.search(r'(\d+)\s*[- ]?slides?\b', user_lower)
+                requested_count = int(count_match.group(1)) if count_match else 10
+                requested_count = max(3, min(requested_count, 30))
+
+                # Check for explicit user-authored slide outlines
+                slide_pattern = _re.compile(r'(?im)^\s*slide\s*(\d+)\s*[-\u2013\u2014:]?\s*(.*)$')
+                matches = list(slide_pattern.finditer(user_text))
+                explicit_slides = []
+                if len(matches) >= 2:
+                    for idx, m in enumerate(matches):
+                        slide_num = m.group(1)
+                        slide_title_raw = m.group(2).strip(" -\u2013\u2014:")
+                        start = m.end()
+                        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(user_text)
+                        body = user_text[start:end].strip()
+                        explicit_slides.append({"number": slide_num, "title": slide_title_raw or f"Slide {slide_num}", "brief": body})
+
+                if explicit_slides:
+                    outline_desc = "\n".join([f"Slide {s['number']}: {s['title']} \u2014 {s['brief'][:300]}" for s in explicit_slides])
+                    system_prompt = "You are a presentation content writer. The user gave you their own slide outline with titles and briefs. Write concise, professional bullet-point content for EACH slide based on its brief. Return ONLY a JSON array of objects with 'title' and 'content' (bullets separated by newlines, '- ' prefix, max 6 bullets, max 12 words each). Keep the exact slide titles given. Follow each brief closely \u2014 do not invent unrelated content."
+                    user_msg = f"Presentation topic: {doc_topic}\n\nSlide outline:\n{outline_desc}\n\nReturn a JSON array, one object per slide, in the given order."
+                    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+                    result = await asyncio.to_thread(llm.chat, messages, max_tokens=3000)
+                    raw_content = result["content"]
+                    json_match = _re.search(r'\[.*\]', raw_content, _re.DOTALL)
+                    if json_match:
+                        try:
+                            slides = _json.loads(json_match.group())
+                        except Exception:
+                            slides = [{"title": s["title"], "content": s["brief"][:200]} for s in explicit_slides]
+                    else:
+                        slides = [{"title": s["title"], "content": s["brief"][:200]} for s in explicit_slides]
+                else:
+                    target_count = requested_count
+                    system_prompt = "You are a world-class presentation designer and content strategist. Return ONLY a JSON array of slides. Each slide has 'title' and 'content'. Content should be impactful bullet points separated by newlines, with '- ' prefix for each bullet. Keep bullets concise (max 12 words each) but meaningful. Max 6 bullets per slide. Make the content specific and insightful \u2014 not generic filler. Each slide should convey a clear, memorable point."
+                    user_msg = f"Create a {target_count}-slide presentation about: {doc_topic}. Design the slide structure to fit the topic \u2014 do NOT default to a startup pitch deck. For a church fundraiser: vision, problem, solution, funding needs, impact, closing. For a product: overview, features, benefits, pricing, testimonials, closing. For education: introduction, key concepts, examples, applications, summary. For a report: executive summary, findings, analysis, recommendations, next steps. Always include a title slide as slide 1 and a closing/thank-you slide as the last slide. Fit exactly {target_count} slides total. JSON array only."
+                    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+                    result = await asyncio.to_thread(llm.chat, messages, max_tokens=4000)
+                    raw_content = result["content"]
+                    json_match = _re.search(r'\[.*\]', raw_content, _re.DOTALL)
+                    if json_match:
+                        try:
+                            slides = _json.loads(json_match.group())
+                        except Exception:
+                            slides = [{"title": "Title", "content": doc_topic}, {"title": "Content", "content": "Could not parse slide data"}]
+                    else:
+                        slides = [{"title": "Title", "content": doc_topic}, {"title": "Content", "content": "Could not parse slide data"}]
+
+                doc_result = await asyncio.to_thread(generate_pptx, slides, doc_topic)
+
+            else:
+                # pdf or docx
+                system_prompt = "You are a professional document writer. Create a well-structured, detailed document using markdown formatting. Use # for main title, ## for section headings, ### for subheadings. Include bullet points with - and numbered lists where appropriate.\n\nRules:\n- Include 4-6 main sections with detailed, substantive content (not just bullet points)\n- Use specific facts, examples, statistics, and real-world context\n- Include a proper conclusion that summarizes key takeaways\n- Do NOT use tables\n- Do NOT use special unicode symbols, subscripts, or superscripts \u2014 write exponents as 'x10^9' and use plain ASCII only\n- Write a COMPLETE document that ends with a proper conclusion \u2014 never cut off mid-sentence\n- Target 1500-2500 words for a rich, professional document\n- Write in a confident, authoritative tone appropriate for the topic\n- If the topic involves a business, include market context and actionable insights\n- If the topic is educational, include clear explanations and examples\n- For invoices, use NGN instead of the Naira symbol to avoid encoding issues"
+                user_msg = f"Write a complete, professional, well-structured document about: {doc_topic}. Make it detailed and informative with real substance \u2014 not just a summary. Include an introduction, 4-6 main sections with headings, specific examples, and a conclusion."
+                messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+                result = await asyncio.to_thread(llm.chat, messages, max_tokens=3000)
+                raw_content = result["content"]
+
+                if doc_type == "pdf":
+                    doc_result = generate_pdf(raw_content, doc_topic)
+                elif doc_type == "docx":
+                    doc_result = generate_docx(raw_content, doc_topic)
+                else:
+                    doc_result = generate_html(raw_content, doc_topic)
+
+            # Decode base64 and send the file
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                filename = doc_result.get("filename", f"stew_{doc_type}_{datetime.now().strftime('%Y%m%d')}.{doc_type}")
+                caption = f"S.T.E.W generated {doc_type.upper()}\nTopic: {doc_topic[:200]}"
+                await bot.send_document(chat_id, file_bytes, filename, caption)
+            else:
+                await bot.send_message(chat_id, f"Failed to generate {doc_type.upper()}. Please try again.")
+        except Exception as e:
+            logger.error(f"Slash command document generation error: {e}")
+            await bot.send_message(chat_id, f"Document generation error: {str(e)[:200]}")
         return {"ok": True}
 
     # ── DOCUMENT GENERATION ───────────────────────────────────────────────────

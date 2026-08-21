@@ -56,12 +56,47 @@ _SUBSCRIPT_MAP = str.maketrans({
 })
 
 
+# Currency symbols to preserve (replace with ASCII-safe equivalents before stripping)
+_CURRENCY_PRESERVE = {
+    "\u20a6": "NGN ",   # ₦ Naira
+    "\u20ac": "EUR ",  # € Euro
+    "\u00a3": "GBP ",  # £ Pound
+    "\u00a2": " cents", # ¢ cent
+    "\u00a5": "JPY ",  # ¥ Yen
+    "\u20b9": "INR ",  # ₹ Rupee
+    "\u20a9": "KRW ",  # ₩ Won
+    "\u00ab": "<<",    # «
+    "\u00bb": ">>",    # »
+    "\u2026": "...",   # … ellipsis
+    "\u2022": "*",     # • bullet (for PDF safety)
+    "\u00a0": " ",     # non-breaking space
+    "\u00a9": "(c)",   # ©
+    "\u00ae": "(R)",   # ®
+    "\u2122": "(TM)",  # ™
+    "\u00b7": "-",     # · middle dot
+    "\u00d7": "x",     # × multiply (also in _UNICODE_REPLACEMENTS but ensure)
+    "\u00f7": "/",     # ÷ divide
+    "\u2192": "->",    # →
+    "\u2190": "<-",    # ←
+    "\u2191": "^",     # ↑
+    "\u2193": "v",     # ↓
+    "\u2713": "OK",    # ✓ check
+    "\u2717": "X",     # ✗
+    "\u2605": "*",     # ★ star
+    "\u2606": "*",     # ☆
+}
+
+
 def _sanitize_text(text: str) -> str:
-    """Strip/replace unicode chars that render as black boxes in default PDF/DOCX fonts."""
+    """Strip/replace unicode chars that render as black boxes in default PDF/DOCX fonts.
+    Preserves currency symbols (incl. Naira) by converting to ASCII equivalents first."""
     if not text:
         return text
     text = text.translate(_SUPERSCRIPT_MAP)
     text = text.translate(_SUBSCRIPT_MAP)
+    # Preserve currency symbols and common chars before stripping
+    for uni, replacement in _CURRENCY_PRESERVE.items():
+        text = text.replace(uni, replacement)
     for uni, replacement in _UNICODE_REPLACEMENTS.items():
         text = text.replace(uni, replacement)
     # Strip any remaining non-ASCII characters (final safety net)
