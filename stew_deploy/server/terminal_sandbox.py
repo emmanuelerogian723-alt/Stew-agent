@@ -187,6 +187,12 @@ def _run_python(code, workdir, timeout, result):
     except: pass
     try: import requests; safe_globals["requests"] = requests
     except: pass
+    # Change to workdir so files are created in the right place
+    try:
+        import os as _os
+        _os.chdir(workdir)
+    except Exception:
+        pass
     files_before = set(os.listdir(workdir)) if os.path.exists(workdir) else set()
     try:
         with redirect_stdout(stdout_buf), redirect_stderr(io.StringIO()):

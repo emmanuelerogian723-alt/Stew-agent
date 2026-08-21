@@ -450,6 +450,68 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
         except Exception as e:
             return {"tool": tool, "success": False, "error": str(e)}
 
+    # ── TERMINAL SANDBOX TOOLS (owner/admin only) ──────────────────────────────
+    elif tool == "run_shell":
+        command = args.get("command", "")
+        if not command:
+            return {"error": "No command provided"}
+        timeout = min(args.get("timeout", 30), 120)
+        result = execute_shell(command, timeout=timeout)
+        output_parts = []
+        if result.get("stdout"):
+            output_parts.append(result["stdout"])
+        if result.get("stderr"):
+            output_parts.append("STDERR:\n" + result["stderr"])
+        if result.get("timed_out"):
+            output_parts.append(f"\n[Timed out after {timeout}s]")
+        output = "\n".join(output_parts) if output_parts else "(no output)"
+        if result.get("error"):
+            output = f"Error: {result['error']}\n{output}"
+        return {
+            "tool": tool,
+            "success": result.get("success", False),
+            "output": output[:50000],
+            "exit_code": result.get("exit_code", -1),
+            "execution_time": result.get("execution_time", 0),
+        }
+
+    elif tool == "run_terminal_code":
+        code = args.get("code", "")
+        if not code:
+            return {"error": "No code provided"}
+        timeout = min(args.get("timeout", 30), 120)
+        result = execute_terminal_python(code, timeout=timeout)
+        output_parts = []
+        if result.get("stdout"):
+            output_parts.append(result["stdout"])
+        if result.get("result"):
+            output_parts.append(f">>> {result['result']}")
+        if result.get("stderr") or result.get("traceback"):
+            output_parts.append("STDERR:\n" + (result.get("traceback") or result.get("stderr", "")))
+        if result.get("timed_out"):
+            output_parts.append(f"\n[Timed out after {timeout}s]")
+        output = "\n".join(output_parts) if output_parts else "(no output)"
+        if result.get("error"):
+            output = f"Error: {result['error']}\n{output}"
+        # Return figures and files for the agent loop to deliver
+        tool_figures = result.get("figures", [])
+        tool_files = []
+        for ff in result.get("files_to_send", []):
+            tool_files.append({
+                "base64": ff["base64"],
+                "filename": ff["filename"],
+                "doc_type": ff["filename"].split(".")[-1] if "." in ff["filename"] else "bin",
+            })
+        return {
+            "tool": tool,
+            "success": result.get("success", False),
+            "output": output[:50000],
+            "figures": tool_figures,
+            "files": tool_files,
+            "files_created": result.get("files_created", []),
+            "execution_time": result.get("execution_time", 0),
+        }
+
     else:
         return {"error": f"Unknown tool: {tool}"}
 
@@ -549,6 +611,9 @@ async def run_agent_loop(
                 })
             if tool_result.get("figures"):
                 figures.extend(tool_result["figures"])
+            # Collect files from terminal sandbox (run_terminal_code)
+            if tool_result.get("files"):
+                files.extend(tool_result["files"])
 
             # Send figures to chat
             if bot and chat_id and tool_result.get("figures"):
