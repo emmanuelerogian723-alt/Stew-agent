@@ -180,6 +180,38 @@ class FeatureRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class AccessPass(Base):
+    """Admin-issued free access passes for Telegram users.
+
+    Admin can create passes with custom message limits, expiry dates,
+    and personal notes. Each pass has a unique code. If a user turns
+    out to be bad, admin can revoke the pass instantly.
+    """
+    __tablename__ = "access_passes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    # Who created this pass
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    # Who redeemed this pass (Telegram user ID as string, NULL if not yet redeemed)
+    redeemed_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    redeemed_by_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    redeemed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Pass settings
+    message_limit: Mapped[int] = mapped_column(Integer, default=200, nullable=False)
+    messages_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Expiry (NULL = never expires)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Status: active, revoked, expired, fully_used
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    # Admin's personal note (e.g., "For my cousin Chidi")
+    note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Plan this pass grants (free pass = "pro" so they get premium features)
+    plan_level: Mapped[str] = mapped_column(String(20), default="pro", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class UserMemory(Base):
     """Persistent key-fact memory stored in PostgreSQL — survives Render restarts."""
     __tablename__ = "user_memories"

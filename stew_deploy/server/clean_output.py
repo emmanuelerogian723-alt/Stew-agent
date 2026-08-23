@@ -70,10 +70,45 @@ def clean_markdown(text: str) -> str:
 
 def clean_response(text: str) -> str:
     """Main entry point — clean LLM output for delivery."""
+    if not text:
+        return text
+
+    # CRITICAL: Detect and BLOCK raw base64 dumps / "decode this yourself" hallucinations.
+    # If the LLM ever tries to hand the user raw file bytes or file-saving instructions
+    # instead of an actual sent file, replace the whole response with a safe message.
+    _leak_signals = [
+        "base64-encoded", "base64 encoded", "save the content to a file",
+        "decode base64", "decode this base64", "paste this into a file",
+        "copy the content below and save", "open it with any pdf viewer",
+    ]
+    _lower = text.lower()
+    if any(sig in _lower for sig in _leak_signals):
+        return "Your document is ready! If it didn't appear above, please try again in a moment — I'll send it as a proper downloadable file."
+    # Detect a long base64-looking blob (40+ chars, base64 alphabet, no spaces) —
+    # a near-certain sign of a raw file dump leaking into chat text.
+    if re.search(r'(?:[A-Za-z0-9+/]{60,}={0,2}\s*){3,}', text):
+        return "Your document is ready! If it didn't appear above, please try again in a moment — I'll send it as a proper downloadable file."
+
+    # CRITICAL: Strip any TOOL_CALL or TOOL_RESULT artifacts that leaked
+    text = re.sub(r'TOOL_CALL:\s*\{.*?\}', '', text, flags=re.DOTALL).strip()
+    text = re.sub(r'TOOL_CALL_MARKER.*', '', text, flags=re.DOTALL).strip()
+    text = re.sub(r'TOOL_RESULT[\s\S]*', '', text).strip()
+    # Strip JSON-like tool call remnants
+    text = re.sub(r'\{"tool"\s*:\s*"[^"]+".*?\}', '', text, flags=re.DOTALL).strip()
+    # Strip "I should use" or "I need to call" internal reasoning leaks
+    text = re.sub(r'^I (should|need to|will|must) (use|call|invoke|emit|generate) (a |the )?tool.*$', '', text, flags=re.MULTILINE|re.IGNORECASE).strip()
+    # Strip "Let me" reasoning
+    text = re.sub(r'^Let me (search|find|look|check|use|call|generate|create).*$', '', text, flags=re.MULTILINE|re.IGNORECASE).strip()
+    
     cleaned = clean_markdown(text)
     # Final safety: strip any remaining ##, ###, **, __ at the start of lines
     cleaned = re.sub(r'^\s*#+\s*', '', cleaned, flags=re.MULTILINE)
     # Strip any remaining ** or __ that survived earlier passes
     cleaned = re.sub(r'\*\*(.+?)\*\*', r'\1', cleaned)
     cleaned = re.sub(r'__(.+?)__', r'\1', cleaned)
-    return cleaned.strip()
+    # Strip any remaining inline code backticks
+    cleaned = re.sub(r'`([^`\n]+?)`', r'\1', cleaned)
+    # Strip empty lines at start/end
+    cleaned = cleaned.strip()
+    # If after all cleaning the response is empty, return empty (caller should handle)
+    return cleaned

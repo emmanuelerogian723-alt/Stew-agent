@@ -53,7 +53,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite
+from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite, AccessPass
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -138,6 +138,7 @@ async def lifespan(app: FastAPI):
             {"command": "sponsor", "description": "Sponsor an ad on Stew"},
             {"command": "agent", "description": "Supercomputer Agent Mode - multi-step tool use"},
             {"command": "admin", "description": "Admin access (owner only)"},
+            {"command": "pass", "description": "Access pass system (owner: create/list/revoke, users: redeem)"},
         ]
         async with _httpx.AsyncClient(timeout=10) as _client:
             await _client.post(
@@ -3675,6 +3676,243 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await bot.send_message(chat_id, "Invalid admin code.")
         return {"ok": True}
 
+    # ── ACCESS PASS SYSTEM (Owner-only) ─────────────────────────────────────
+    # /pass create <note> — Create a new free access pass (default 200 messages, 30 days, Pro features)
+    # /pass create <limit> <note> — Create with custom message limit
+    # /pass create <limit> <days> <note> — Create with custom limit and expiry
+    # /pass list — List all passes and their status
+    # /pass revoke <code> — Revoke a pass instantly
+    # /pass check <code> — Check status of a specific pass
+    # /pass stats — Show pass usage statistics
+    if _raw_text_early.startswith("/pass"):
+        _is_owner = tg_user_early and tg_user_early.plan == "owner"
+        if not _is_owner:
+            # Check if this is someone trying to redeem a pass code
+            # Format: /pass <CODE>  (code is 8 chars, uppercase letters+numbers)
+            _pass_parts = _raw_text_early.split(maxsplit=1)
+            if len(_pass_parts) > 1:
+                _pass_code = _pass_parts[1].strip().upper()
+                if len(_pass_code) >= 6 and _pass_code.replace(" ", "").isalnum():
+                    # Look up the pass
+                    from sqlalchemy import select as _sel_pass
+                    _pass_result = await db.execute(
+                        _sel_pass(AccessPass).where(AccessPass.code == _pass_code)
+                    )
+                    _access_pass = _pass_result.scalar_one_or_none()
+                    if not _access_pass:
+                        await bot.send_message(chat_id, "That access code is not valid. Please check and try again.")
+                        return {"ok": True}
+                    if _access_pass.status == "revoked":
+                        await bot.send_message(chat_id, "This access pass has been revoked. Please contact the person who gave it to you.")
+                        return {"ok": True}
+                    if _access_pass.status == "expired" or (_access_pass.expires_at and _access_pass.expires_at < datetime.utcnow()):
+                        _access_pass.status = "expired"
+                        await db.commit()
+                        await bot.send_message(chat_id, "This access pass has expired. Please contact the person who gave it to you for a new one.")
+                        return {"ok": True}
+                    if _access_pass.messages_used >= _access_pass.message_limit:
+                        _access_pass.status = "fully_used"
+                        await db.commit()
+                        await bot.send_message(chat_id, f"This access pass has been fully used ({_access_pass.message_limit} messages). Contact the person who gave it to you.")
+                        return {"ok": True}
+                    if _access_pass.redeemed_by and _access_pass.redeemed_by != str(tg_user_early.id):
+                        await bot.send_message(chat_id, "This access pass has already been used by someone else. Each pass can only be used once.")
+                        return {"ok": True}
+                    # Redeem the pass
+                    if not _access_pass.redeemed_by:
+                        _access_pass.redeemed_by = str(tg_user_early.id)
+                        _access_pass.redeemed_by_name = tg_user_early.name or f"TG User"
+                        _access_pass.redeemed_at = datetime.utcnow()
+                    # Grant the plan level from the pass
+                    tg_user_early.plan = _access_pass.plan_level
+                    await db.flush()
+                    await db.commit()
+                    _remaining = _access_pass.message_limit - _access_pass.messages_used
+                    _expiry_str = _access_pass.expires_at.strftime("%d %b, %Y") if _access_pass.expires_at else "never"
+                    await bot.send_message(chat_id,
+                        f"🎟️ Access Pass Activated!\n\n"
+                        f"You now have {_access_pass.plan_level.upper()} access to S.T.E.W.\n"
+                        f"Messages remaining: {_remaining}\n"
+                        f"Expires: {_expiry_str}\n\n"
+                        f"You can use all S.T.E.W features. Enjoy! 🎉"
+                    )
+                    return {"ok": True}
+            else:
+                await bot.send_message(chat_id, "This command is for the admin only. If you have an access code, send it as: /pass YOUR_CODE")
+                return {"ok": True}
+
+        # Admin commands
+        _pass_args = _raw_text_early.split(maxsplit=2)
+        _sub_cmd = _pass_args[1].lower() if len(_pass_args) > 1 else "help"
+
+        if _sub_cmd == "create":
+            # Parse: /pass create [limit] [days] [note]
+            _rest = _pass_args[2].strip() if len(_pass_args) > 2 else ""
+            _limit = 200
+            _days = 30
+            _note = _rest
+
+            # Try to extract numbers from the start
+            _tokens = _rest.split()
+            _idx = 0
+            if _tokens and _tokens[0].isdigit():
+                _limit = int(_tokens[0])
+                _idx = 1
+            if len(_tokens) > _idx and _tokens[_idx].isdigit():
+                _days = int(_tokens[_idx])
+                _idx += 1
+            _note = " ".join(_tokens[_idx:]) if _idx > 0 else _rest
+
+            # Generate a unique 8-char code
+            import random as _rng
+            import string as _str_chars
+            _code = ''.join(_rng.choices(_str_chars.ascii_uppercase + _str_chars.digits, k=8))
+            # Ensure uniqueness
+            _existing = await db.execute(_sel_pass(AccessPass).where(AccessPass.code == _code))
+            while _existing.scalar_one_or_none():
+                _code = ''.join(_rng.choices(_str_chars.ascii_uppercase + _str_chars.digits, k=8))
+                _existing = await db.execute(_sel_pass(AccessPass).where(AccessPass.code == _code))
+
+            from datetime import timedelta as _td
+            _expiry = datetime.utcnow() + _td(days=_days) if _days > 0 else None
+
+            _new_pass = AccessPass(
+                code=_code,
+                created_by=str(tg_user_early.id) if tg_user_early else None,
+                message_limit=_limit,
+                expires_at=_expiry,
+                note=_note if _note else None,
+                plan_level="pro",
+                status="active",
+            )
+            db.add(_new_pass)
+            await db.commit()
+
+            _expiry_display = _expiry.strftime("%d %b, %Y") if _expiry else "never"
+            await bot.send_message(chat_id,
+                f"🎟️ Access Pass Created!\n\n"
+                f"Code: {_code}\n"
+                f"Messages: {_limit}\n"
+                f"Expires: {_expiry_display}\n"
+                f"Plan: PRO (all features)\n"
+                f"Note: {_note or 'No note'}\n\n"
+                f"Share this code with someone you trust. They redeem it by sending:\n"
+                f"/pass {_code}\n\n"
+                f"You can revoke it anytime with: /pass revoke {_code}"
+            )
+            return {"ok": True}
+
+        elif _sub_cmd == "list":
+            _passes = await db.execute(
+                _sel_pass(AccessPass).order_by(AccessPass.created_at.desc()).limit(20)
+            )
+            _all_passes = _passes.scalars().all()
+            if not _all_passes:
+                await bot.send_message(chat_id, "No access passes created yet. Use: /pass create <note>")
+                return {"ok": True}
+            _lines = []
+            for p in _all_passes:
+                _status_emoji = {"active": "✅", "revoked": "🚫", "expired": "⏰", "fully_used": "✅"}.get(p.status, "❓")
+                _user = p.redeemed_by_name or "Not redeemed"
+                _used = f"{p.messages_used}/{p.message_limit}"
+                _exp = p.expires_at.strftime("%d%b") if p.expires_at else "never"
+                _lines.append(f"{_status_emoji} {p.code} | {_user} | {_used} msgs | exp {_exp} | {p.status}")
+                if p.note:
+                    _lines.append(f"   Note: {p.note[:50]}")
+            _msg = "🎟️ Access Passes:\n\n" + "\n".join(_lines)
+            if len(_msg) > 3500:
+                _msg = _msg[:3500] + "...\n(use /pass stats for summary)"
+            await bot.send_message(chat_id, _msg)
+            return {"ok": True}
+
+        elif _sub_cmd == "revoke":
+            _rev_code = _pass_args[2].strip().upper() if len(_pass_args) > 2 else ""
+            if not _rev_code:
+                await bot.send_message(chat_id, "Usage: /pass revoke <CODE>")
+                return {"ok": True}
+            _pass = await db.execute(_sel_pass(AccessPass).where(AccessPass.code == _rev_code))
+            _rev_pass = _pass.scalar_one_or_none()
+            if not _rev_pass:
+                await bot.send_message(chat_id, f"Pass {_rev_code} not found.")
+                return {"ok": True}
+            _old_status = _rev_pass.status
+            _rev_pass.status = "revoked"
+            # If someone redeemed it, downgrade them back to free
+            if _rev_pass.redeemed_by:
+                _rev_user = await db.execute(_sel_pass(User).where(User.id == _rev_pass.redeemed_by))
+                _downgraded = _rev_user.scalar_one_or_none()
+                if _downgraded and _downgraded.plan != "owner":
+                    _downgraded.plan = "free"
+            await db.commit()
+            await bot.send_message(chat_id,
+                f"🚫 Pass {_rev_code} has been REVOKED.\n"
+                f"Previous status: {_old_status}\n"
+                f"Redeemed by: {_rev_pass.redeemed_by_name or 'Nobody'}\n"
+                f"The user has been downgraded to free tier."
+            )
+            return {"ok": True}
+
+        elif _sub_cmd == "check":
+            _chk_code = _pass_args[2].strip().upper() if len(_pass_args) > 2 else ""
+            if not _chk_code:
+                await bot.send_message(chat_id, "Usage: /pass check <CODE>")
+                return {"ok": True}
+            _pass = await db.execute(_sel_pass(AccessPass).where(AccessPass.code == _chk_code))
+            _chk_pass = _pass.scalar_one_or_none()
+            if not _chk_pass:
+                await bot.send_message(chat_id, f"Pass {_chk_code} not found.")
+                return {"ok": True}
+            _exp = _chk_pass.expires_at.strftime("%d %b, %Y") if _chk_pass.expires_at else "Never"
+            _rdm = _chk_pass.redeemed_at.strftime("%d %b, %Y at %H:%M") if _chk_pass.redeemed_at else "Not redeemed"
+            await bot.send_message(chat_id,
+                f"🎟️ Pass: {_chk_pass.code}\n"
+                f"Status: {_chk_pass.status}\n"
+                f"Messages: {_chk_pass.messages_used}/{_chk_pass.message_limit}\n"
+                f"Expires: {_exp}\n"
+                f"Redeemed by: {_chk_pass.redeemed_by_name or 'Nobody'}\n"
+                f"Redeemed at: {_rdm}\n"
+                f"Note: {_chk_pass.note or 'No note'}"
+            )
+            return {"ok": True}
+
+        elif _sub_cmd == "stats":
+            _all = await db.execute(_sel_pass(AccessPass))
+            _all_passes = _all.scalars().all()
+            _total = len(_all_passes)
+            _active = sum(1 for p in _all_passes if p.status == "active")
+            _revoked = sum(1 for p in _all_passes if p.status == "revoked")
+            _expired = sum(1 for p in _all_passes if p.status == "expired")
+            _used_up = sum(1 for p in _all_passes if p.status == "fully_used")
+            _redeemed = sum(1 for p in _all_passes if p.redeemed_by)
+            _total_msgs = sum(p.message_limit for p in _all_passes)
+            _used_msgs = sum(p.messages_used for p in _all_passes)
+            await bot.send_message(chat_id,
+                f"🎟️ Access Pass Statistics\n\n"
+                f"Total passes: {_total}\n"
+                f"Active: {_active}\n"
+                f"Redeemed: {_redeemed}\n"
+                f"Revoked: {_revoked}\n"
+                f"Expired: {_expired}\n"
+                f"Fully used: {_used_up}\n"
+                f"Messages allocated: {_total_msgs}\n"
+                f"Messages used: {_used_msgs}"
+            )
+            return {"ok": True}
+
+        else:
+            await bot.send_message(chat_id,
+                "🎟️ Access Pass Commands (Owner only):\n\n"
+                "/pass create <note> — Create pass (200 msgs, 30 days)\n"
+                "/pass create <limit> <note> — Custom message limit\n"
+                "/pass create <limit> <days> <note> — Custom limit + expiry\n"
+                "/pass list — View all passes\n"
+                "/pass revoke <code> — Revoke a pass instantly\n"
+                "/pass check <code> — Check pass status\n"
+                "/pass stats — Usage statistics\n\n"
+                "Users redeem with: /pass <CODE>"
+            )
+            return {"ok": True}
+
     # Free/meta commands never cost quota — only real work does.
     _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/mood", "/about", "/owner", "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ", "/weather", "/qr", "/joke", "/quote", "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
@@ -3700,6 +3938,37 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
         # Count this message against the free-tier quota (own DB session, fire-and-forget).
         asyncio.create_task(_log_call(db, tg_user_early.id, "/telegram/message", "POST", 0, 200))
+
+        # Also count against access pass if the user is on a pass
+        if tg_user_early and tg_user_early.plan in ("pro", "business", "student"):
+            from sqlalchemy import select as _sel_ap, update as _upd_ap
+            _ap_lookup = await db.execute(
+                _sel_ap(AccessPass).where(
+                    AccessPass.redeemed_by == str(tg_user_early.id),
+                    AccessPass.status == "active",
+                )
+            )
+            _active_pass = _ap_lookup.scalar_one_or_none()
+            if _active_pass:
+                _active_pass.messages_used += 1
+                if _active_pass.messages_used >= _active_pass.message_limit:
+                    _active_pass.status = "fully_used"
+                    # Downgrade user back to free
+                    tg_user_early.plan = "free"
+                    await db.commit()
+                    await bot.send_message(chat_id,
+                        f"Your access pass has been fully used ({_active_pass.message_limit} messages). "
+                        f"You are now on the free tier. Upgrade with /upgrade to continue with full features."
+                    )
+                else:
+                    await db.commit()
+                    # Warn at 80% usage
+                    if _active_pass.messages_used == int(_active_pass.message_limit * 0.8):
+                        _remaining = _active_pass.message_limit - _active_pass.messages_used
+                        await bot.send_message(chat_id,
+                            f"Heads up! You have {_remaining} messages left on your access pass. "
+                            f"Upgrade with /upgrade to keep full features after it runs out."
+                        )
 
     # ── HANDLE INCOMING PHOTOS (Vision-first, OCR fallback) ────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
@@ -3776,7 +4045,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         except Exception as e:
             logger.error(f"Telegram photo handling error: {e}", exc_info=True)
-            await bot.send_message(chat_id, f"Error processing image: {str(e)[:100]}. Please try again.")
+            await bot.send_message(chat_id, "Could not process that image. Please try again with a clearer photo.")
             return {"ok": True}
 
     # ── HANDLE INCOMING DOCUMENTS (Text Extraction) ───────────────────────────
@@ -3871,7 +4140,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         except Exception as e:
             logger.error(f"Telegram document error: {e}", exc_info=True)
-            await bot.send_message(chat_id, f"Error processing file: {str(e)[:100]}. Please try again.")
+            await bot.send_message(chat_id, "Could not process that file. Please try again.")
             return {"ok": True}
 
     # If no text and no file, ignore — but NEVER drop voice/audio (they have no
@@ -4110,10 +4379,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_photo(chat_id, _meme_resp.content, caption=f"Meme: {_meme_text[:80]}")
                 asyncio.create_task(_log_call(db, tg_user.id, "/telegram/meme", "POST", 0, 200))
             else:
-                await bot.send_message(chat_id, f"Meme generation failed. Try a different prompt! (HTTP {_meme_resp.status_code})")
+                await bot.send_message(chat_id, "Meme generation failed. Please try a different prompt!")
         except Exception as e:
             logger.error(f"Meme generation error: {e}")
-            await bot.send_message(chat_id, f"Meme error: {str(e)[:150]}")
+            await bot.send_message(chat_id, "Could not generate the meme. Please try a different prompt.")
         return
 
     # /caption — Viral Social Media Caption Generator (trending feature)
@@ -4156,7 +4425,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             asyncio.create_task(_log_call(db, tg_user.id, "/telegram/caption", "POST", 0, 200))
         except Exception as e:
             logger.error(f"Caption generation error: {e}")
-            await bot.send_message(chat_id, f"Caption error: {str(e)[:150]}")
+            await bot.send_message(chat_id, "Could not generate captions. Please try again.")
         return
 
     # /sponsor — show current sponsors
@@ -4474,7 +4743,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             user_lower = user_text.lower()
         except Exception as e:
             logger.error(f"Voice error: {e}", exc_info=True)
-            await bot.send_message(chat_id, f"Voice error: {str(e)[:100]}. Please type instead.")
+            await bot.send_message(chat_id, "Sorry, I could not process that voice note. Please type your message instead.")
             return {"ok": True}
 
     # ── /book COMMAND (Write a Book) ────────────────────────────────────────
@@ -4559,7 +4828,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         except Exception as e:
             logger.error(f"Book generation error: {e}", exc_info=True)
-            await bot.send_message(chat_id, f"Book generation error: {str(e)[:100]}. Please try again with a simpler request.")
+            await bot.send_message(chat_id, "Could not generate the book. Please try again with a simpler topic.")
         return {"ok": True}
 
     # ── /song COMMAND (AI Song Generation) ──────────────────────────────────
@@ -4685,7 +4954,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         except Exception as e:
             logger.error(f"Song generation error: {e}", exc_info=True)
-            await bot.send_message(chat_id, f"Song generation error: {str(e)[:100]}. Please try again.")
+            await bot.send_message(chat_id, "Could not generate the song. Please try again.")
         return {"ok": True}
 
     # ── /remember COMMAND (Explicit Memory) ──────────────────────────────────
@@ -4775,7 +5044,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 system="Expert summarizer. Create a clear summary with bullet points.")
             await bot.send_message(chat_id, clean_response(result))
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /translate COMMAND ─────────────────────────────────────────────────────
@@ -4792,7 +5061,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 system="Professional translator. Return only the translation.")
             await bot.send_message(chat_id, f"Translation: {clean_response(result)}")
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /quiz COMMAND (Students) ───────────────────────────────────────────────
@@ -4818,7 +5087,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, quiz_text[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /flashcards COMMAND (Students) ─────────────────────────────────────────
@@ -4836,7 +5105,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             ])
             await bot.send_message(chat_id, clean_response(result["content"])[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /studyguide COMMAND (Students) ────────────────────────────────────────
@@ -4867,7 +5136,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, guide[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /solve COMMAND (Math) ──────────────────────────────────────────────────
@@ -4888,7 +5157,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 result = await asyncio.to_thread(llm.complete, f"Solve: {problem}", system="Math tutor. Show all steps.")
                 await bot.send_message(chat_id, clean_response(result))
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /agent COMMAND (Supercomputer Agent Mode) ──────────────────────────────
@@ -4943,7 +5212,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 response = _re_agent.sub(r'TOOL_RESULT[\s\S]*', '', response).strip()
                 if len(response) > 1500:
                     response = response[:1500] + "..."
-                await bot.send_message(chat_id, response)
+                await bot.send_message(chat_id, clean_response(response))
             elif agent_result.get("files"):
                 await bot.send_message(chat_id, "Done! Your file is ready above.")
             else:
@@ -4979,7 +5248,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, plan[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /rubric COMMAND (Lecturers) ────────────────────────────────────────────
@@ -5004,7 +5273,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, rubric[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /grade COMMAND (Lecturers) ─────────────────────────────────────────────
@@ -5036,7 +5305,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             output = result.get("stdout", "") or result.get("error", "Error")
             await bot.send_message(chat_id, f"Grade Result:\n{output[:1000]}")
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /invoice COMMAND (Companies) ───────────────────────────────────────────
@@ -5212,7 +5481,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await bot.send_document(chat_id, file_bytes, filename, f"Invoice {inv_num} - {client_name} - NGN {total:,.2f}")
         except Exception as e:
             logger.error(f"Invoice generation error: {e}", exc_info=True)
-            await bot.send_message(chat_id, f"Invoice error: {str(e)[:150]}\n\nTip: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000")
+            await bot.send_message(chat_id, "Could not generate the invoice. Try: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000")
         return {"ok": True}
 
     # ── /meeting COMMAND (Companies) ────────────────────────────────────────────
@@ -5238,7 +5507,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, minutes[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /swot COMMAND (Companies) ──────────────────────────────────────────────
@@ -5269,7 +5538,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, swot[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /businessplan COMMAND (Companies) ──────────────────────────────────────
@@ -5300,7 +5569,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, plan[:3800])
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /budget COMMAND ────────────────────────────────────────────────────────
@@ -5341,7 +5610,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             output = result.get("stdout", "") or result.get("error", "Error")
             await bot.send_message(chat_id, "```\n" + output[:3000] + "\n```")
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /code COMMAND ──────────────────────────────────────────────────────────
@@ -5362,7 +5631,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, "Code ran (no output)")
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
 
@@ -5428,7 +5697,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 )
                 await bot.send_message(chat_id, msg)
         except Exception as e:
-            await bot.send_message(chat_id, f"Weather error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Could not fetch weather data. Please try again later.")
         return {"ok": True}
 
     # ── /currency COMMAND ──────────────────────────────────────────────────────
@@ -5460,7 +5729,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 result = amount * rate
                 await bot.send_message(chat_id, f"{amount} {from_curr} = {result:,.2f} {to_curr}\nRate: 1 {from_curr} = {rate:,.4f} {to_curr}")
         except Exception as e:
-            await bot.send_message(chat_id, f"Currency error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Could not fetch exchange rates. Please try again later.")
         return {"ok": True}
 
     # ── /joke COMMAND ──────────────────────────────────────────────────────────
@@ -5537,7 +5806,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                         result_text += f"   Example: {d['example']}\n"
                 await bot.send_message(chat_id, result_text)
         except Exception as e:
-            await bot.send_message(chat_id, f"Define error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Could not find that definition. Please try a different word.")
         return {"ok": True}
 
     # ── /news COMMAND ───────────────────────────────────────────────────────────
@@ -5561,7 +5830,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, "Couldn't fetch news right now. Try again later.")
         except Exception as e:
-            await bot.send_message(chat_id, f"News error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Could not fetch news. Please try again later.")
         return {"ok": True}
 
     # ── /qr COMMAND (Generate QR Code) ──────────────────────────────────────────
@@ -5581,7 +5850,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 else:
                     await bot.send_message(chat_id, "Failed to generate QR code. Try again.")
         except Exception as e:
-            await bot.send_message(chat_id, f"QR error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Could not generate the QR code. Please try again.")
         return {"ok": True}
 
     # ── /math COMMAND (Quick Math) ──────────────────────────────────────────────
@@ -5613,7 +5882,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 result = eval(compile(tree, '<string>', 'eval'), {"__builtins__": {}}, {"_math": _math})
                 await bot.send_message(chat_id, f"{expr} = {result}")
         except Exception as e:
-            await bot.send_message(chat_id, f"Math error: {str(e)[:100]}\n\nTip: Use /math solve 3x + 5 = 20 for equations")
+            await bot.send_message(chat_id, "Could not solve that math problem. Try: /math solve 3x + 5 = 20")
         return {"ok": True}
 
     # ── /shorten COMMAND (URL Shortener) ────────────────────────────────────────
@@ -5761,7 +6030,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"Clipping failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error(f"Clip command error: {e}")
-            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return
 
     # /smartclip — AI smart clips (Opus Clips style)
@@ -5848,7 +6117,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"Smart clipping failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error(f"Smart clip error: {e}")
-            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return
 
     # /createvideo — Create AI video from images + voiceover
@@ -6000,7 +6269,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"Video creation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error(f"Create video error: {e}")
-            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return
 
     # /aivideo — Generate REAL AI video from text (using LTX-Video on Hugging Face Spaces)
@@ -6126,7 +6395,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"AI video generation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error(f"AI video command error: {e}")
-            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return
 
     # /aivideos — Generate multi-scene AI video with narration
@@ -6268,7 +6537,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"AI video generation failed: {result.get('error', 'Unknown error')}")
         except Exception as e:
             logger.error(f"Multi-scene AI video error: {e}")
-            await bot.send_message(chat_id, f"Error: {str(e)[:200]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return
 
     # /webbuild — Motion Design Website Builder (Kimi K2 style)
@@ -6549,7 +6818,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await bot.send_message(chat_id, "Not enough sources found. Try a different query.")
         except Exception as e:
-            await bot.send_message(chat_id, f"Error: {str(e)[:100]}")
+            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
 

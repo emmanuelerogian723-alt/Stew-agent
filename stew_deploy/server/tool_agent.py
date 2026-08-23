@@ -645,8 +645,8 @@ async def run_agent_loop(
         for call in tool_calls:
             tool_name = call.get("tool", "unknown")
             if bot and chat_id:
-                short = f"Using tool: {tool_name}..."
-                await bot.send_message(chat_id, short)
+                # Don't leak tool names to users — just show typing indicator
+                await bot.send_chat_action(chat_id, "typing")
 
             tool_result = await execute_tool(call, bot, chat_id)
             tool_history.append({
