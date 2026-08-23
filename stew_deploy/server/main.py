@@ -3224,28 +3224,51 @@ VOICE_OPTIONS = {
 }
 
 async def _synthesize_voice(text: str, voice: str = "en-US-AriaNeural") -> tuple[bytes, str]:
-    """Synthesize speech via edge-tts (free, no API key). Returns (mp3_bytes, error)."""
+    """Synthesize speech via edge-tts (free, no API key). Returns (mp3_bytes, error).
+    Falls back to en-US-AriaNeural if the requested voice fails."""
     import asyncio as _aio
     try:
         import edge_tts
     except ImportError:
         return b"", "edge-tts not installed"
     
-    # Truncate very long text to avoid timeout (edge-tts handles ~3000 chars well)
+    # Truncate very long text to avoid timeout
     if len(text) > 3000:
         text = text[:3000] + "..."
     
-    try:
-        communicate = edge_tts.Communicate(text, voice)
-        audio_chunks = []
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_chunks.append(chunk["data"])
-        if audio_chunks:
-            return b"".join(audio_chunks), ""
-        return b"", "No audio generated"
-    except Exception as e:
-        return b"", f"edge-tts error: {e}"
+    # Clean text for TTS — remove markdown artifacts, emojis that break TTS
+    import re as _re_tts
+    text = _re_tts.sub(r'[#*_`~]', '', text)  # strip markdown
+    text = _re_tts.sub(r'\n{3,}', '\n\n', text)  # collapse blank lines
+    text = text.strip()
+    if not text:
+        return b"", "No text to synthesize"
+    
+    # Try the requested voice first, fall back to en-US-AriaNeural if it fails
+    voices_to_try = [voice, "en-US-AriaNeural"]
+    # Deduplicate while preserving order
+    seen = set()
+    voices_to_try = [v for v in voices_to_try if not (v in seen or seen.add(v))]
+    
+    last_error = ""
+    for try_voice in voices_to_try:
+        try:
+            communicate = edge_tts.Communicate(text, try_voice)
+            audio_chunks = []
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_chunks.append(chunk["data"])
+            if audio_chunks:
+                if try_voice != voice:
+                    logger.info(f"Voice '{voice}' failed, used fallback '{try_voice}'")
+                return b"".join(audio_chunks), ""
+            last_error = f"No audio generated for voice {try_voice}"
+        except Exception as e:
+            last_error = f"edge-tts error with {try_voice}: {e}"
+            logger.warning(f"TTS voice {try_voice} failed: {e}")
+            continue
+    
+    return b"", last_error
 
 
 @app.post("/telegram/webhook")
@@ -6111,6 +6134,68 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return
 
     # /voice — Toggle voice note replies
+    # ── SAY / READ ALOUD / SPEAK — generate a voice note from text ──────────────
+    _say_patterns = [
+        "say this:", "say this :", "read this:", "read this :",
+        "read aloud:", "speak:", "speak this:", "voice this:",
+        "say:", "narrate:", "read out loud:", "read out:",
+        "text to speech:", "tts:", "voice note:",
+    ]
+    _lower_msg = user_text.lower().strip()
+    _say_match = None
+    for pat in _say_patterns:
+        if _lower_msg.startswith(pat):
+            _say_match = pat
+            break
+
+    if _say_match:
+        script_text = user_text[len(_say_match):].strip()
+        if not script_text or len(script_text) < 3:
+            await bot.send_message(chat_id, "Send the text you want me to read aloud.\nExample: say this: Hello, this is a test message.")
+            return {"ok": True}
+
+        # Check for voice preference in the message (e.g. "say this in british: ...")
+        _voice_override = None
+        _voice_hints = {
+            "nigerian": "en-NG-EzinneNeural",
+            "nigeria": "en-NG-EzinneNeural",
+            "ezinne": "en-NG-EzinneNeural",
+            "abeo": "en-NG-AbeoNeural",
+            "british": "en-GB-LibbyNeural",
+            "uk": "en-GB-LibbyNeural",
+            "american": "en-US-AriaNeural",
+            "us": "en-US-AriaNeural",
+            "aria": "en-US-AriaNeural",
+            "french": "fr-FR-DeniseNeural",
+            "spanish": "es-ES-ElviraNeural",
+            "hindi": "hi-IN-SwaraNeural",
+            "arabic": "ar-SA-ZariyahNeural",
+            "male": "en-NG-AbeoNeural",
+            "female": "en-NG-EzinneNeural",
+        }
+        for hint, vid in _voice_hints.items():
+            if f"in {hint}" in _lower_msg or f"with {hint}" in _lower_msg:
+                _voice_override = vid
+                # Remove the voice hint from the script
+                script_text = _re.sub(rf'\s*(?:in|with)\s+{hint}\s*:?', '', script_text, flags=_re.I).strip()
+                break
+
+        # Use user's preferred voice or override or default to Nigerian female
+        _voice_to_use = _voice_override or getattr(tg_user, "preferred_voice", None) or "en-NG-EzinneNeural"
+
+        await bot.send_message(chat_id, f"Recording voice note... 🎙️")
+        await bot.send_chat_action(chat_id, "record_voice")
+
+        audio_bytes, voice_err = await _synthesize_voice(script_text, _voice_to_use)
+        if audio_bytes:
+            await bot.send_voice(chat_id, audio_bytes)
+            # Also send the text so user can read along
+            await bot.send_message(chat_id, f"Voice note sent 🎧\nVoice: {_voice_to_use}\nText: {script_text[:200]}")
+        else:
+            logger.error(f"Say feature voice synthesis failed: {voice_err}")
+            await bot.send_message(chat_id, f"Sorry, I couldn't generate the voice note right now. Error: {voice_err[:100]}")
+        return {"ok": True}
+
     if user_text.startswith("/voice"):
         parts = user_text.strip().split(maxsplit=1)
         if len(parts) > 1 and parts[1].lower() in ("on", "off", "enable", "disable"):
@@ -6730,6 +6815,10 @@ Requirements:
         "pitch deck", "make a deck", "create a deck", "generate a deck",
         "make a report", "create a report", "generate a report",
         "make a document", "create a document", "generate a document",
+        "write a report", "write a document", "write a business plan",
+        "write a proposal", "write a letter", "write an essay",
+        "help me write", "prepare a report", "prepare a document",
+        "build a spreadsheet", "create an excel",
     ])
 
     if needs_tools:
@@ -6761,13 +6850,15 @@ Requirements:
                     except Exception as fe:
                         logger.error(f"File send error: {fe}")
 
-            # Send the final response — clean it up
+            # Send the final response — clean it up thoroughly
             response = agent_result.get("response", "")
             if response:
                 # Strip any leftover TOOL_CALL artifacts
                 import re as _re
                 response = _re.sub(r'TOOL_CALL:\s*\{.*?\}', '', response, flags=_re.DOTALL).strip()
                 response = _re.sub(r'TOOL_RESULT[\s\S]*', '', response).strip()
+                # Clean ALL markdown for clean Telegram output
+                response = clean_response(response)
                 # If response is too long (wall of text), truncate
                 if len(response) > 800:
                     response = response[:800] + "..."

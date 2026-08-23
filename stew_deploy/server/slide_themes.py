@@ -1055,17 +1055,33 @@ def render_pptx(prs, slides, title, theme_name=None, total_slides=None, hero_ima
 
 
 def _sanitize(text):
-    """Clean text for PPTX rendering."""
+    """Clean text for PPTX rendering — strips ALL markdown markers."""
     if not text:
         return ""
+    import re as _re
+    # Unicode replacements
     replacements = {
         "\u2248": "~", "\u00d7": "x", "\u2212": "-", "\u2013": "-", "\u2014": "--",
         "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
         "\u2026": "...", "\u00a0": " ",
     }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    return text
+    for old_char, new_char in replacements.items():
+        text = text.replace(old_char, new_char)
+    # Strip heading markers: ## Heading -> Heading
+    text = _re.sub(r'^#{1,6}\s+', '', text, flags=_re.MULTILINE)
+    # Strip bold: **text** or __text__ -> text
+    text = _re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = _re.sub(r'__(.+?)__', r'\1', text)
+    # Strip italic: *text* or _text_ -> text
+    text = _re.sub(r'(?<!\w)\*([^*\n]+?)\*(?!\w)', r'\1', text)
+    text = _re.sub(r'(?<!\w)_([^_\n]+?)_(?!\w)', r'\1', text)
+    # Strip inline code backticks
+    text = _re.sub(r'`([^`\n]+?)`', r'\1', text)
+    # Strip horizontal rules
+    text = _re.sub(r'^[\s]*[-_]{3,}[\s]*$', '', text, flags=_re.MULTILINE)
+    # Strip blockquotes
+    text = _re.sub(r'^>\s+', '', text, flags=_re.MULTILINE)
+    return text.strip()
 
 
 def _date_str():

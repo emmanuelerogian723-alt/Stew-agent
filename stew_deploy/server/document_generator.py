@@ -104,12 +104,36 @@ def _sanitize_text(text: str) -> str:
     return text
 
 
+def _strip_markdown(text: str) -> str:
+    """Remove ALL markdown formatting markers from text for clean document output.
+    Strips: ##, ###, **, *, __, _, `, ---, >, and bullet markers.
+    Used for slide content, table cells, and any text that should be plain."""
+    if not text:
+        return text
+    import re as _re
+    # Remove heading markers: ## Heading -> Heading
+    text = _re.sub(r'^#{1,6}\s+', '', text, flags=_re.MULTILINE)
+    # Remove bold: **text** or __text__ -> text
+    text = _re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = _re.sub(r'__(.+?)__', r'\1', text)
+    # Remove italic: *text* or _text_ -> text (but not list bullets or math)
+    text = _re.sub(r'(?<!\w)\*([^*\n]+?)\*(?!\w)', r'\1', text)
+    text = _re.sub(r'(?<!\w)_([^_\n]+?)_(?!\w)', r'\1', text)
+    # Remove inline code backticks
+    text = _re.sub(r'`([^`\n]+?)`', r'\1', text)
+    # Remove horizontal rules
+    text = _re.sub(r'^[\s]*[-_]{3,}[\s]*$', '', text, flags=_re.MULTILINE)
+    # Remove blockquotes
+    text = _re.sub(r'^>\s+', '', text, flags=_re.MULTILINE)
+    return text.strip()
+
+
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
 def _parse_md_table_row(line: str) -> list:
     """Parse a markdown table row '| a | b | c |' into ['a','b','c']."""
     cells = [c.strip() for c in line.strip().strip("|").split("|")]
-    return [_sanitize_text(c.replace("**", "").replace("*", "")) for c in cells]
+    return [_sanitize_text(_strip_markdown(c)) for c in cells]
 
 
 def _is_table_separator(line: str) -> bool:
@@ -226,20 +250,24 @@ def generate_pdf(content: str, title: str = "Document") -> dict:
 
             if not stripped:
                 story.append(Spacer(1, 0.3 * cm))
+            elif stripped.startswith("### "):
+                clean_h = _sanitize_text(_strip_markdown(stripped[4:]))
+                story.append(Paragraph(clean_h, ParagraphStyle("H3", parent=styles["Heading3"],
+                    fontSize=12, textColor=colors.HexColor("#475569"), spaceBefore=10, spaceAfter=4)))
             elif stripped.startswith("## "):
-                clean_h = _sanitize_text(stripped[3:].replace("**", "").replace("*", ""))
+                clean_h = _sanitize_text(_strip_markdown(stripped[3:]))
                 story.append(Paragraph(clean_h, ParagraphStyle("H2", parent=styles["Heading2"],
                     fontSize=13, textColor=colors.HexColor("#334155"), spaceBefore=12, spaceAfter=6)))
             elif stripped.startswith("# "):
-                clean_h = _sanitize_text(stripped[2:].replace("**", "").replace("*", ""))
+                clean_h = _sanitize_text(_strip_markdown(stripped[2:]))
                 story.append(Paragraph(clean_h, ParagraphStyle("H1", parent=styles["Heading1"],
                     fontSize=16, textColor=colors.HexColor("#1E3A5F"), spaceBefore=16, spaceAfter=8)))
             elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
-                bullet_text = _sanitize_text(stripped.lstrip("-*• ").replace("**", "").replace("*", ""))
+                bullet_text = _sanitize_text(_strip_markdown(stripped.lstrip("-*• ")))
                 story.append(Paragraph(f"• {bullet_text}", body_style))
             else:
-                # Strip **bold** and *italic* markers, sanitize unicode, escape HTML chars
-                safe = _sanitize_text(stripped.replace("**", "").replace("*", ""))
+                # Strip ALL markdown markers, sanitize unicode, escape HTML chars
+                safe = _sanitize_text(_strip_markdown(stripped))
                 safe = safe.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 story.append(Paragraph(safe, body_style))
             i += 1
@@ -377,19 +405,19 @@ def generate_docx(content: str, title: str = "Document") -> dict:
 
             if not stripped:
                 doc.add_paragraph()
-            elif stripped.startswith("## "):
-                doc.add_heading(_sanitize_text(stripped[3:].replace("**", "").replace("*", "")), level=2)
             elif stripped.startswith("### "):
-                doc.add_heading(_sanitize_text(stripped[4:].replace("**", "").replace("*", "")), level=3)
+                doc.add_heading(_sanitize_text(_strip_markdown(stripped[4:])), level=3)
+            elif stripped.startswith("## "):
+                doc.add_heading(_sanitize_text(_strip_markdown(stripped[3:])), level=2)
             elif stripped.startswith("# "):
-                doc.add_heading(_sanitize_text(stripped[2:].replace("**", "").replace("*", "")), level=1)
+                doc.add_heading(_sanitize_text(_strip_markdown(stripped[2:])), level=1)
             elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("• "):
-                clean_bullet = _sanitize_text(stripped.lstrip("-*• ").replace("**", "").replace("*", ""))
+                clean_bullet = _sanitize_text(_strip_markdown(stripped.lstrip("-*• ")))
                 doc.add_paragraph(clean_bullet, style="List Bullet")
             elif stripped.startswith("1. ") or (len(stripped) > 2 and stripped[0].isdigit() and stripped[1] == "."):
-                doc.add_paragraph(_sanitize_text(stripped), style="List Number")
+                doc.add_paragraph(_sanitize_text(_strip_markdown(stripped)), style="List Number")
             else:
-                doc.add_paragraph(_sanitize_text(stripped.replace("**", "").replace("*", "")))
+                doc.add_paragraph(_sanitize_text(_strip_markdown(stripped)))
             i += 1
 
         # Footer paragraph

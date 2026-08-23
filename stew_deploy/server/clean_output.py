@@ -37,12 +37,14 @@ def clean_markdown(text: str) -> str:
     # "## Heading" → "Heading" (just the text, no ## prefix)
     text = re.sub(r'^#{1,6}\s+(.+)$', r'\1', text, flags=re.MULTILINE)
     
-    # Remove bold markers: **text** → text
+    # Remove bold markers: **text** or __text__ → text
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
     
-    # Remove italic markers: *text* → text (but not list bullets)
+    # Remove italic markers: *text* or _text_ → text (but not list bullets)
     # Be careful not to touch bullet lists or multiplication signs
     text = re.sub(r'(?<!\w)\*([^*\n]+?)\*(?!\w)', r'\1', text)
+    text = re.sub(r'(?<!\w)_([^_\n]+?)_(?!\w)', r'\1', text)
     
     # Remove inline code backticks: `text` → text
     text = re.sub(r'(?<!`)`([^`\n]+?)`(?!`)', r'\1', text)
@@ -69,6 +71,9 @@ def clean_markdown(text: str) -> str:
 def clean_response(text: str) -> str:
     """Main entry point — clean LLM output for delivery."""
     cleaned = clean_markdown(text)
-    # Final safety: strip any remaining ## at the start of lines
+    # Final safety: strip any remaining ##, ###, **, __ at the start of lines
     cleaned = re.sub(r'^\s*#+\s*', '', cleaned, flags=re.MULTILINE)
+    # Strip any remaining ** or __ that survived earlier passes
+    cleaned = re.sub(r'\*\*(.+?)\*\*', r'\1', cleaned)
+    cleaned = re.sub(r'__(.+?)__', r'\1', cleaned)
     return cleaned.strip()
