@@ -18,9 +18,10 @@ from server.models import (
     MoodEntry, User, Conversation, APICall, Document, PaymentTransaction,
     DeviceFingerprint, SecurityEvent, AdCampaign, FeatureRequest, UserMemory
 )
-from server.config import settings
+from server.config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 router = APIRouter(prefix="/admin/api", tags=["Admin"])
 
 ADMIN_ROLES = {
