@@ -53,7 +53,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite
+from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
