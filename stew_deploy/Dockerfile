@@ -24,6 +24,7 @@ COPY dashboard.html .
 COPY landing.html .
 COPY playground.html .
 COPY plugins.html .
+COPY admin.html .
 COPY robots.txt .
 COPY sitemap.xml .
 COPY migrations/ ./migrations/

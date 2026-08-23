@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S.T.E.W Admin Control Center</title>
+<style>
+:root {
+  --bg: #0a0e1a;
+  --bg-card: #111827;
+  --bg-hover: #1a2332;
+  --border: #1e2d3f;
+  --text: #e5e7eb;
+  --text-dim: #6b7280;
+  --accent: #3b82f6;
+  --accent-glow: rgba(59,130,246,0.15);
+  --green: #10b981;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --purple: #8b5cf6;
+  --orange: #f97316;
+  --radius: 12px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
+::selection { background:var(--accent); color:#fff; }
+::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-track { background:var(--bg); } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+input,textarea,select { font-family:inherit; }
+a { color:var(--accent); text-decoration:none; }
+
+/* Login */
+#loginScreen { display:flex; align-items:center; justify-content:center; width:100%; min-height:100vh; background:radial-gradient(circle at 50% 50%, #0d1521, #0a0e1a); }
+.login-box { background:var(--bg-card); border:1px solid var(--border); border-radius:20px; padding:40px; width:400px; max-width:90vw; }
+.login-box h1 { font-size:24px; margin-bottom:8px; background:linear-gradient(135deg,#3b82f6,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.login-box p { color:var(--text-dim); margin-bottom:24px; font-size:14px; }
+.login-box input { width:100%; padding:12px 16px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; margin-bottom:12px; outline:none; transition:border 0.2s; }
+.login-box input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+.login-box button { width:100%; padding:12px; background:linear-gradient(135deg,#3b82f6,#2563eb); border:none; border-radius:8px; color:#fff; font-size:15px; font-weight:600; cursor:pointer; transition:opacity 0.2s; }
+.login-box button:hover { opacity:0.9; }
+.login-error { color:var(--red); font-size:13px; margin-top:8px; display:none; }
+.login-logo { width:60px; height:60px; border-radius:16px; background:linear-gradient(135deg,#3b82f6,#8b5cf6); display:flex; align-items:center; justify-content:center; font-size:28px; margin-bottom:20px; }
+
+/* Sidebar */
+#app { display:none; width:100%; }
+.sidebar { width:240px; background:var(--bg-card); border-right:1px solid var(--border); height:100vh; position:fixed; left:0; top:0; overflow-y:auto; z-index:100; display:flex; flex-direction:column; }
+.sidebar-header { padding:20px; border-bottom:1px solid var(--border); }
+.sidebar-header .logo { display:flex; align-items:center; gap:10px; }
+.sidebar-header .logo-icon { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#3b82f6,#8b5cf6); display:flex; align-items:center; justify-content:center; font-size:18px; }
+.sidebar-header .logo-text { font-size:16px; font-weight:700; }
+.sidebar-header .logo-sub { font-size:11px; color:var(--text-dim); }
+.nav { padding:12px 8px; flex:1; }
+.nav-item { display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:8px; cursor:pointer; color:var(--text-dim); font-size:14px; transition:all 0.15s; margin-bottom:2px; }
+.nav-item:hover { background:var(--bg-hover); color:var(--text); }
+.nav-item.active { background:var(--accent-glow); color:var(--accent); border-left:3px solid var(--accent); padding-left:11px; }
+.nav-item svg { width:18px; height:18px; flex-shrink:0; }
+.nav-section { font-size:11px; text-transform:uppercase; color:var(--text-dim); padding:16px 14px 6px; font-weight:600; letter-spacing:0.5px; }
+.sidebar-footer { padding:16px; border-top:1px solid var(--border); }
+.admin-info { display:flex; align-items:center; gap:10px; }
+.admin-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#f59e0b,#ef4444); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; }
+.admin-name { font-size:13px; } .admin-role { font-size:11px; color:var(--text-dim); }
+
+/* Main */
+.main { margin-left:240px; flex:1; min-height:100vh; }
+.topbar { background:var(--bg-card); border-bottom:1px solid var(--border); padding:16px 28px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; backdrop-filter:blur(10px); }
+.topbar h2 { font-size:20px; font-weight:600; }
+.topbar-right { display:flex; align-items:center; gap:16px; }
+.status-dot { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); }
+.refresh-btn { background:var(--bg-hover); border:1px solid var(--border); border-radius:8px; padding:8px 14px; color:var(--text); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:6px; }
+.refresh-btn:hover { border-color:var(--accent); }
+.content { padding:28px; }
+
+/* Cards */
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; margin-bottom:28px; }
+.stat-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; transition:transform 0.15s; }
+.stat-card:hover { transform:translateY(-2px); border-color:var(--accent); }
+.stat-card .icon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; margin-bottom:12px; }
+.stat-card .label { font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
+.stat-card .value { font-size:28px; font-weight:700; }
+.stat-card .sub { font-size:12px; margin-top:4px; }
+.stat-card .sub.up { color:var(--green); } .stat-card .sub.down { color:var(--red); }
+
+/* Charts */
+.chart-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:20px; }
+.chart-card h3 { font-size:15px; margin-bottom:16px; font-weight:600; }
+.bar-chart { display:flex; align-items:flex-end; gap:8px; height:160px; padding-top:10px; }
+.bar-container { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+.bar { width:100%; background:linear-gradient(180deg,var(--accent),#2563eb); border-radius:6px 6px 0 0; min-height:4px; transition:height 0.5s; position:relative; }
+.bar:hover { opacity:0.8; }
+.bar-label { font-size:11px; color:var(--text-dim); }
+.bar-value { font-size:10px; color:var(--text); position:absolute; top:-18px; left:50%; transform:translateX(-50%); }
+
+/* Tables */
+.table-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-bottom:20px; }
+.table-card .header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.table-card .header h3 { font-size:15px; font-weight:600; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; padding:12px 16px; font-size:12px; text-transform:uppercase; color:var(--text-dim); font-weight:600; border-bottom:1px solid var(--border); }
+td { padding:12px 16px; font-size:13px; border-bottom:1px solid var(--border); }
+tr:hover { background:var(--bg-hover); }
+.badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-free { background:rgba(107,114,128,0.2); color:#9ca3af; }
+.badge-student { background:rgba(59,130,246,0.2); color:#60a5fa; }
+.badge-pro { background:rgba(16,185,129,0.2); color:#34d399; }
+.badge-business { background:rgba(139,92,246,0.2); color:#a78bfa; }
+.badge-enterprise { background:rgba(249,115,22,0.2); color:#fb923c; }
+.badge-owner { background:rgba(245,158,11,0.2); color:#fbbf24; }
+.badge-active { background:rgba(16,185,129,0.2); color:#34d399; }
+.badge-banned { background:rgba(239,68,68,0.2); color:#f87171; }
+.badge-pending { background:rgba(245,158,11,0.2); color:#fbbf24; }
+.badge-success { background:rgba(16,185,129,0.2); color:#34d399; }
+.badge-failed { background:rgba(239,68,68,0.2); color:#f87171; }
+
+/* Buttons */
+.btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; transition:all 0.15s; }
+.btn-primary { background:var(--accent); color:#fff; } .btn-primary:hover { background:#2563eb; }
+.btn-danger { background:var(--red); color:#fff; } .btn-danger:hover { opacity:0.9; }
+.btn-success { background:var(--green); color:#fff; } .btn-success:hover { opacity:0.9; }
+.btn-warn { background:var(--yellow); color:#000; } .btn-warn:hover { opacity:0.9; }
+.btn-ghost { background:var(--bg-hover); color:var(--text); border:1px solid var(--border); } .btn-ghost:hover { border-color:var(--accent); }
+.btn-sm { padding:5px 10px; font-size:12px; }
+
+/* Filters */
+.filters { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.filters input, .filters select { padding:8px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; outline:none; }
+.filters input:focus, .filters select:focus { border-color:var(--accent); }
+
+/* Modal */
+.modal-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:200; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+.modal-overlay.show { display:flex; }
+.modal { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:28px; width:500px; max-width:90vw; max-height:85vh; overflow-y:auto; }
+.modal h3 { font-size:18px; margin-bottom:20px; }
+.modal .field { margin-bottom:16px; }
+.modal .field label { display:block; font-size:13px; color:var(--text-dim); margin-bottom:6px; }
+.modal .field input, .modal .field textarea, .modal .field select { width:100%; padding:10px 14px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; outline:none; }
+.modal .field input:focus, .modal .field textarea:focus { border-color:var(--accent); }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+.modal-close { position:absolute; top:16px; right:20px; cursor:pointer; color:var(--text-dim); font-size:24px; }
+
+/* Toast */
+#toast { position:fixed; bottom:24px; right:24px; z-index:300; display:flex; flex-direction:column; gap:8px; }
+.toast { background:var(--bg-card); border:1px solid var(--border); border-left:4px solid var(--green); border-radius:8px; padding:14px 20px; font-size:14px; animation:slideIn 0.3s; }
+.toast.error { border-left-color:var(--red); }
+.toast.info { border-left-color:var(--accent); }
+@keyframes slideIn { from{transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }
+
+/* Misc */
+.page { display:none; } .page.active { display:block; }
+.pager { display:flex; gap:8px; align-items:center; justify-content:center; padding:16px; }
+.pager button { padding:6px 12px; background:var(--bg-hover); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; font-size:13px; }
+.pager button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+.pager button:disabled { opacity:0.4; cursor:default; }
+.user-detail { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.detail-section { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+.detail-section h4 { font-size:14px; margin-bottom:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; }
+.mem-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:13px; }
+.mem-category { font-size:11px; color:var(--accent); text-transform:uppercase; font-weight:600; }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-dim); }
+.empty-state .icon { font-size:48px; margin-bottom:16px; }
+
+.health-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:16px; margin-bottom:20px; }
+.health-item { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+.health-item .label { font-size:12px; color:var(--text-dim); margin-bottom:6px; }
+.health-item .value { font-size:14px; font-weight:600; }
+.env-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
+.env-dot.on { background:var(--green); } .env-dot.off { background:var(--red); }
+
+@media(max-width:768px) {
+  .sidebar { transform:translateX(-100%); transition:transform 0.3s; }
+  .sidebar.open { transform:translateX(0); }
+  .main { margin-left:0; }
+  .user-detail { grid-template-columns:1fr; }
+  .stats-grid { grid-template-columns:1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="loginScreen">
+<div class="login-box">
+<div class="login-logo">🍲</div>
+<h1>S.T.E.W Admin</h1>
+<p>Multi-Admin Control Center</p>
+<input type="text" id="adminCode" placeholder="Admin Code" onkeypress="if(event.key==='Enter')login()">
+<input type="password" id="adminMfa" placeholder="MFA Pin (if enabled)">
+<input type="text" id="adminName" placeholder="Your Name" onkeypress="if(event.key==='Enter')login()">
+<button onclick="login()">Login</button>
+<div class="login-error" id="loginError">Invalid credentials. Try again.</div>
+</div>
+</div>
+
+<!-- App -->
+<div id="app">
+<div class="sidebar" id="sidebar">
+<div class="sidebar-header">
+<div class="logo">
+<div class="logo-icon">🍲</div>
+<div><div class="logo-text">S.T.E.W</div><div class="logo-sub">Admin Control</div></div>
+</div>
+</div>
+<div class="nav">
+<div class="nav-section">Overview</div>
+<div class="nav-item active" onclick="showPage('dashboard',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Dashboard</div>
+<div class="nav-section">Management</div>
+<div class="nav-item" onclick="showPage('users',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg> Users</div>
+<div class="nav-item" onclick="showPage('payments',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 6h16v4H4V6zm0 10v-4h4v4H4zm6 0v-4h10v4H10z"/></svg> Payments</div>
+<div class="nav-item" onclick="showPage('telegram',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg> Telegram Bot</div>
+<div class="nav-item" onclick="showPage('features',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg> Feature Requests</div>
+<div class="nav-item" onclick="showPage('ads',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg> Ad Campaigns</div>
+<div class="nav-section">System</div>
+<div class="nav-item" onclick="showPage('security',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg> Security</div>
+<div class="nav-item" onclick="showPage('health',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg> System Health</div>
+<div class="nav-item" onclick="showPage('audit',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg> Audit Log</div>
+</div>
+<div class="sidebar-footer">
+<div class="admin-info">
+<div class="admin-avatar" id="adminAvatar">A</div>
+<div><div class="admin-name" id="adminNameDisplay">Admin</div><div class="admin-role" id="adminRoleDisplay">super_admin</div></div>
+</div>
+</div>
+</div>
+
+<div class="main">
+<div class="topbar">
+<h2 id="pageTitle">Dashboard</h2>
+<div class="topbar-right">
+<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);">
+<div class="status-dot"></div> <span id="serverStatus">Connected</span>
+</div>
+<button class="refresh-btn" onclick="refreshCurrent()">🔄 Refresh</button>
+<button class="btn btn-ghost btn-sm" onclick="logout()">Logout</button>
+</div>
+</div>
+<div class="content">
+
+<!-- Dashboard Page -->
+<div class="page active" id="page-dashboard">
+<div class="stats-grid" id="statsGrid"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+<div class="chart-card">
+<h3>Revenue (Last 7 Days)</h3>
+<div class="bar-chart" id="revenueChart"></div>
+</div>
+<div class="chart-card">
+<h3>New User Signups (Last 7 Days)</h3>
+<div class="bar-chart" id="signupChart"></div>
+</div>
+</div>
+<div class="chart-card">
+<h3>Users by Plan</h3>
+<div id="planBreakdown"></div>
+</div>
+</div>
+
+<!-- Users Page -->
+<div class="page" id="page-users">
+<div class="filters">
+<input type="text" id="userSearch" placeholder="Search by name or email..." onkeypress="if(event.key==='Enter')loadUsers()">
+<select id="userPlanFilter" onchange="loadUsers()">
+<option value="">All Plans</option>
+<option value="free">Free</option>
+<option value="student">Student</option>
+<option value="pro">Pro</option>
+<option value="business">Business</option>
+<option value="enterprise">Enterprise</option>
+<option value="owner">Owner</option>
+</select>
+<select id="userStatusFilter" onchange="loadUsers()">
+<option value="">All Status</option>
+<option value="active">Active</option>
+<option value="banned">Banned</option>
+</select>
+<button class="btn btn-primary" onclick="loadUsers()">Search</button>
+</div>
+<div class="table-card">
+<div class="header"><h3>Users</h3><span id="userCount" style="color:var(--text-dim);font-size:13px;"></span></div>
+<table><thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Calls</th><th>Joined</th><th>Actions</th></tr></thead>
+<tbody id="usersTable"></tbody></table>
+<div class="pager" id="userPager"></div>
+</div>
+</div>
+
+<!-- User Detail Modal -->
+<div class="modal-overlay" id="userDetailModal">
+<div class="modal" style="width:800px;">
+<span class="modal-close" onclick="closeModal('userDetailModal')">x</span>
+<h3 id="userDetailName">User Details</h3>
+<div id="userDetailContent"></div>
+<div class="modal-actions">
+<button class="btn btn-warn" id="banBtn" onclick="toggleBanUser()">Ban User</button>
+<button class="btn btn-primary" onclick="changePlanModal()">Change Plan</button>
+<button class="btn btn-danger" onclick="deleteUser()">Delete User</button>
+</div>
+</div>
+</div>
+
+<!-- Change Plan Modal -->
+<div class="modal-overlay" id="changePlanModal">
+<div class="modal">
+<span class="modal-close" onclick="closeModal('changePlanModal')">x</span>
+<h3>Change User Plan</h3>
+<div class="field"><label>Select Plan</label>
+<select id="planSelect">
+<option value="free">Free (0 msgs)</option>
+<option value="student">Student (400 msgs)</option>
+<option value="pro">Pro (10,000 msgs)</option>
+<option value="business">Business (100,000 msgs)</option>
+<option value="enterprise">Enterprise (50,000 msgs)</option>
+<option value="owner">Owner (Unlimited)</option>
+</select></div>
+<div class="modal-actions"><button class="btn btn-primary" onclick="changePlan()">Save</button></div>
+</div>
+</div>
+
+<!-- Payments Page -->
+<div class="page" id="page-payments">
+<div class="stats-grid" id="paymentStats"></div>
+<div class="filters">
+<select id="paymentStatusFilter" onchange="loadPayments()">
+<option value="">All Status</option>
+<option value="success">Success</option>
+<option value="pending">Pending</option>
+<option value="failed">Failed</option>
+</select>
+</div>
+<div class="table-card">
+<div class="header"><h3>Payment Transactions</h3><span id="paymentCount" style="color:var(--text-dim);font-size:13px;"></span></div>
+<table><thead><tr><th>User</th><th>Reference</th><th>Plan</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+<tbody id="paymentsTable"></tbody></table>
+<div class="pager" id="paymentPager"></div>
+</div>
+<div class="chart-card"><h3>Monthly Revenue</h3>
+<div id="monthlyRevenue"></div>
+</div>
+</div>
+
+<!-- Telegram Page -->
+<div class="page" id="page-telegram">
+<div class="stats-grid" id="telegramStats"></div>
+<div class="chart-card">
+<h3>Broadcast Message</h3>
+<p style="color:var(--text-dim);font-size:13px;margin-bottom:12px;">Send a message to all Telegram bot users.</p>
+<div class="field"><textarea id="broadcastMsg" rows="4" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px;outline:none;" placeholder="Type your broadcast message..."></textarea></div>
+<div style="display:flex;gap:12px;align-items:center;margin-top:12px;">
+<select id="broadcastTarget" style="padding:8px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);">
+<option value="all">All Users</option>
+<option value="free">Free Users Only</option>
+<option value="student">Student Users</option>
+<option value="pro">Pro Users</option>
+<option value="business">Business Users</option>
+</select>
+<button class="btn btn-primary" onclick="sendBroadcast()">Send Broadcast</button>
+</div>
+<div id="broadcastResult" style="margin-top:16px;"></div>
+</div>
+</div>
+
+<!-- Features Page -->
+<div class="page" id="page-features">
+<div class="filters">
+<select id="featureStatusFilter" onchange="loadFeatures()">
+<option value="">All</option>
+<option value="pending">Pending</option>
+<option value="approved">Approved</option>
+<option value="rejected">Rejected</option>
+<option value="in_progress">In Progress</option>
+<option value="completed">Completed</option>
+</select>
+</div>
+<div class="table-card">
+<div class="header"><h3>Feature Requests</h3><span id="featureCount" style="color:var(--text-dim);font-size:13px;"></span></div>
+<table><thead><tr><th>Votes</th><th>Feature</th><th>Category</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+<tbody id="featuresTable"></tbody></table>
+</div>
+</div>
+
+<!-- Ads Page -->
+<div class="page" id="page-ads">
+<div style="margin-bottom:20px;"><button class="btn btn-primary" onclick="openAdModal()">+ Create Ad Campaign</button></div>
+<div class="table-card">
+<div class="header"><h3>Ad Campaigns</h3></div>
+<table><thead><tr><th>Advertiser</th><th>Ad Text</th><th>Audience</th><th>Impressions</th><th>Clicks</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody id="adsTable"></tbody></table>
+</div>
+</div>
+
+<div class="modal-overlay" id="adModal">
+<div class="modal">
+<span class="modal-close" onclick="closeModal('adModal')">x</span>
+<h3>Create Ad Campaign</h3>
+<div class="field"><label>Advertiser Name</label><input id="adAdvertiser" placeholder="Company name"></div>
+<div class="field"><label>Ad Text</label><textarea id="adText" rows="3" placeholder="Ad message shown to users"></textarea></div>
+<div class="field"><label>Ad Link</label><input id="adLink" placeholder="https://..."></div>
+<div class="field"><label>Button Text</label><input id="adButton" placeholder="Learn More" value="Learn More"></div>
+<div class="field"><label>Target Audience</label><select id="adTarget">
+<option value="free">Free Users</option><option value="all">All Users</option><option value="pro">Pro Users</option>
+</select></div>
+<div class="field"><label>Frequency (every N messages)</label><input id="adFreq" type="number" value="5"></div>
+<div class="field"><label>Budget (max impressions)</label><input id="adBudget" type="number" value="10000"></div>
+<div class="modal-actions"><button class="btn btn-primary" onclick="createAd()">Create</button></div>
+</div>
+</div>
+
+<!-- Security Page -->
+<div class="page" id="page-security">
+<div class="table-card">
+<div class="header"><h3>Security Events</h3></div>
+<table><thead><tr><th>Type</th><th>IP Address</th><th>User ID</th><th>Risk Score</th><th>Details</th><th>Date</th></tr></thead>
+<tbody id="securityTable"></tbody></table>
+<div class="pager" id="securityPager"></div>
+</div>
+<div class="table-card">
+<div class="header"><h3>Device Fingerprints</h3></div>
+<table><thead><tr><th>IP</th><th>Device</th><th>OS</th><th>Browser</th><th>VPN</th><th>Proxy</th><th>Risk</th><th>Date</th></tr></thead>
+<tbody id="devicesTable"></tbody></table>
+</div>
+</div>
+
+<!-- Health Page -->
+<div class="page" id="page-health">
+<div id="healthContent"></div>
+</div>
+
+<!-- Audit Page -->
+<div class="page" id="page-audit">
+<div class="table-card">
+<div class="header"><h3>Active Admin Sessions</h3></div>
+<table><thead><tr><th>Admin Name</th><th>Role</th><th>Login Time</th></tr></thead>
+<tbody id="auditTable"></tbody></table>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = window.location.origin;
+let adminToken = '';
+let currentPage = 'dashboard';
+let userPage = 1, paymentPage = 1, securityPage = 1, featurePage = 1;
+
+// Login
+async function login() {
+  const code = document.getElementById('adminCode').value.trim();
+  const mfa = document.getElementById('adminMfa').value.trim();
+  const name = document.getElementById('adminName').value.trim();
+  if (!code) return;
+  try {
+    const resp = await fetch(`${API}/admin/api/login`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code, mfa, name})
+    });
+    if (!resp.ok) { document.getElementById('loginError').style.display = 'block'; return; }
+    const data = await resp.json();
+    adminToken = data.token;
+    localStorage.setItem('stew_admin_token', adminToken);
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('adminNameDisplay').textContent = data.admin.name;
+    document.getElementById('adminRoleDisplay').textContent = data.admin.role;
+    document.getElementById('adminAvatar').textContent = data.admin.name.charAt(0).toUpperCase();
+    loadDashboard();
+  } catch(e) { document.getElementById('loginError').style.display = 'block'; }
+}
+
+function logout() {
+  localStorage.removeItem('stew_admin_token');
+  adminToken = '';
+  location.reload();
+}
+
+// Check saved session
+(async function() {
+  const saved = localStorage.getItem('stew_admin_token');
+  if (!saved) return;
+  try {
+    const resp = await fetch(`${API}/admin/api/verify?token=${saved}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      adminToken = saved;
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      document.getElementById('adminNameDisplay').textContent = data.admin.name;
+      document.getElementById('adminRoleDisplay').textContent = data.admin.role;
+      document.getElementById('adminAvatar').textContent = data.admin.name.charAt(0).toUpperCase();
+      loadDashboard();
+    }
+  } catch(e) {}
+})();
+
+// Page navigation
+function showPage(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  if (el) el.classList.add('active');
+  currentPage = page;
+  const titles = {dashboard:'Dashboard', users:'User Management', payments:'Payments & Revenue', telegram:'Telegram Bot', features:'Feature Requests', ads:'Ad Campaigns', security:'Security', health:'System Health', audit:'Audit Log'};
+  document.getElementById('pageTitle').textContent = titles[page] || page;
+  if (page === 'dashboard') loadDashboard();
+  if (page === 'users') loadUsers();
+  if (page === 'payments') loadPayments();
+  if (page === 'telegram') loadTelegram();
+  if (page === 'features') loadFeatures();
+  if (page === 'ads') loadAds();
+  if (page === 'security') loadSecurity();
+  if (page === 'health') loadHealth();
+  if (page === 'audit') loadAudit();
+}
+
+function refreshCurrent() { showPage(currentPage, null); reapplyActiveNav(); }
+function reapplyActiveNav() {
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.textContent.trim().toLowerCase().includes(currentPage)) n.classList.add('active');
+  });
+}
+
+// API helper
+async function api(path) {
+  const resp = await fetch(`${API}${path}&token=${adminToken}`);
+  if (resp.status === 401) { logout(); throw new Error('Session expired'); }
+  return resp.json();
+}
+async function apiPost(path, body) {
+  const resp = await fetch(`${API}${path}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({...body, token: adminToken})
+  });
+  if (resp.status === 401) { logout(); throw new Error('Session expired'); }
+  return resp.json();
+}
+async function apiDelete(path) {
+  const resp = await fetch(`${API}${path}?token=${adminToken}`, {method:'DELETE'});
+  if (resp.status === 401) { logout(); throw new Error('Session expired'); }
+  return resp.json();
+}
+
+// Toast
+function toast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.getElementById('toast').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+function naira(amount) { return '\u20a6' + (amount || 0).toLocaleString(); }
+function formatDate(d) { if (!d) return '-'; return new Date(d).toLocaleDateString('en-NG', {month:'short',day:'numeric',year:'numeric'}); }
+function badgeClass(plan) { return `badge badge-${plan}`; }
+
+// Dashboard
+async function loadDashboard() {
+  try {
+    const data = await api('/admin/api/dashboard?');
+    const cards = [
+      {icon:'👥', color:'var(--accent)', label:'Total Users', value:data.total_users, sub:`${data.new_users_7d} new this week`},
+      {icon:'💬', color:'var(--green)', label:'Telegram Users', value:data.telegram_users, sub:`${data.web_users} web users`},
+      {icon:'💰', color:'var(--green)', label:'Total Revenue', value:naira(data.total_revenue), sub:`${naira(data.month_revenue)} this month`},
+      {icon:'📊', color:'var(--purple)', label:'API Calls (Month)', value:data.calls_this_month.toLocaleString(), sub:`${data.active_users_7d} active users`},
+      {icon:'💡', color:'var(--yellow)', label:'Feature Requests', value:data.feature_requests_total, sub:`${data.feature_requests_pending} pending`},
+      {icon:'📢', color:'var(--orange)', label:'Active Ads', value:data.active_ads, sub:`${data.documents_generated} docs generated`},
+      {icon:'🔐', color:'var(--red)', label:'Security Events', value:data.security_events_7d, sub:'last 7 days'},
+      {icon:'📄', color:'var(--accent)', label:'Documents Generated', value:data.documents_generated, sub:'all time'},
+    ];
+    document.getElementById('statsGrid').innerHTML = cards.map(c => `
+      <div class="stat-card"><div class="icon" style="background:${c.color}20;color:${c.color}">${c.icon}</div>
+      <div class="label">${c.label}</div><div class="value">${c.value}</div><div class="sub">${c.sub}</div></div>`).join('');
+
+    // Revenue chart
+    const maxRev = Math.max(...data.revenue_chart.map(d => d.revenue), 1);
+    document.getElementById('revenueChart').innerHTML = data.revenue_chart.map(d => `
+      <div class="bar-container"><div class="bar" style="height:${(d.revenue/maxRev)*100}%" title="${naira(d.revenue)}">
+      <div class="bar-value">${d.revenue > 0 ? (d.revenue/1000).toFixed(0)+'k' : ''}</div></div>
+      <div class="bar-label">${d.day}</div></div>`).join('');
+
+    // Signup chart
+    const maxSignup = Math.max(...data.signup_chart.map(d => d.signups), 1);
+    document.getElementById('signupChart').innerHTML = data.signup_chart.map(d => `
+      <div class="bar-container"><div class="bar" style="height:${(d.signups/maxSignup)*100}%;background:linear-gradient(180deg,var(--green),#059669)" title="${d.signups} signups">
+      <div class="bar-value">${d.signups > 0 ? d.signups : ''}</div></div>
+      <div class="bar-label">${d.day}</div></div>`).join('');
+
+    // Plan breakdown
+    const plans = data.users_by_plan;
+    const total = Object.values(plans).reduce((a,b) => a+b, 0) || 1;
+    const colors = {free:'#6b7280', student:'#3b82f6', pro:'#10b981', business:'#8b5cf6', enterprise:'#f97316', owner:'#f59e0b'};
+    document.getElementById('planBreakdown').innerHTML = Object.entries(plans).map(([plan, count]) => `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="width:${(count/total)*100}%;min-width:60px;height:24px;border-radius:6px;background:${colors[plan]||'#666'};display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:12px;font-weight:600;color:#fff;">${count}</div>
+      <span style="font-size:13px;text-transform:capitalize;">${plan}</span></div>`).join('');
+  } catch(e) { toast('Failed to load dashboard', 'error'); }
+}
+
+// Users
+async function loadUsers(page=1) {
+  userPage = page;
+  const search = document.getElementById('userSearch').value;
+  const plan = document.getElementById('userPlanFilter').value;
+  const status = document.getElementById('userStatusFilter').value;
+  try {
+    const data = await api(`/admin/api/users?page=${page}&limit=50&search=${search}&plan=${plan}&status=${status}&`);
+    document.getElementById('userCount').textContent = `${data.total} total users`;
+    if (!data.users.length) {
+      document.getElementById('usersTable').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-dim);">No users found</td></tr>';
+    } else {
+      document.getElementById('usersTable').innerHTML = data.users.map(u => `
+        <tr style="cursor:pointer;" onclick="showUserDetail('${u.id}')">
+        <td>${u.name}</td><td style="font-size:12px;color:var(--text-dim);">${u.email}</td>
+        <td><span class="${badgeClass(u.plan)}">${u.plan}</span></td>
+        <td><span class="badge ${u.is_active?'badge-active':'badge-banned'}">${u.is_active?'Active':'Banned'}</span></td>
+        <td>${u.api_calls}</td><td>${formatDate(u.created_at)}</td>
+        <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="showUserDetail('${u.id}')">View</button></td>
+        </tr>`).join('');
+    }
+    renderPager('userPager', data.page, data.pages, 'loadUsers');
+  } catch(e) { toast('Failed to load users', 'error'); }
+}
+
+let currentUserId = '';
+async function showUserDetail(userId) {
+  currentUserId = userId;
+  try {
+    const data = await api(`/admin/api/users/${userId}?`);
+    const u = data.user;
+    document.getElementById('userDetailName').textContent = `${u.name} - User Details`;
+    document.getElementById('banBtn').textContent = u.is_active ? 'Ban User' : 'Unban User';
+    document.getElementById('banBtn').className = u.is_active ? 'btn btn-warn' : 'btn btn-success';
+    document.getElementById('userDetailContent').innerHTML = `
+      <div class="user-detail">
+      <div class="detail-section">
+      <h4>Profile</h4>
+      <div style="font-size:14px;line-height:2;">
+      <div><strong>Name:</strong> ${u.name}</div>
+      <div><strong>Email:</strong> ${u.email}</div>
+      <div><strong>Plan:</strong> <span class="${badgeClass(u.plan)}">${u.plan}</span></div>
+      <div><strong>Status:</strong> <span class="badge ${u.is_active?'badge-active':'badge-banned'}">${u.is_active?'Active':'Banned'}</span></div>
+      <div><strong>Voice:</strong> ${u.voice_enabled ? 'ON ('+(u.preferred_voice||'default')+')' : 'OFF'}</div>
+      <div><strong>Language:</strong> ${u.language||'en'}</div>
+      <div><strong>Joined:</strong> ${formatDate(u.created_at)}</div>
+      </div>
+      </div>
+      <div class="detail-section">
+      <h4>Stats</h4>
+      <div style="font-size:14px;line-height:2;">
+      <div><strong>API Calls:</strong> ${data.stats.total_calls}</div>
+      <div><strong>Conversations:</strong> ${data.stats.total_conversations}</div>
+      <div><strong>Documents:</strong> ${data.stats.total_documents}</div>
+      <div><strong>Payments:</strong> ${data.stats.total_payments}</div>
+      <div><strong>Memories:</strong> ${data.stats.total_memories}</div>
+      </div>
+      </div>
+      <div class="detail-section">
+      <h4>Recent Conversations</h4>
+      ${data.conversations.length ? data.conversations.map(c => `<div class="mem-item"><strong>${c.title||'Untitled'}</strong><br><span style="color:var(--text-dim);font-size:12px;">${c.message_count} messages - ${formatDate(c.updated_at)}</span></div>`).join('') : '<div style="color:var(--text-dim);">No conversations</div>'}
+      </div>
+      <div class="detail-section">
+      <h4>Payments</h4>
+      ${data.payments.length ? data.payments.map(p => `<div class="mem-item"><strong>${naira(p.amount)}</strong> - ${p.plan}<br><span class="badge badge-${p.status==='success'?'success':'failed'}">${p.status}</span> <span style="color:var(--text-dim);font-size:12px;">${formatDate(p.created_at)}</span></div>`).join('') : '<div style="color:var(--text-dim);">No payments</div>'}
+      </div>
+      <div class="detail-section" style="grid-column:1/-1;">
+      <h4>Memories (${data.memories.length})</h4>
+      ${data.memories.length ? data.memories.map(m => `<div class="mem-item"><span class="mem-category">${m.category}</span> (importance: ${m.importance})<br>${m.content}</div>`).join('') : '<div style="color:var(--text-dim);">No memories</div>'}
+      </div>
+      </div>`;
+    document.getElementById('userDetailModal').classList.add('show');
+  } catch(e) { toast('Failed to load user', 'error'); }
+}
+
+function changePlanModal() {
+  document.getElementById('changePlanModal').classList.add('show');
+}
+async function changePlan() {
+  const plan = document.getElementById('planSelect').value;
+  try {
+    await apiPost(`/admin/api/users/${currentUserId}/plan`, {plan});
+    toast(`Plan changed to ${plan}`);
+    closeModal('changePlanModal');
+    showUserDetail(currentUserId);
+  } catch(e) { toast('Failed to change plan', 'error'); }
+}
+async function toggleBanUser() {
+  const user = await api(`/admin/api/users/${currentUserId}?`);
+  const banned = user.user.is_active;
+  await apiPost(`/admin/api/users/${currentUserId}/ban`, {banned});
+  toast(banned ? 'User banned' : 'User unbanned');
+  showUserDetail(currentUserId);
+}
+async function deleteUser() {
+  if (!confirm('Are you sure? This deletes ALL user data permanently.')) return;
+  try {
+    await apiDelete(`/admin/api/users/${currentUserId}`);
+    toast('User deleted');
+    closeModal('userDetailModal');
+    loadUsers();
+  } catch(e) { toast('Failed to delete user', 'error'); }
+}
+
+// Payments
+async function loadPayments(page=1) {
+  paymentPage = page;
+  const status = document.getElementById('paymentStatusFilter').value;
+  try {
+    const data = await api(`/admin/api/payments?page=${page}&limit=50&status=${status}&`);
+    document.getElementById('paymentCount').textContent = `${data.total} transactions`;
+    if (!data.payments.length) {
+      document.getElementById('paymentsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-dim);">No transactions</td></tr>';
+    } else {
+      document.getElementById('paymentsTable').innerHTML = data.payments.map(p => `
+        <tr><td>${p.user_name}<br><span style="color:var(--text-dim);font-size:11px;">${p.user_email}</span></td>
+        <td style="font-size:11px;color:var(--text-dim);">${p.reference}</td>
+        <td><span class="${badgeClass(p.plan)}">${p.plan}</span></td>
+        <td>${naira(p.amount)}</td>
+        <td><span class="badge badge-${p.status==='success'?'success':p.status==='pending'?'pending':'failed'}">${p.status}</span></td>
+        <td>${formatDate(p.created_at)}</td></tr>`).join('');
+    }
+    renderPager('paymentPager', data.page, data.pages, 'loadPayments');
+    // Load analytics
+    const analytics = await api('/admin/api/payments/analytics?');
+    document.getElementById('monthlyRevenue').innerHTML = analytics.monthly_revenue.map(m => `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="width:120px;font-size:13px;">${m.month}</div>
+      <div style="flex:1;height:24px;border-radius:6px;background:var(--bg);position:relative;overflow:hidden;">
+      <div style="height:100%;background:linear-gradient(90deg,var(--green),#059669);border-radius:6px;width:${Math.min((m.revenue/(analytics.total_revenue||1))*100,100)}%;"></div></div>
+      <div style="width:100px;text-align:right;font-weight:600;">${naira(m.revenue)}</div></div>`).join('');
+    document.getElementById('paymentStats').innerHTML = `
+      <div class="stat-card"><div class="icon" style="background:var(--green)20;color:var(--green)">💰</div><div class="label">Total Revenue</div><div class="value">${naira(analytics.total_revenue)}</div></div>
+      <div class="stat-card"><div class="icon" style="background:var(--accent)20;color:var(--accent)">📊</div><div class="label">Successful Payments</div><div class="value">${analytics.status_breakdown.success?.count || 0}</div></div>
+      <div class="stat-card"><div class="icon" style="background:var(--red)20;color:var(--red)">❌</div><div class="label">Failed Payments</div><div class="value">${analytics.status_breakdown.failed?.count || 0}</div></div>`;
+  } catch(e) { toast('Failed to load payments', 'error'); }
+}
+
+// Telegram
+async function loadTelegram() {
+  try {
+    const data = await api('/admin/api/telegram/stats?');
+    document.getElementById('telegramStats').innerHTML = [
+      {icon:'💬', color:'var(--accent)', label:'Telegram Users', value:data.telegram_users},
+      {icon:'🎙️', color:'var(--purple)', label:'Voice Enabled', value:data.voice_enabled_users},
+      {icon:'📂', color:'var(--green)', label:'Conversations', value:data.total_conversations},
+      {icon:'📨', color:'var(--orange)', label:'Messages Today', value:data.messages_today},
+      {icon:'🤖', color:data.bot_configured?'var(--green)':'var(--red)', label:'Bot Status', value:data.bot_configured?'Online':'Offline'},
+    ].map(c => `<div class="stat-card"><div class="icon" style="background:${c.color}20;color:${c.color}">${c.icon}</div><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`).join('');
+  } catch(e) { toast('Failed to load telegram stats', 'error'); }
+}
+async function sendBroadcast() {
+  const msg = document.getElementById('broadcastMsg').value.trim();
+  const target = document.getElementById('broadcastTarget').value;
+  if (!msg) return toast('Message is empty', 'error');
+  document.getElementById('broadcastResult').innerHTML = '<p style="color:var(--text-dim);">Sending...</p>';
+  try {
+    const result = await apiPost('/admin/api/telegram/broadcast', {message: msg, target});
+    document.getElementById('broadcastResult').innerHTML = `<div class="stat-card" style="border-color:var(--green);"><strong>Sent: ${result.sent}</strong> / ${result.total} users<br><span style="color:var(--text-dim);">${result.failed} failed</span>${result.errors.length?`<br><br>Errors:<br>${result.errors.join('<br>')}`:''}</div>`;
+    document.getElementById('broadcastMsg').value = '';
+    toast(`Broadcast sent to ${result.sent} users`);
+  } catch(e) { toast('Broadcast failed', 'error'); }
+}
+
+// Features
+async function loadFeatures() {
+  const status = document.getElementById('featureStatusFilter').value;
+  try {
+    const data = await api(`/admin/api/features?status=${status}&page=1&limit=50&`);
+    document.getElementById('featureCount').textContent = `${data.total} requests`;
+    if (!data.features.length) {
+      document.getElementById('featuresTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-dim);">No feature requests</td></tr>';
+    } else {
+      document.getElementById('featuresTable').innerHTML = data.features.map(f => `
+        <tr><td><strong>${f.votes} votes</strong></td>
+        <td>${f.feature_text}</td>
+        <td style="font-size:12px;color:var(--accent);">${f.category}</td>
+        <td><span class="badge badge-${f.status==='pending'?'pending':f.status==='approved'?'success':f.status==='rejected'?'failed':'active'}">${f.status}</span></td>
+        <td>${formatDate(f.created_at)}</td>
+        <td>
+        <button class="btn btn-success btn-sm" onclick="updateFeatureStatus('${f.id}','approved')">Approve</button>
+        <button class="btn btn-warn btn-sm" onclick="updateFeatureStatus('${f.id}','in_progress')">In Progress</button>
+        <button class="btn btn-danger btn-sm" onclick="updateFeatureStatus('${f.id}','rejected')">Reject</button>
+        </td></tr>`).join('');
+    }
+  } catch(e) { toast('Failed to load features', 'error'); }
+}
+async function updateFeatureStatus(id, status) {
+  try {
+    await apiPost(`/admin/api/features/${id}/status`, {status});
+    toast(`Feature ${status}`);
+    loadFeatures();
+  } catch(e) { toast('Failed to update feature', 'error'); }
+}
+
+// Ads
+async function loadAds() {
+  try {
+    const data = await api('/admin/api/ads?');
+    if (!data.ads.length) {
+      document.getElementById('adsTable').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-dim);">No ad campaigns</td></tr>';
+    } else {
+      document.getElementById('adsTable').innerHTML = data.ads.map(a => `
+        <tr><td>${a.advertiser_name}</td><td style="max-width:300px;">${a.ad_text}</td>
+        <td>${a.target_audience}</td><td>${a.impressions}</td><td>${a.clicks}</td>
+        <td><span class="badge badge-${a.status==='active'?'active':a.status==='paused'?'pending':'banned'}">${a.status}</span></td>
+        <td>
+        <button class="btn btn-ghost btn-sm" onclick="toggleAdStatus('${a.id}','${a.status==='active'?'paused':'active'}')">${a.status==='active'?'Pause':'Activate'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAd('${a.id}')">Delete</button>
+        </td></tr>`).join('');
+    }
+  } catch(e) { toast('Failed to load ads', 'error'); }
+}
+function openAdModal() { document.getElementById('adModal').classList.add('show'); }
+async function createAd() {
+  const body = {
+    advertiser_name: document.getElementById('adAdvertiser').value,
+    ad_text: document.getElementById('adText').value,
+    ad_link: document.getElementById('adLink').value,
+    button_text: document.getElementById('adButton').value,
+    target_audience: document.getElementById('adTarget').value,
+    frequency: parseInt(document.getElementById('adFreq').value),
+    budget_impressions: parseInt(document.getElementById('adBudget').value),
+  };
+  try {
+    await apiPost('/admin/api/ads', body);
+    toast('Ad campaign created');
+    closeModal('adModal');
+    loadAds();
+  } catch(e) { toast('Failed to create ad', 'error'); }
+}
+async function toggleAdStatus(id, status) {
+  try { await apiPost(`/admin/api/ads/${id}/status`, {status}); toast(`Ad ${status}`); loadAds(); }
+  catch(e) { toast('Failed', 'error'); }
+}
+async function deleteAd(id) {
+  if (!confirm('Delete this ad campaign?')) return;
+  try { await apiDelete(`/admin/api/ads/${id}`); toast('Ad deleted'); loadAds(); }
+  catch(e) { toast('Failed', 'error'); }
+}
+
+// Security
+async function loadSecurity(page=1) {
+  try {
+    const data = await api(`/admin/api/security?page=${page}&limit=50&`);
+    document.getElementById('securityTable').innerHTML = data.events.length ? data.events.map(s => `
+      <tr><td><span class="badge badge-${s.event_type.includes('blocked')||s.event_type.includes('vpn')?'failed':'active'}">${s.event_type}</span></td>
+      <td>${s.ip_address}</td><td style="font-size:11px;">${s.user_id||'-'}</td>
+      <td>${s.risk_score > 50 ? '<span style="color:var(--red)">'+s.risk_score+'</span>' : s.risk_score}</td>
+      <td style="font-size:12px;max-width:300px;">${s.details||'-'}</td><td>${formatDate(s.created_at)}</td></tr>`).join('') : '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-dim);">No security events</td></tr>';
+    renderPager('securityPager', data.page, data.pages, 'loadSecurity');
+    const devData = await api('/admin/api/security/devices?page=1&limit=50&');
+    document.getElementById('devicesTable').innerHTML = devData.devices.length ? devData.devices.map(d => `
+      <tr><td>${d.ip_address}</td><td>${d.device_type||'-'}</td><td>${d.os_name||'-'}</td>
+      <td>${d.browser_name||'-'}</td>
+      <td>${d.is_vpn?'<span style="color:var(--red)">Yes</span>':'No'}</td>
+      <td>${d.is_proxy?'<span style="color:var(--red)">Yes</span>':'No'}</td>
+      <td>${d.risk_score > 50 ? '<span style="color:var(--red)">'+d.risk_score+'</span>' : d.risk_score}</td>
+      <td>${formatDate(d.created_at)}</td></tr>`).join('') : '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-dim);">No device data</td></tr>';
+  } catch(e) { toast('Failed to load security data', 'error'); }
+}
+
+// Health
+async function loadHealth() {
+  try {
+    const data = await api('/admin/api/system/health?');
+    const envItems = Object.entries(data.env_vars).map(([k,v]) => `
+      <div class="health-item"><div class="label">${k}</div><div class="value"><span class="env-dot ${v?'on':'off'}"></span>${v?'Configured':'Missing'}</div></div>`).join('');
+    document.getElementById('healthContent').innerHTML = `
+      <div class="stats-grid">
+      <div class="stat-card"><div class="icon" style="background:var(--green)20;color:var(--green)">✅</div><div class="label">Database</div><div class="value" style="font-size:18px;">${data.database}</div></div>
+      <div class="stat-card"><div class="icon" style="background:var(--accent)20;color:var(--accent)">🤖</div><div class="label">LLM Providers</div><div class="value">${data.llm.count||0} active</div><div class="sub">${(data.llm.providers||[]).join(', ')}</div></div>
+      <div class="stat-card"><div class="icon" style="background:${data.telegram_bot==='configured'?'var(--green)':'var(--red)'}20;color:${data.telegram_bot==='configured'?'var(--green)':'var(--red)'}">📱</div><div class="label">Telegram Bot</div><div class="value" style="font-size:18px;">${data.telegram_bot}</div></div>
+      <div class="stat-card"><div class="icon" style="background:var(--purple)20;color:var(--purple)">⏱️</div><div class="label">Server Time</div><div class="value" style="font-size:14px;">${new Date(data.server_time).toLocaleString()}</div></div>
+      </div>
+      <div class="chart-card"><h3>Environment Variables</h3><div class="health-grid">${envItems}</div></div>`;
+  } catch(e) { toast('Failed to load health', 'error'); }
+}
+
+// Audit
+async function loadAudit() {
+  try {
+    const data = await api('/admin/api/audit-log?');
+    document.getElementById('auditTable').innerHTML = data.active_sessions.length ? data.active_sessions.map(s => `
+      <tr><td>${s.name}</td><td><span class="badge badge-owner">${s.role}</span></td><td>${formatDate(s.login_time)}</td></tr>`).join('') : '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-dim);">No active sessions</td></tr>';
+  } catch(e) { toast('Failed to load audit log', 'error'); }
+}
+
+// Helpers
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function renderPager(id, page, pages, fn) {
+  const el = document.getElementById(id);
+  if (!el || pages <= 1) { if (el) el.innerHTML = ''; return; }
+  let html = `<button ${page<=1?'disabled':''} onclick="${fn}(${page-1})">Prev</button>`;
+  for (let i = 1; i <= Math.min(pages, 10); i++) html += `<button class="${i===page?'active':''}" onclick="${fn}(${i})">${i}</button>`;
+  html += `<button ${page>=pages?'disabled':''} onclick="${fn}(${page+1})">Next</button>`;
+  el.innerHTML = html;
+}
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
+</script>
+</body>
+</html>

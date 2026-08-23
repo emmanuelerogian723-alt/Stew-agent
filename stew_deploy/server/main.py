@@ -92,6 +92,7 @@ def _tg_already_processed(update_id) -> bool:
     return False
 
 from server.system_prompt import STEW_MASTER_PROMPT
+from server.admin_endpoints import router as admin_router
 from server.clean_output import clean_response
 from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
 from server.auth import create_reset_token, consume_reset_token
@@ -163,6 +164,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Register admin API routes
+app.include_router(admin_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -799,6 +803,11 @@ async def playground_page():
                 return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>Playground not found</h1><p>stew_playground.html missing</p>")
 
+
+@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+async def admin_dashboard_page():
+    with open("admin.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard_page():
