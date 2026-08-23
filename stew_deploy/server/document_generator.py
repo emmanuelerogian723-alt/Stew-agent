@@ -720,3 +720,387 @@ def generate_html(content: str, title: str = "Report") -> dict:
         "mime_type": "text/html",
         "success": True,
     }
+
+
+# ── TERM PAPER / PRESENTATION PDF ──────────────────────────────────────────────
+
+def generate_term_paper_pdf(
+    content: str,
+    title: str = "Term Paper",
+    university: str = "University of Nigeria, Nsukka",
+    department: str = "",
+    author: str = "",
+    reg_no: str = "",
+    level: str = "",
+    course_code: str = "",
+    course_title: str = "",
+    lecturer: str = "",
+    paper_date: str = "",
+    doc_type_label: str = "A TERM PAPER ON",
+) -> dict:
+    """Generate a strict academic term paper / presentation PDF following
+    the UNN format pattern. Designed for students who need professional
+    presentation documents with a proper cover page, table of contents,
+    numbered sections, and references.
+
+    Follows any user-provided details (university, department, course,
+    lecturer, reg number, etc.) to customize the document.
+    """
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm, mm
+        from reportlab.platypus import (
+            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+            PageBreak, Flowable, KeepTogether
+        )
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+        import re as _re
+
+        buf = io.BytesIO()
+        PAGE_W, PAGE_H = A4
+        LEFT_M = 3 * cm
+        RIGHT_M = 2.5 * cm
+        TOP_M = 2.5 * cm
+        BOTTOM_M = 2.5 * cm
+        CONTENT_W = PAGE_W - LEFT_M - RIGHT_M
+
+        # Date formatting
+        if not paper_date:
+            paper_date = datetime.utcnow().strftime("%B %d, %Y")
+
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            rightMargin=RIGHT_M,
+            leftMargin=LEFT_M,
+            topMargin=TOP_M,
+            bottomMargin=BOTTOM_M,
+            title=_sanitize_text(title),
+            author=f"S.T.E.W Agent - {author}" if author else "S.T.E.W Agent",
+        )
+
+        styles = getSampleStyleSheet()
+
+        # ── Cover page styles (centered, clean academic) ──
+        cover_uni_style = ParagraphStyle(
+            "CoverUni", parent=styles["Normal"], fontSize=14, leading=18,
+            alignment=TA_CENTER, textColor=colors.HexColor("#1a1a1a"),
+            fontName="Helvetica-Bold", spaceAfter=4,
+        )
+        cover_dept_style = ParagraphStyle(
+            "CoverDept", parent=styles["Normal"], fontSize=13, leading=16,
+            alignment=TA_CENTER, textColor=colors.HexColor("#333333"),
+            fontName="Helvetica-Bold", spaceAfter=20,
+        )
+        cover_label_style = ParagraphStyle(
+            "CoverLabel", parent=styles["Normal"], fontSize=12, leading=16,
+            alignment=TA_CENTER, textColor=colors.HexColor("#444444"),
+            fontName="Helvetica", spaceAfter=6,
+        )
+        cover_title_style = ParagraphStyle(
+            "CoverTitle", parent=styles["Title"], fontSize=16, leading=22,
+            alignment=TA_CENTER, textColor=colors.HexColor("#1a1a1a"),
+            fontName="Helvetica-Bold", spaceAfter=20,
+            textDecoration="underline",
+        )
+        cover_field_style = ParagraphStyle(
+            "CoverField", parent=styles["Normal"], fontSize=12, leading=18,
+            alignment=TA_CENTER, textColor=colors.HexColor("#333333"),
+            fontName="Helvetica", spaceAfter=10,
+        )
+        cover_field_bold = ParagraphStyle(
+            "CoverFieldBold", parent=styles["Normal"], fontSize=12, leading=18,
+            alignment=TA_CENTER, textColor=colors.HexColor("#1a1a1a"),
+            fontName="Helvetica-Bold", spaceAfter=10,
+        )
+
+        # ── Body styles ──
+        toc_title_style = ParagraphStyle(
+            "TOCTitle", parent=styles["Heading1"], fontSize=13, leading=16,
+            textColor=colors.HexColor("#1a1a1a"), fontName="Helvetica-Bold",
+            spaceAfter=16, alignment=TA_CENTER,
+            textDecoration="underline",
+        )
+        toc_entry_style = ParagraphStyle(
+            "TOCEntry", parent=styles["Normal"], fontSize=12, leading=20,
+            textColor=colors.HexColor("#333333"), spaceAfter=2,
+            fontName="Helvetica",
+        )
+        toc_sub_entry_style = ParagraphStyle(
+            "TOCSubEntry", parent=styles["Normal"], fontSize=11, leading=18,
+            textColor=colors.HexColor("#555555"), spaceAfter=2,
+            leftIndent=24, fontName="Helvetica",
+        )
+        section_heading_style = ParagraphStyle(
+            "SectionHeading", parent=styles["Heading1"], fontSize=13, leading=16,
+            textColor=colors.HexColor("#1a1a1a"), fontName="Helvetica-Bold",
+            spaceBefore=16, spaceAfter=8, keepWithNext=True,
+        )
+        sub_heading_style = ParagraphStyle(
+            "SubHeading", parent=styles["Heading2"], fontSize=12, leading=15,
+            textColor=colors.HexColor("#333333"), fontName="Helvetica-Bold",
+            spaceBefore=10, spaceAfter=6, keepWithNext=True,
+        )
+        body_text_style = ParagraphStyle(
+            "BodyText", parent=styles["Normal"], fontSize=12, leading=18,
+            textColor=colors.HexColor("#1a1a1a"), spaceAfter=8,
+            alignment=TA_JUSTIFY, fontName="Helvetica",
+            firstLineIndent=0,
+        )
+        bullet_style = ParagraphStyle(
+            "Bullet", parent=body_text_style, leftIndent=20, bulletIndent=10,
+            spaceAfter=4, alignment=TA_LEFT,
+        )
+        ref_style = ParagraphStyle(
+            "RefStyle", parent=styles["Normal"], fontSize=11, leading=15,
+            textColor=colors.HexColor("#333333"), spaceAfter=6,
+            alignment=TA_LEFT, fontName="Helvetica",
+            leftIndent=18, firstLineIndent=-18,  # hanging indent
+        )
+        ref_title_style = ParagraphStyle(
+            "RefTitle", parent=styles["Heading1"], fontSize=13, leading=16,
+            textColor=colors.HexColor("#1a1a1a"), fontName="Helvetica-Bold",
+            spaceBefore=20, spaceAfter=12, alignment=TA_CENTER,
+        )
+
+        story = []
+
+        # ═══════════════════════════════════════════════════════
+        # COVER PAGE (First Layer — strict pattern)
+        # ═══════════════════════════════════════════════════════
+        story.append(Spacer(1, 3 * cm))
+
+        # University name
+        story.append(Paragraph(_sanitize_text(university.upper()), cover_uni_style))
+
+        # Department
+        if department:
+            story.append(Paragraph(_sanitize_text(department.upper()), cover_dept_style))
+
+        story.append(Spacer(1, 1 * cm))
+
+        # "A TERM PAPER ON" label
+        story.append(Paragraph(doc_type_label.upper(), cover_label_style))
+        story.append(Spacer(1, 0.3 * cm))
+
+        # Title (underlined)
+        story.append(Paragraph(_sanitize_text(title), cover_title_style))
+
+        story.append(Spacer(1, 1 * cm))
+
+        # Presented by
+        story.append(Paragraph("PRESENTED BY", cover_label_style))
+        if author:
+            story.append(Paragraph(_sanitize_text(author), cover_field_bold))
+        else:
+            story.append(Paragraph("_______________________________________", cover_field_style))
+
+        # Reg. No.
+        story.append(Spacer(1, 0.3 * cm))
+        if reg_no:
+            story.append(Paragraph(f"REG. NO: {_sanitize_text(reg_no)}", cover_field_style))
+        else:
+            story.append(Paragraph("REG. NO: _______________________________", cover_field_style))
+
+        # Level / Program
+        if level:
+            story.append(Paragraph(_sanitize_text(level.upper()), cover_field_style))
+
+        # Course
+        if course_code or course_title:
+            course_line = ""
+            if course_code:
+                course_line = f"COURSE: {_sanitize_text(course_code)}"
+            if course_title:
+                if course_line:
+                    course_line += f" \u2013 {_sanitize_text(course_title)}"
+                else:
+                    course_line = f"COURSE: {_sanitize_text(course_title)}"
+            story.append(Paragraph(course_line, cover_field_style))
+
+        # Lecturer
+        if lecturer:
+            story.append(Paragraph(f"LECTURER: {_sanitize_text(lecturer)}", cover_field_style))
+
+        story.append(Spacer(1, 0.8 * cm))
+
+        # Date
+        story.append(Paragraph(_sanitize_text(paper_date), cover_field_bold))
+
+        story.append(PageBreak())
+
+        # ═══════════════════════════════════════════════════════
+        # TABLE OF CONTENTS (auto-generated from content)
+        # ═══════════════════════════════════════════════════════
+        lines = content.split("\n")
+        toc_entries = []
+        i = 0
+        n = len(lines)
+
+        # First pass: extract headings for TOC
+        for line in lines:
+            stripped = line.strip()
+            # Match patterns like "1.0 Introduction" or "## 1.0 Introduction"
+            # or "## Introduction" (markdown style)
+            match = _re.match(r'^(?:#{1,3}\s+)?(\d+\.?\d*)\s+(.+)', stripped)
+            if match:
+                num = match.group(1)
+                heading_text = _sanitize_text(_strip_markdown(match.group(2)))
+                is_subsection = "." in num and num.split(".")[1] != "0"
+                toc_entries.append((num, heading_text, is_subsection))
+            elif stripped.lower() == "references":
+                toc_entries.append(("", "References", False))
+
+        story.append(Paragraph("TABLE OF CONTENTS", toc_title_style))
+        story.append(Spacer(1, 0.3 * cm))
+
+        for num, heading, is_sub in toc_entries:
+            if is_sub:
+                story.append(Paragraph(
+                    f"{num} {heading}", toc_sub_entry_style
+                ))
+            else:
+                label = f"{num} {heading}" if num else heading
+                story.append(Paragraph(label, toc_entry_style))
+
+        story.append(PageBreak())
+
+        # ═══════════════════════════════════════════════════════
+        # BODY CONTENT (Strict academic pattern)
+        # ═══════════════════════════════════════════════════════
+        in_references = False
+        i = 0
+        while i < n:
+            line = lines[i]
+            stripped = line.strip()
+
+            if stripped == "<!--PAGEBREAK-->":
+                story.append(PageBreak())
+                i += 1
+                continue
+
+            # Check for References section
+            if stripped.lower() in ("references", "## references", "# references"):
+                in_references = True
+                story.append(Paragraph("REFERENCES", ref_title_style))
+                story.append(Spacer(1, 0.3 * cm))
+                i += 1
+                continue
+
+            if in_references:
+                # References: each line is a reference entry with hanging indent
+                if not stripped:
+                    story.append(Spacer(1, 0.15 * cm))
+                    i += 1
+                    continue
+                ref_text = _sanitize_text(_strip_markdown(stripped))
+                ref_text = ref_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(Paragraph(ref_text, ref_style))
+                i += 1
+                continue
+
+            # Detect markdown table
+            if stripped.startswith("|") and i + 1 < n and _is_table_separator(lines[i + 1]):
+                header_row = _parse_md_table_row(stripped)
+                table_data = [header_row]
+                j = i + 2
+                while j < n and lines[j].strip().startswith("|"):
+                    table_data.append(_parse_md_table_row(lines[j]))
+                    j += 1
+                cell_style = ParagraphStyle("Cell", parent=styles["Normal"],
+                                           fontSize=10, leading=12)
+                wrapped = [[Paragraph(str(cell), cell_style) for cell in row]
+                          for row in table_data]
+                col_count = len(header_row) or 1
+                col_width = CONTENT_W / col_count
+                tbl = Table(wrapped, colWidths=[col_width] * col_count, repeatRows=1)
+                tbl.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a1a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 10),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#999999")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+                     [colors.white, colors.HexColor("#f5f5f5")]),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]))
+                story.append(tbl)
+                story.append(Spacer(1, 0.3 * cm))
+                i = j
+                continue
+
+            if not stripped:
+                story.append(Spacer(1, 0.25 * cm))
+            # Heading patterns: "## 1.0 Title" or "# 1.0 Title" or "1.0 Title"
+            elif _re.match(r'^#{1,2}\s+\d+\.\d*\s+', stripped):
+                # Section heading
+                clean = _re.sub(r'^#{1,2}\s+', '', stripped)
+                clean = _sanitize_text(_strip_markdown(clean))
+                story.append(KeepTogether([
+                    Paragraph(clean, section_heading_style),
+                    Spacer(1, 0.1 * cm),
+                ]))
+            elif _re.match(r'^#{3}\s+\d+\.\d*\s+', stripped):
+                # Subsection heading
+                clean = _re.sub(r'^#{3}\s+', '', stripped)
+                clean = _sanitize_text(_strip_markdown(clean))
+                story.append(Paragraph(clean, sub_heading_style))
+            elif _re.match(r'^\d+\.\d*\s+', stripped):
+                # Numbered heading without markdown
+                clean = _sanitize_text(_strip_markdown(stripped))
+                story.append(KeepTogether([
+                    Paragraph(clean, section_heading_style),
+                    Spacer(1, 0.1 * cm),
+                ]))
+            elif stripped.startswith("### "):
+                clean = _sanitize_text(_strip_markdown(stripped[4:]))
+                story.append(Paragraph(clean, sub_heading_style))
+            elif stripped.startswith("## "):
+                clean = _sanitize_text(_strip_markdown(stripped[3:]))
+                story.append(Paragraph(clean, section_heading_style))
+            elif stripped.startswith("# "):
+                clean = _sanitize_text(_strip_markdown(stripped[2:]))
+                story.append(Paragraph(clean, section_heading_style))
+            elif stripped.startswith("- ") or stripped.startswith("* ") or stripped.startswith("\u2022 "):
+                bullet_text = _sanitize_text(_strip_markdown(stripped.lstrip("-*\u2022 ")))
+                safe = bullet_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(Paragraph(f"\u2022 {safe}", bullet_style))
+            else:
+                safe = _sanitize_text(_strip_markdown(stripped))
+                safe = safe.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(Paragraph(safe, body_text_style))
+            i += 1
+
+        # ═══════════════════════════════════════════════════════
+        # PAGE FOOTER
+        # ═══════════════════════════════════════════════════════
+        def _page_footer(canv, doc_):
+            canv.saveState()
+            page_num = canv.getPageNumber()
+            if page_num > 1:
+                canv.setFont("Helvetica", 8)
+                canv.setFillColor(colors.HexColor("#888888"))
+                # Page number centered
+                canv.drawCentredString(PAGE_W / 2, 1.2 * cm, str(page_num))
+            canv.restoreState()
+
+        doc.build(story, onFirstPage=lambda c, d: None, onLaterPages=_page_footer)
+
+        filename = f"{title.replace(' ', '_')[:50]}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pdf"
+        return {
+            "file": _to_base64(buf),
+            "filename": filename,
+            "mime_type": "application/pdf",
+            "success": True,
+            "doc_type": "term_paper",
+        }
+    except ImportError:
+        raise HTTPException(500, "reportlab not installed")
+    except Exception as e:
+        logger.error(f"Term paper PDF generation error: {e}")
+        raise HTTPException(500, f"Term paper PDF generation failed: {e}")
+

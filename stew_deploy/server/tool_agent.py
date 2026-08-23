@@ -33,7 +33,7 @@ from server.code_sandbox import execute_code
 from server.terminal_sandbox import execute_shell, execute_python as execute_terminal_python
 from server.clean_output import clean_response
 from server.document_generator import (
-    generate_pdf, generate_docx, generate_xlsx, generate_pptx, generate_html
+    generate_pdf, generate_docx, generate_xlsx, generate_pptx, generate_html, generate_term_paper_pdf
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,7 @@ TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "pdf", "topic": "b
 TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "pptx", "topic": "AI trends"}}
 TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "docx", "topic": "marketing strategy"}}
 TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "xlsx", "topic": "monthly expenses"}}
+TOOL_CALL: {"tool": "generate_document", "args": {"doc_type": "term_paper", "topic": "enzyme production from microorganisms", "university": "University of Nigeria, Nsukka", "department": "Biochemistry", "course_code": "MCB 202", "course_title": "General Biology II", "lecturer": "Prof. Nwokoro", "level": "200 Level", "details": "Focus on industrial applications and include 8 sections"}}
 TOOL_CALL: {"tool": "get_crypto_price", "args": {"symbol": "bitcoin"}}
 TOOL_CALL: {"tool": "get_stock_price", "args": {"symbol": "AAPL"}}
 TOOL_CALL: {"tool": "get_weather", "args": {"city": "Lagos"}}
@@ -265,6 +266,57 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
                 raw = resp["content"]
                 # Keep markdown — DOCX generator parses ##, #, - for headings/lists
                 result = generate_docx(raw, topic)
+            elif doc_type in ("term_paper", "presentation", "termpaper"):
+                # Strict academic term paper format following UNN pattern
+                user_details = args.get("details", "")
+                university = args.get("university", "University of Nigeria, Nsukka")
+                department = args.get("department", "")
+                author_name = args.get("author", args.get("name", ""))
+                reg_no = args.get("reg_no", args.get("regno", ""))
+                level = args.get("level", "")
+                course_code = args.get("course_code", args.get("course_code", ""))
+                course_title_val = args.get("course_title", "")
+                lecturer = args.get("lecturer", "")
+                paper_date = args.get("date", "")
+                doc_label = args.get("doc_type_label", "A TERM PAPER ON")
+
+                # Build LLM prompt for strict academic format
+                detail_str = ""
+                if user_details:
+                    detail_str = f"\n\nADDITIONAL USER INSTRUCTIONS: {user_details}\nFollow these instructions carefully."
+
+                system = (
+                    "You are an academic writer creating a university term paper. "
+                    "Follow this STRICT format:\n"
+                    "1. Use numbered section headings like '1.0 Introduction', '2.0 Title', etc.\n"
+                    "2. Use numbered subsections like '4.1 Title', '4.2 Title' where appropriate.\n"
+                    "3. Write in formal academic English with justified paragraphs.\n"
+                    "4. Include 5-10 main sections covering the topic thoroughly.\n"
+                    "5. End with a 'References' section containing 5-10 APA-format citations with DOIs.\n"
+                    "6. Use plain ASCII characters only. Do NOT use special unicode symbols.\n"
+                    "7. Each section should have 2-4 paragraphs of substantive content.\n"
+                    "8. Use bullet points (with - prefix) for lists where appropriate.\n"
+                    "9. Write 2000-4000 words total. Be thorough and detailed.\n"
+                    "10. Start immediately with '1.0 Introduction' — do NOT include a title or cover page in the content."
+                )
+                user_msg = (
+                    f"Write a complete academic term paper about: {topic}.\n\n"
+                    f"Format: Numbered sections (1.0, 2.0, 3.0...) with subsections (4.1, 4.2...) where needed.\n"
+                    f"Include: Introduction, 3-8 body sections covering different aspects, a Conclusion section, and a References section.\n"
+                    f"Write in formal academic style suitable for a university {level or 'undergraduate'} student.\n"
+                    f"Include real APA citations with author names, years, journal names, and DOIs.{detail_str}"
+                )
+                messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
+                resp = await asyncio.to_thread(llm.chat, messages, max_tokens=5000)
+                raw = resp["content"]
+                result = generate_term_paper_pdf(
+                    raw, title=topic, university=university,
+                    department=department, author=author_name,
+                    reg_no=reg_no, level=level,
+                    course_code=course_code, course_title=course_title_val,
+                    lecturer=lecturer, paper_date=paper_date,
+                    doc_type_label=doc_label,
+                )
             else:  # pdf
                 system = "You are a professional writer. Create a well-structured, concise document (under 1200 words). Use markdown: # for title, ## for section headings, - for bullet lists. Do NOT use tables. Do NOT use special unicode symbols, subscripts, or superscripts — write exponents as 'x10^9' and use plain ASCII characters only. Write a complete document that ends with a proper conclusion — never cut off mid-sentence."
                 user = f"Write a complete, well-structured document about: {topic}. Include an introduction, 3-5 main sections with headings, and a conclusion. Keep it focused and under 1200 words so it fits completely."

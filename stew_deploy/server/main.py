@@ -43,7 +43,7 @@ from server.persistent_memory import (
     upload_file as supa_upload_file,
 )
 from server.document_generator import (
-    generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx,
+    generate_docx, generate_html, generate_pdf, generate_pptx, generate_xlsx, generate_term_paper_pdf,
 )
 from server.document_processor import extract_text
 from server.llm_client import get_llm_client
@@ -432,7 +432,23 @@ class BrowseRequest(BaseModel):
 class GeneratePDFRequest(BaseModel):
     content: str
     title: str = "Document"
-    api_key: str = ""
+    api_key: str
+
+
+class GenerateTermPaperRequest(BaseModel):
+    content: str
+    title: str = "Term Paper"
+    api_key: str
+    university: str = "University of Nigeria, Nsukka"
+    department: str = ""
+    author: str = ""
+    reg_no: str = ""
+    level: str = ""
+    course_code: str = ""
+    course_title: str = ""
+    lecturer: str = ""
+    date: str = ""
+    doc_type_label: str = "A TERM PAPER ON"
 
 
 class GenerateDOCXRequest(BaseModel):
@@ -2050,6 +2066,30 @@ async def gen_pdf(
         raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
     result = generate_pdf(body.content, body.title)
     background_tasks.add_task(_log_call, db, user.id, "/generate/pdf", "POST", 0, 200)
+    return result
+
+
+@app.post("/generate/term-paper")
+async def gen_term_paper(
+    body: GenerateTermPaperRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+    result = generate_term_paper_pdf(
+        body.content, title=body.title, university=body.university,
+        department=body.department, author=body.author,
+        reg_no=body.reg_no, level=body.level,
+        course_code=body.course_code, course_title=body.course_title,
+        lecturer=body.lecturer, paper_date=body.date,
+        doc_type_label=body.doc_type_label,
+    )
+    background_tasks.add_task(_log_call, db, user.id, "/generate/term-paper", "POST", 0, 200)
     return result
 
 
