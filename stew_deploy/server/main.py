@@ -3280,6 +3280,203 @@ async def _synthesize_voice(text: str, voice: str = "en-US-AriaNeural") -> tuple
     return b"", last_error
 
 
+
+
+# ── MOOD DNA: Analyze user mood from their message ─────────────────────────────
+async def _analyze_mood(user_text: str, llm_chat_fn=None) -> dict:
+    """Analyze the emotional state of a user message.
+    Returns mood, mood_score (0-100), energy_score (0-100).
+    Uses keyword matching (fast, free) with LLM fallback for complex messages."""
+    import re
+
+    text_lower = user_text.lower()
+
+    # Fast keyword-based detection (no API call needed for obvious moods)
+    mood_patterns = {
+        "happy": ["happy", "great", "awesome", "love it", "nice", "cool", "amazing", "wonderful", "good news", "excited", "yay", "lol", "haha", "lmao", "cheers", "blessed"],
+        "excited": ["excited", "can't wait", "omg", "wow", "incredible", "let's go", "finally", "success", "won", "achievement", "yes!"],
+        "motivated": ["let's do this", "grind", "hustle", "focused", "determined", "goal", "plan", "ready", "let's build", "work"],
+        "calm": ["okay", "fine", "alright", "sure", "no problem", "thanks", "good", "understood", "got it", "makes sense"],
+        "stressed": ["stress", "overwhelm", "too much", "deadline", "pressure", "exhausted", "burnout", "can't cope", "too many", "busy"],
+        "anxious": ["worried", "anxious", "nervous", "scared", "afraid", "concerned", "what if", "hope", "fingers crossed", "uncertain"],
+        "sad": ["sad", "depressed", "unhappy", "lonely", "miss", "lost", "hurt", "pain", "crying", "tears", "broke up", "failed"],
+        "angry": ["angry", "furious", "mad", "annoyed", "frustrated", "pissed", "hate", "stupid", "ridiculous", "unfair", "wtf"],
+        "tired": ["tired", "sleepy", "exhausted", "drained", "no energy", "need rest", "can't focus", "worn out", "beat"],
+        "neutral": [],
+    }
+
+    detected_mood = "neutral"
+    mood_score = 50
+    energy_score = 50
+
+    # Count keyword matches for each mood
+    mood_counts = {}
+    for mood, keywords in mood_patterns.items():
+        if mood == "neutral":
+            continue
+        count = sum(1 for kw in keywords if kw in text_lower)
+        if count > 0:
+            mood_counts[mood] = count
+
+    if mood_counts:
+        detected_mood = max(mood_counts, key=mood_counts.get)
+        # Map moods to scores
+        score_map = {
+            "happy": (80, 70), "excited": (90, 95), "motivated": (75, 85),
+            "calm": (65, 40), "stressed": (25, 60), "anxious": (20, 55),
+            "sad": (15, 20), "angry": (10, 75), "tired": (30, 10), "neutral": (50, 50),
+        }
+        mood_score, energy_score = score_map.get(detected_mood, (50, 50))
+
+    # Use LLM for complex messages (optional, non-blocking)
+    if llm_chat_fn and len(user_text) > 20 and detected_mood == "neutral":
+        try:
+            mood_prompt = (
+                "Analyze the emotional state of this message. "
+                "Return ONLY a JSON object with mood, mood_score (0-100), energy_score (0-100). "
+                "mood: happy|excited|motivated|calm|stressed|anxious|sad|angry|tired|neutral. "
+                "mood_score: 0=very negative, 100=very positive. "
+                "energy_score: 0=drained, 100=hyped. "
+                f"Message: {user_text[:500]}"
+            )
+            result = llm_chat_fn(
+                [{"role": "system", "content": mood_prompt},
+                 {"role": "user", "content": user_text[:500]}],
+                max_tokens=100
+            )
+            import json as _json
+            raw = _safe_content(result) if '_safe_content' in dir() else (result if isinstance(result, str) else str(result))
+            json_match = re.search(r'[{].*[}]', raw, re.DOTALL)
+            if json_match:
+                parsed = _json.loads(json_match.group())
+                detected_mood = parsed.get("mood", detected_mood)
+                mood_score = int(parsed.get("mood_score", mood_score))
+                energy_score = int(parsed.get("energy_score", energy_score))
+        except Exception as e:
+            logger.debug(f"Mood LLM analysis failed (non-fatal): {e}")
+
+    return {
+        "mood": detected_mood,
+        "mood_score": mood_score,
+        "energy_score": energy_score,
+    }
+
+
+async def _store_mood(db: AsyncSession, user_id: str, mood_data: dict, message_text: str):
+    """Store a mood entry in the database."""
+    try:
+        now = datetime.now(timezone.utc)
+        entry = MoodEntry(
+            user_id=user_id,
+            mood=mood_data["mood"],
+            mood_score=mood_data["mood_score"],
+            energy_score=mood_data["energy_score"],
+            message_snippet=message_text[:200],
+            day_of_week=now.weekday(),
+            hour_of_day=now.hour,
+        )
+        db.add(entry)
+        await db.flush()
+    except Exception as e:
+        logger.debug(f"Mood storage failed (non-fatal): {e}")
+
+
+async def _get_mood_insights(db: AsyncSession, user_id: str) -> dict:
+    """Generate mood insights from a user's mood history."""
+    try:
+        # Get last 100 mood entries
+        result = await db.execute(
+            select(MoodEntry).where(MoodEntry.user_id == user_id)
+            .order_by(MoodEntry.created_at.desc()).limit(100)
+        )
+        entries = result.scalars().all()
+
+        if not entries:
+            return {"has_data": False, "message": "Not enough data yet. Send a few more messages and check back!"}
+
+        # Overall mood distribution
+        mood_counts = {}
+        for e in entries:
+            mood_counts[e.mood] = mood_counts.get(e.mood, 0) + 1
+
+        dominant_mood = max(mood_counts, key=mood_counts.get)
+
+        # Average scores
+        avg_mood = sum(e.mood_score for e in entries) / len(entries)
+        avg_energy = sum(e.energy_score for e in entries) / len(entries)
+
+        # Mood by day of week
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        day_moods = {}
+        for e in entries:
+            day_name = day_names[e.day_of_week]
+            if day_name not in day_moods:
+                day_moods[day_name] = []
+            day_moods[day_name].append(e.mood_score)
+
+        best_day = max(day_moods, key=lambda d: sum(day_moods[d])/len(day_moods[d])) if day_moods else "N/A"
+        worst_day = min(day_moods, key=lambda d: sum(day_moods[d])/len(day_moods[d])) if day_moods else "N/A"
+
+        # Mood by hour
+        hour_moods = {}
+        for e in entries:
+            bucket = "Morning" if e.hour_of_day < 12 else ("Afternoon" if e.hour_of_day < 17 else ("Evening" if e.hour_of_day < 21 else "Night"))
+            if bucket not in hour_moods:
+                hour_moods[bucket] = []
+            hour_moods[bucket].append(e.mood_score)
+
+        best_time = max(hour_moods, key=lambda t: sum(hour_moods[t])/len(hour_moods[t])) if hour_moods else "N/A"
+        worst_time = min(hour_moods, key=lambda t: sum(hour_moods[t])/len(hour_moods[t])) if hour_moods else "N/A"
+
+        # Recent trend (last 10 vs previous 10)
+        recent = entries[:10]
+        older = entries[10:20] if len(entries) > 10 else []
+        recent_avg = sum(e.mood_score for e in recent) / len(recent) if recent else 50
+        older_avg = sum(e.mood_score for e in older) / len(older) if older else recent_avg
+        trend = "improving" if recent_avg > older_avg + 5 else ("declining" if recent_avg < older_avg - 5 else "stable")
+
+        return {
+            "has_data": True,
+            "total_entries": len(entries),
+            "dominant_mood": dominant_mood,
+            "mood_distribution": mood_counts,
+            "avg_mood_score": round(avg_mood, 1),
+            "avg_energy_score": round(avg_energy, 1),
+            "best_day": best_day,
+            "worst_day": worst_day,
+            "best_time": best_time,
+            "worst_time": worst_time,
+            "trend": trend,
+            "recent_avg": round(recent_avg, 1),
+        }
+    except Exception as e:
+        logger.warning(f"Mood insights failed: {e}")
+        return {"has_data": False, "message": f"Could not generate insights: {e}"}
+
+
+async def _get_mood_adaptive_system_prompt(insights: dict, base_prompt: str) -> str:
+    """Adapt the system prompt based on user's current mood trend."""
+    if not insights.get("has_data"):
+        return base_prompt
+
+    mood_addition = "\n\nMOOD ADAPTATION: "
+    trend = insights.get("trend", "stable")
+    dominant = insights.get("dominant_mood", "neutral")
+
+    if dominant in ("sad", "depressed") or trend == "declining":
+        mood_addition += "The user seems to be going through a tough time. Be extra warm, empathetic, and supportive. Use gentle encouragement. Avoid being overly energetic or pushy."
+    elif dominant in ("stressed", "anxious"):
+        mood_addition += "The user seems stressed. Be calm, clear, and organized. Break things into simple steps. Offer reassurance."
+    elif dominant in ("happy", "excited", "motivated"):
+        mood_addition += "The user is in a great mood! Match their energy. Be enthusiastic and encourage their momentum."
+    elif dominant == "tired":
+        mood_addition += "The user seems tired. Keep responses shorter and easy to digest. Don't overwhelm with long explanations."
+    else:
+        return base_prompt
+
+    return base_prompt + mood_addition
+
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     """Receive Telegram messages. ACKs Telegram INSTANTLY, then processes the
@@ -3439,7 +3636,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/about", "/owner", "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ", "/weather", "/qr", "/joke", "/quote", "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/mood", "/about", "/owner", "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ", "/weather", "/qr", "/joke", "/quote", "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
@@ -6143,6 +6340,46 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return
 
     # /voice — Toggle voice note replies
+    # ── MOOD DNA — Stew's unique emotional intelligence feature ───────────────
+    if user_text.startswith("/mood"):
+        mood_insights = await _get_mood_insights(db, tg_user_early.id if tg_user_early else "anon")
+        if not mood_insights.get("has_data"):
+            await bot.send_message(chat_id, mood_insights.get("message", "Not enough data yet. Keep chatting with Stew and check back!"))
+            return {"ok": True}
+
+        # Build mood report
+        mood_emoji = {"happy": "\U0001f60a", "excited": "\U0001f929", "motivated": "\U0001f525",
+                      "calm": "\U0001f60c", "stressed": "\U0001f62e\U0001f92f", "anxious": "\U0001f630",
+                      "sad": "\U0001f622", "angry": "\U0001f621", "tired": "\U0001f6ad", "neutral": "\U0001f610"}
+
+        dominant = mood_insights["dominant_mood"]
+        emoji = mood_emoji.get(dominant, "\U0001f610")
+
+        report = f"Your Mood DNA\n\n"
+        report += f"Dominant mood: {emoji} {dominant}\n"
+        report += f"Entries analyzed: {mood_insights['total_entries']}\n\n"
+        report += f"Mood Score: {mood_insights['avg_mood_score']}/100\n"
+        report += f"Energy Score: {mood_insights['avg_energy_score']}/100\n\n"
+
+        trend_emoji = {"improving": "\U0001f4c8", "declining": "\U0001f4c9", "stable": "\U0001f4ca"}
+        report += f"Trend: {trend_emoji.get(mood_insights['trend'], '')} {mood_insights['trend'].upper()}\n\n"
+
+        report += f"Best day: {mood_insights['best_day']}\n"
+        report += f"Toughest day: {mood_insights['worst_day']}\n"
+        report += f"Best time: {mood_insights['best_time']}\n"
+        report += f"Toughest time: {mood_insights['worst_time']}\n\n"
+
+        # Mood distribution
+        report += "Mood breakdown:\n"
+        for mood, count in sorted(mood_insights["mood_distribution"].items(), key=lambda x: -x[1]):
+            pct = round(count / mood_insights["total_entries"] * 100)
+            report += f"  {mood_emoji.get(mood, '')} {mood}: {pct}%\n"
+
+        report += f"\nStew adapts its personality based on your mood patterns. Keep chatting for more accurate insights!"
+
+        await bot.send_message(chat_id, report)
+        return {"ok": True}
+
     # ── SAY / READ ALOUD / SPEAK — generate a voice note from text ──────────────
     _say_patterns = [
         "say this:", "say this :", "read this:", "read this :",
@@ -6691,7 +6928,6 @@ Requirements:
                 if page.get("content"):
                     # Summarize the page
                     llm = get_llm_client()
-                    system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Summarize the browsed page concisely for mobile."
                     page_content = page.get("content", "")[:6000]
                     page_title = page.get("title", "Unknown")
                     messages = [
@@ -6887,12 +7123,23 @@ Requirements:
             await bot.send_message(chat_id, "Agent encountered an error. Trying regular mode...")
             # Fall through to regular chat
 
+    # ── MOOD DNA: Analyze and store user mood (non-blocking) ────────────────
+    if tg_user_early and len(user_text) > 2:
+        try:
+            _mood_data = await _analyze_mood(user_text)
+            await _store_mood(db, tg_user_early.id, _mood_data, user_text)
+        except Exception as _mood_err:
+            logger.debug(f"Mood tracking skipped: {_mood_err}")
+
     # ── REGULAR CHAT WITH SEARCH + RESEARCH ────────────────────────────────────
     llm = get_llm_client()
     searcher = get_searcher()
 
     web_grounded = False
-    system = STEW_MASTER_PROMPT + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
+    # Adapt system prompt based on user mood history
+    _mood_insights = await _get_mood_insights(db, tg_user_early.id) if tg_user_early else {}
+    _mood_prompt = await _get_mood_adaptive_system_prompt(_mood_insights, STEW_MASTER_PROMPT)
+    system = _mood_prompt + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
 
     # Detect if search is needed
     needs_search = any(kw in user_lower for kw in [

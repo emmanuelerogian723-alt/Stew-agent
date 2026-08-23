@@ -15,7 +15,7 @@ import logging
 
 from server.database import get_db, AsyncSessionLocal
 from server.models import (
-    User, Conversation, APICall, Document, PaymentTransaction,
+    MoodEntry, User, Conversation, APICall, Document, PaymentTransaction,
     DeviceFingerprint, SecurityEvent, AdCampaign, FeatureRequest, UserMemory
 )
 from server.config import settings
@@ -163,6 +163,11 @@ async def admin_get_user(user_id: str, token: str, db: AsyncSession = Depends(ge
     docs = (await db.execute(select(Document).where(Document.user_id == user_id).order_by(Document.created_at.desc()).limit(20))).scalars().all()
     memories = (await db.execute(select(UserMemory).where(UserMemory.user_id == user_id).order_by(UserMemory.created_at.desc()).limit(20))).scalars().all()
     sec_events = (await db.execute(select(SecurityEvent).where(SecurityEvent.user_id == user_id).order_by(SecurityEvent.created_at.desc()).limit(20))).scalars().all()
+    mood_entries = []
+    try:
+        mood_entries = (await db.execute(select(MoodEntry).where(MoodEntry.user_id == user_id).order_by(MoodEntry.created_at.desc()).limit(20))).scalars().all()
+    except Exception:
+        pass
     return {"user": {"id": user.id, "name": user.name, "email": user.email, "plan": user.plan, "is_active": user.is_active, "voice_enabled": getattr(user, "voice_enabled", False), "preferred_voice": getattr(user, "preferred_voice", None), "language": getattr(user, "language", "en"), "persona": getattr(user, "persona", "general"), "created_at": user.created_at.isoformat() if user.created_at else None, "api_key": user.api_key[:10] + "..." if user.api_key else None}, "stats": {"total_calls": call_count, "total_conversations": len(convs), "total_documents": len(docs), "total_payments": len(payments), "total_memories": len(memories)}, "conversations": [{"id": c.id, "title": c.title, "message_count": len(c.messages) if c.messages else 0, "created_at": c.created_at.isoformat() if c.created_at else None, "updated_at": c.updated_at.isoformat() if c.updated_at else None} for c in convs], "payments": [{"id": p.id, "reference": p.reference, "plan": p.plan, "amount": p.amount, "status": p.status, "created_at": p.created_at.isoformat() if p.created_at else None} for p in payments], "documents": [{"id": d.id, "filename": d.filename, "file_type": d.file_type, "file_size": d.file_size, "created_at": d.created_at.isoformat() if d.created_at else None} for d in docs], "memories": [{"id": m.id, "category": m.category, "content": m.content[:200], "importance": m.importance, "is_active": m.is_active, "created_at": m.created_at.isoformat() if m.created_at else None} for m in memories], "security_events": [{"id": s.id, "event_type": s.event_type, "ip_address": s.ip_address, "risk_score": s.risk_score, "details": s.details, "created_at": s.created_at.isoformat() if s.created_at else None} for s in sec_events]}
 
 @router.post("/users/{user_id}/plan")

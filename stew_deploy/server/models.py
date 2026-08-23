@@ -210,3 +210,20 @@ class GeneratedWebsite(Base):
     style: Mapped[str] = mapped_column(String(30), default="premium-dark", nullable=True)
     views: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class MoodEntry(Base):
+    """S.T.E.W Mood DNA — tracks user emotional patterns over time.
+    No AI assistant does this. Stew learns when you're happiest, most stressed,
+    most productive — and adapts its personality to match your mood."""
+    __tablename__ = "mood_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mood: Mapped[str] = mapped_column(String(30), nullable=False)  # happy, excited, calm, neutral, stressed, sad, anxious, angry, tired, motivated
+    mood_score: Mapped[int] = mapped_column(Integer, default=50)  # 0-100 (0=very negative, 100=very positive)
+    energy_score: Mapped[int] = mapped_column(Integer, default=50)  # 0-100 (0=drained, 100=hyped)
+    message_snippet: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # first 100 chars of the message
+    day_of_week: Mapped[int] = mapped_column(Integer, default=0)  # 0=Mon, 6=Sun
+    hour_of_day: Mapped[int] = mapped_column(Integer, default=12)  # 0-23
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
