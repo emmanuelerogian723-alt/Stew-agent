@@ -800,10 +800,9 @@ def generate_term_paper_pdf(
             fontName="Helvetica", spaceAfter=6,
         )
         cover_title_style = ParagraphStyle(
-            "CoverTitle", parent=styles["Title"], fontSize=16, leading=22,
+            "CoverTitle", parent=styles["Title"], fontSize=15, leading=20,
             alignment=TA_CENTER, textColor=colors.HexColor("#1a1a1a"),
             fontName="Helvetica-Bold", spaceAfter=20,
-            textDecoration="underline",
         )
         cover_field_style = ParagraphStyle(
             "CoverField", parent=styles["Normal"], fontSize=12, leading=18,
@@ -820,8 +819,7 @@ def generate_term_paper_pdf(
         toc_title_style = ParagraphStyle(
             "TOCTitle", parent=styles["Heading1"], fontSize=13, leading=16,
             textColor=colors.HexColor("#1a1a1a"), fontName="Helvetica-Bold",
-            spaceAfter=16, alignment=TA_CENTER,
-            textDecoration="underline",
+            spaceAfter=16, alignment=TA_LEFT,
         )
         toc_entry_style = ParagraphStyle(
             "TOCEntry", parent=styles["Normal"], fontSize=12, leading=20,
@@ -893,7 +891,7 @@ def generate_term_paper_pdf(
         # Presented by
         story.append(Paragraph("PRESENTED BY", cover_label_style))
         if author:
-            story.append(Paragraph(_sanitize_text(author), cover_field_bold))
+            story.append(Paragraph(_sanitize_text(author), cover_field_style))
         else:
             story.append(Paragraph("_______________________________________", cover_field_style))
 
@@ -927,7 +925,7 @@ def generate_term_paper_pdf(
         story.append(Spacer(1, 0.8 * cm))
 
         # Date
-        story.append(Paragraph(_sanitize_text(paper_date), cover_field_bold))
+        story.append(Paragraph(_sanitize_text(paper_date), cover_field_style))
 
         story.append(PageBreak())
 
@@ -1078,6 +1076,21 @@ def generate_term_paper_pdf(
         # ═══════════════════════════════════════════════════════
         # PAGE FOOTER
         # ═══════════════════════════════════════════════════════
+        def _cover_border(canv, doc_):
+            """Draw a double-border box around the cover page, matching UNN format."""
+            canv.saveState()
+            canv.setStrokeColor(colors.HexColor("#1a1a1a"))
+            outer_margin = 1.0 * cm
+            inner_margin = 1.2 * cm
+            canv.setLineWidth(1.4)
+            canv.rect(outer_margin, outer_margin,
+                      PAGE_W - 2 * outer_margin, PAGE_H - 2 * outer_margin)
+            canv.setLineWidth(0.6)
+            canv.rect(outer_margin + inner_margin * 0.25, outer_margin + inner_margin * 0.25,
+                      PAGE_W - 2 * (outer_margin + inner_margin * 0.25),
+                      PAGE_H - 2 * (outer_margin + inner_margin * 0.25))
+            canv.restoreState()
+
         def _page_footer(canv, doc_):
             canv.saveState()
             page_num = canv.getPageNumber()
@@ -1088,7 +1101,7 @@ def generate_term_paper_pdf(
                 canv.drawCentredString(PAGE_W / 2, 1.2 * cm, str(page_num))
             canv.restoreState()
 
-        doc.build(story, onFirstPage=lambda c, d: None, onLaterPages=_page_footer)
+        doc.build(story, onFirstPage=_cover_border, onLaterPages=_page_footer)
 
         filename = f"{title.replace(' ', '_')[:50]}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pdf"
         return {
