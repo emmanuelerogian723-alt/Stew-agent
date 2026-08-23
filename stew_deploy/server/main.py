@@ -3946,7 +3946,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif action == "companies":
             await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN")
         elif action == "tools":
-            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
+            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx /termpaper\nTerm Papers: write a term paper on <topic>\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
         elif action == "clear":
             try:
                 conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
@@ -6681,6 +6681,15 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # ── DOCUMENT GENERATION ───────────────────────────────────────────────────
     doc_keywords = {
+        "term_paper": [
+            "term paper", "termpaper", "seminar paper", "seminar presentation",
+            "write a paper on", "write a paper about", "write me a paper",
+            "academic paper", "research paper", "course paper",
+            "write a term paper", "create a term paper", "make a term paper",
+            "generate a term paper", "presentation document", "academic presentation",
+            "write a seminar", "create a seminar", "term paper on",
+            "term paper about", "term paper for",
+        ],
         "pdf": ["make a pdf", "create a pdf", "generate a pdf", "make pdf", "create pdf",
                 "generate pdf", "pdf of", "pdf about", "pdf for", "convert to pdf"],
         "docx": ["make a word", "create a word", "generate a word", "make word",
@@ -6842,6 +6851,128 @@ Rules:
                 # Auto-theme detection + real AI-generated hero images on title/closing slides.
                 # Wrapped in a thread since image fetching does blocking network I/O.
                 doc_result = await asyncio.to_thread(generate_pptx, slides, doc_topic)
+            elif doc_type == "term_paper":
+                # ── Term Paper: Extract user details from the message ──
+                import re as _re_tp
+                tp_university = "University of Nigeria, Nsukka"
+                tp_department = ""
+                tp_author = ""
+                tp_reg_no = ""
+                tp_level = ""
+                tp_course_code = ""
+                tp_course_title = ""
+                tp_lecturer = ""
+                tp_date = ""
+                tp_label = "A TERM PAPER ON"
+                tp_details = ""
+
+                # Extract university
+                uni_match = _re_tp.search(r'(?:university|UNIVERSITY)\s+of\s+([A-Za-z\s,]+?)(?:\s+(?:department|dept|course|lecturer|level|reg|$|,|\.)|\s*$)', user_text, _re_tp.IGNORECASE)
+                if uni_match:
+                    tp_university = f"University of {uni_match.group(1).strip()}"
+
+                # Extract department
+                dept_match = _re_tp.search(r'(?:department|dept)\s+(?:of\s+)?([A-Za-z\s,]+?)(?:\s+(?:course|lecturer|level|reg|university|$|,|\.)|\s*$)', user_text, _re_tp.IGNORECASE)
+                if dept_match:
+                    tp_department = f"Department of {dept_match.group(1).strip()}"
+
+                # Extract course code (e.g., "MCB 202", "BIO 101")
+                cc_match = _re_tp.search(r'\b([A-Z]{2,4})\s*(\d{2,4})\b', user_text)
+                if cc_match:
+                    tp_course_code = f"{cc_match.group(1)} {cc_match.group(2)}"
+
+                # Extract course title (after "course title" or after the course code)
+                ct_match = _re_tp.search(r'course\s*(?:code|title)?\s*:?\s*(?:[A-Z]{2,4}\s*\d{2,4}\s*[\u2013\-\u2014:]?\s*)?([A-Z][A-Za-z\s]+?)(?:\n|,|\.|lecturer|$)', user_text, _re_tp.IGNORECASE)
+                if ct_match:
+                    tp_course_title = ct_match.group(1).strip()
+
+                # Extract lecturer
+                lec_match = _re_tp.search(r'(?:lecturer|lect|professor|prof\.?)\s*:?\s*([A-Z][A-Za-z\s\.]+?)(?:\n|,|\.|reg|level|$)', user_text, _re_tp.IGNORECASE)
+                if lec_match:
+                    tp_lecturer = lec_match.group(1).strip()
+                    if not tp_lecturer.lower().startswith("prof"):
+                        tp_lecturer = f"Prof. {tp_lecturer}"
+
+                # Extract reg number
+                reg_match = _re_tp.search(r'(?:reg(?:istration)?\s*(?:no|number|num)?\.?\s*:?\s*)([A-Za-z0-9/\-]+)', user_text, _re_tp.IGNORECASE)
+                if reg_match:
+                    tp_reg_no = reg_match.group(1).strip()
+
+                # Extract level (e.g., "200 level", "100 level")
+                lvl_match = _re_tp.search(r'(\d{3})\s*level', user_text, _re_tp.IGNORECASE)
+                if lvl_match:
+                    tp_level = f"{lvl_match.group(1)} Level"
+                    if tp_department:
+                        tp_level = f"{tp_department.replace('Department of ', '')}, {tp_level}"
+
+                # Extract name (after "presented by", "by", "my name is", "name is")
+                name_match = _re_tp.search(r'(?:presented by|by|my name is|name is|I am|I\'m)\s+([A-Z][A-Za-z\s]+?)(?:\n|,|\.|reg|level|course|$)', user_text, _re_tp.IGNORECASE)
+                if name_match:
+                    tp_author = name_match.group(1).strip()
+
+                # Extract date
+                date_match = _re_tp.search(r'(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+\s*\d{4})', user_text, _re_tp.IGNORECASE)
+                if date_match:
+                    tp_date = date_match.group(1)
+
+                # Extract "for" or "about" topic if it differs from doc_topic
+                # If user said "term paper on enzyme production for MCB 202", the keyword
+                # extraction might have grabbed too much. Clean it up:
+                tp_topic = doc_topic
+                # Strip trailing details after the core topic
+                for stopper in [" for ", " course ", " lecturer ", " reg ", " level ",
+                               " presented by", " department", " university"]:
+                    si = tp_topic.lower().find(stopper)
+                    if si > 5:
+                        tp_topic = tp_topic[:si].strip()
+                if not tp_topic:
+                    tp_topic = doc_topic
+
+                # Build LLM prompt for academic term paper
+                tp_system = (
+                    "You are an academic writer creating a university term paper. "
+                    "Follow this STRICT format:\n"
+                    "1. Use numbered section headings like '1.0 Introduction', '2.0 Title', etc.\n"
+                    "2. Use numbered subsections like '4.1 Title', '4.2 Title' where appropriate.\n"
+                    "3. Write in formal academic English with well-structured paragraphs.\n"
+                    "4. Include 5-10 main sections covering the topic thoroughly.\n"
+                    "5. End with a 'References' section containing 5-10 APA-format citations with DOIs.\n"
+                    "6. Use plain ASCII characters only. Do NOT use special unicode symbols.\n"
+                    "7. Each section should have 2-4 paragraphs of substantive content.\n"
+                    "8. Use bullet points (with - prefix) for lists where appropriate.\n"
+                    "9. Write 2000-4000 words total. Be thorough and detailed.\n"
+                    "10. Start immediately with '1.0 Introduction' — do NOT include a title or cover page.\n"
+                    "11. Write a COMPLETE document — never cut off mid-sentence."
+                )
+                tp_user = (
+                    f"Write a complete academic term paper about: {tp_topic}.\n\n"
+                    f"Format: Numbered sections (1.0, 2.0, 3.0...) with subsections (4.1, 4.2...) where needed.\n"
+                    f"Include: Introduction, 3-8 body sections covering different aspects, a Conclusion section, and a References section.\n"
+                    f"Write in formal academic style suitable for a university "
+                    f"{tp_level or 'undergraduate'} student"
+                    f"{' in ' + tp_department.replace('Department of ', '') if tp_department else ''}.\n"
+                    f"Include real APA citations with author names, years, journal names, and DOIs."
+                )
+                messages = [
+                    {"role": "system", "content": tp_system},
+                    {"role": "user", "content": tp_user},
+                ]
+                result = await asyncio.to_thread(llm.chat, messages, max_tokens=5000)
+                raw_content = result["content"]
+
+                doc_result = generate_term_paper_pdf(
+                    raw_content, title=tp_topic,
+                    university=tp_university,
+                    department=tp_department,
+                    author=tp_author,
+                    reg_no=tp_reg_no,
+                    level=tp_level,
+                    course_code=tp_course_code,
+                    course_title=tp_course_title,
+                    lecturer=tp_lecturer,
+                    paper_date=tp_date,
+                    doc_type_label=tp_label,
+                )
             else:
                 # For PDF and DOCX, generate text content
                 system_prompt = f"""You are a world-class professional writer and subject matter expert. Create a comprehensive, well-structured document about: {doc_topic}.
