@@ -93,6 +93,7 @@ def _tg_already_processed(update_id) -> bool:
 
 from server.system_prompt import STEW_MASTER_PROMPT
 from server.admin_endpoints import router as admin_router
+from server.openai_compat import router as openai_router
 from server.clean_output import clean_response
 from server.email_service import send_welcome_email, send_password_reset_email, send_password_changed_email
 from server.auth import create_reset_token, consume_reset_token
@@ -183,6 +184,7 @@ app = FastAPI(
 
 # Register admin API routes
 app.include_router(admin_router)
+app.include_router(openai_router)
 
 app.add_middleware(
     CORSMiddleware,
