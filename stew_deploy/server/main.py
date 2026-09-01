@@ -7312,7 +7312,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_message(chat_id, report)
         return {"ok": True}
 
-    # ── SAY / READ ALOUD / SPEAK — generate a voice note from text ──────────────
+    # ── SAY / READ ALOUD / SPEAK / VOICE NOTE REQUEST — generate a voice note ───
+    import re as _re
     _say_patterns = [
         "say this:", "say this :", "read this:", "read this :",
         "read aloud:", "speak:", "speak this:", "voice this:",
@@ -7326,10 +7327,32 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             _say_match = pat
             break
 
-    if _say_match:
-        script_text = user_text[len(_say_match):].strip()
+    # Broader natural-language voice note request, e.g. "send me a voice note
+    # wishing me happy new month", "record a voicenote saying good morning",
+    # "make me a voice note about..." — these don't start with an exact
+    # "say this:" prefix, so they need their own detection + LLM composition.
+    _voice_request_rx = _re.search(
+        r'\b(?:send|give|record|make|create|generate|drop)\s+(?:me\s+)?(?:a\s+|an\s+)?voice\s*-?\s*note\b(?:\s+for\s+me)?(.*)',
+        _lower_msg
+    ) if not _say_match else None
+
+    if _say_match or _voice_request_rx:
+        _needs_composition = False
+        if _say_match:
+            script_text = user_text[len(_say_match):].strip()
+        else:
+            _tail_start = _voice_request_rx.start(1)
+            description = user_text[_tail_start:].strip()
+            # Strip common connector words: "wishing me", "saying", "that says", "about", ":"
+            description = _re.sub(
+                r'^[:\-,]*\s*(?:wishing\s+me|wishing|saying\s+that|saying|that\s+says|about|for)?\s*',
+                '', description, flags=_re.I
+            ).strip()
+            script_text = description
+            _needs_composition = True
+
         if not script_text or len(script_text) < 3:
-            await bot.send_message(chat_id, "Send the text you want me to read aloud.\nExample: say this: Hello, this is a test message.")
+            await bot.send_message(chat_id, "Send the text you want me to read aloud, or describe what the voice note should say.\nExample: say this: Hello, this is a test message.\nOr: send me a voice note wishing me happy new month")
             return {"ok": True}
 
         # Check for voice preference in the message (e.g. "say this in british: ...")
@@ -7360,6 +7383,26 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
         # Use user's preferred voice or override or default to Nigerian female
         _voice_to_use = _voice_override or getattr(tg_user, "preferred_voice", None) or "en-NG-EzinneNeural"
+
+        # Natural-language requests give a description ("wishing me happy new
+        # month"), not exact words to read — compose an actual short spoken
+        # message from it via the LLM before synthesizing, so the voice note
+        # says something real instead of literally reading the instruction back.
+        if _needs_composition:
+            try:
+                _compose_llm = get_llm_client()
+                _compose_result = await asyncio.to_thread(
+                    _compose_llm.chat,
+                    [
+                        {"role": "system", "content": "You write short, warm, natural-sounding spoken messages for voice notes. Reply with ONLY the message to be spoken — no quotes, no labels, no extra commentary, no instructions. Keep it under 40 words."},
+                        {"role": "user", "content": f"Write a voice note message for this request: {script_text}"}
+                    ]
+                )
+                composed = clean_response(_compose_result["content"]).strip().strip('"')
+                if composed:
+                    script_text = composed
+            except Exception as _ce:
+                logger.warning(f"Voice note composition failed, using raw description: {_ce}")
 
         await bot.send_message(chat_id, f"Recording voice note... 🎙️")
         await bot.send_chat_action(chat_id, "record_voice")
