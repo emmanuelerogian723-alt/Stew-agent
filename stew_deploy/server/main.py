@@ -595,6 +595,38 @@ async def serve_generated_website(site_id: str, db: AsyncSession = Depends(get_d
 
 
 
+@app.get("/admin/sites/debug")
+async def admin_sites_debug(api_key: str = "", db: AsyncSession = Depends(get_db)):
+    """Debug endpoint to check generated websites table."""
+    from sqlalchemy import text as sa_text
+    # Check table exists
+    try:
+        result = await db.execute(sa_text("SELECT count(*) FROM generated_websites"))
+        count = result.scalar()
+        # Get all sites
+        result = await db.execute(
+            select(GeneratedWebsite).order_by(GeneratedWebsite.created_at.desc()).limit(10)
+        )
+        sites = result.scalars().all()
+        return {
+            "table_exists": True,
+            "total_sites": count,
+            "recent_sites": [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "telegram_user_id": s.telegram_user_id,
+                    "created_at": str(s.created_at) if s.created_at else None,
+                    "views": s.views,
+                    "html_size": len(s.html) if s.html else 0,
+                }
+                for s in sites
+            ],
+        }
+    except Exception as e:
+        return {"table_exists": False, "error": str(e)[:300]}
+
+
 @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
 async def reset_password_page(token: str = ""):
     """Redirect /reset-password?token=xxx to landing page which handles the reset UI."""
