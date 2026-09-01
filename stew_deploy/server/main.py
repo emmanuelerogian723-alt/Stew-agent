@@ -3273,19 +3273,53 @@ async def _transcribe_audio_bytes(file_bytes: bytes, file_name: str = "audio.ogg
 
 # ─── Voice Synthesis (edge-tts) ─────────────────────────────────────────────────
 VOICE_OPTIONS = {
+    # US English
     "aria": ("en-US-AriaNeural", "Aria — warm female (US English)"),
     "jenny": ("en-US-JennyNeural", "Jenny — friendly female (US English)"),
     "guy": ("en-US-GuyNeural", "Guy — confident male (US English)"),
     "davis": ("en-US-ChristopherNeural", "Davis — calm male (US English)"),
     "emma": ("en-US-EmmaNeural", "Emma — gentle female (US English)"),
+    # British English
     "british_f": ("en-GB-LibbyNeural", "Libby — British female"),
     "british_m": ("en-GB-RyanNeural", "Ryan — British male"),
+    # Nigerian English (most requested!)
     "nigeria": ("en-NG-EzinneNeural", "Ezinne — Nigerian female"),
     "nigeria_m": ("en-NG-AbeoNeural", "Abeo — Nigerian male"),
+    # Kenyan English
+    "kenya": ("en-KE-AsiliaNeural", "Asilia — Kenyan female"),
+    "kenya_m": ("en-KE-ChilembaNeural", "Chilemba — Kenyan male"),
+    # South African English
+    "sa_f": ("en-ZA-LeahNeural", "Leah — South African female"),
+    "sa_m": ("en-ZA-LukeNeural", "Luke — South African male"),
+    # Tanzanian English
+    "tz_f": ("en-TZ-ImaniNeural", "Imani — Tanzanian female"),
+    "tz_m": ("en-TZ-ElimuNeural", "Elimu — Tanzanian male"),
+    # Ghanaian Twi/Akan (via Afrikaans bridge — closest available)
+    "afrikaans_f": ("af-ZA-AdriNeural", "Adri — Afrikaans female (SA)"),
+    "afrikaans_m": ("af-ZA-WillemNeural", "Willem — Afrikaans male (SA)"),
+    # Zulu
+    "zulu_f": ("zu-ZA-ThandoNeural", "Thando — Zulu female"),
+    "zulu_m": ("zu-ZA-ThembaNeural", "Themba — Zulu male"),
+    # Swahili
+    "swahili_f": ("sw-KE-ZuriNeural", "Zuri — Swahili female (Kenya)"),
+    "swahili_m": ("sw-KE-RafikiNeural", "Rafiki — Swahili male (Kenya)"),
+    # Indian English
+    "indian_f": ("en-IN-NeerjaNeural", "Neerja — Indian female"),
+    "indian_m": ("en-IN-PrabhatNeural", "Prabhat — Indian male"),
+    # Other languages
     "french_f": ("fr-FR-DeniseNeural", "Denise — French female"),
     "spanish": ("es-ES-ElviraNeural", "Elvira — Spanish female"),
     "hindi": ("hi-IN-SwaraNeural", "Swara — Hindi female"),
     "arabic": ("ar-SA-ZariyahNeural", "Zariyah — Arabic female"),
+    "portuguese_f": ("pt-BR-FranciscaNeural", "Francisca — Portuguese female"),
+    "chinese_f": ("zh-CN-XiaoxiaoNeural", "Xiaoxiao — Chinese female"),
+    "japanese_f": ("ja-JP-NanamiNeural", "Nanami — Japanese female"),
+    "korean_f": ("ko-KR-SunHiNeural", "Sun-Hi — Korean female"),
+    "turkish_f": ("tr-TR-EmelNeural", "Emel — Turkish female"),
+    "vietnamese_f": ("vi-VN-HoaiMyNeural", "Hoai My — Vietnamese female"),
+    "thai_f": ("th-TH-PremwadeeNeural", "Premwadee — Thai female"),
+    "filipino_f": ("en-PH-RosaNeural", "Rosa — Filipino female"),
+    "singapore_f": ("en-SG-LunaNeural", "Luna — Singaporean female"),
 }
 
 async def _synthesize_voice(text: str, voice: str = "en-US-AriaNeural") -> tuple[bytes, str]:
@@ -5181,6 +5215,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             if mood:
                 info_line += f" | {mood.title()}"
             engine_label = {
+                "lyria-3-pro": "Google Lyria 3 Pro (studio vocals)",
+                "aimusic-sonic-v5": "AI Music API — Sonic V5 (studio vocals)",
                 "ace-step-1.5": "ACE-Step 1.5 (full singing)",
                 "musicgen-small": "MusicGen (instrumental)",
                 "tts-fallback": "TTS (spoken lyrics)",

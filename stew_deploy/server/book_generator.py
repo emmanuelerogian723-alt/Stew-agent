@@ -448,6 +448,161 @@ def _detect_genre(text: str) -> str:
     return ""
 
 
+def _generate_lyria3_song(prompt: str, lyrics: str, genre: str = "", mood: str = "",
+                               duration_seconds: int = 90, gemini_key: str = "") -> tuple:
+    """Generate a full song with real vocals via Google Lyria 3 Pro (Gemini API).
+    Suno-quality output: 44.1kHz stereo, vocals, verses, choruses, bridges.
+    Returns (audio_bytes, format_ext) or (None, None) on failure."""
+    if not gemini_key:
+        return (None, None)
+    try:
+        import urllib.request
+        import json as _json
+
+        # Build a rich prompt for Lyria
+        parts = []
+        if genre:
+            parts.append(f"Genre: {genre}")
+        if mood:
+            parts.append(f"Mood: {mood}")
+        parts.append(f"Duration: ~{min(duration_seconds, 180)} seconds")
+        if lyrics:
+            parts.append(f"Lyrics:\n{lyrics[:3000]}")
+        else:
+            parts.append(f"Theme: {prompt[:200]}")
+        full_prompt = ". ".join(parts)
+
+        url = "https://generativelanguage.googleapis.com/v1beta/interactions"
+        payload = _json.dumps({
+            "model": "lyria-3-pro-preview",
+            "input": full_prompt,
+        }).encode()
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": gemini_key,
+            },
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=120)
+        result = _json.loads(resp.read().decode())
+
+        # Extract base64 audio from response
+        audio_data = None
+        if "outputAudio" in result and result["outputAudio"]:
+            audio_b64 = result["outputAudio"].get("data", "")
+            if audio_b64:
+                import base64
+                audio_data = base64.b64decode(audio_b64)
+        elif "steps" in result:
+            for step in result["steps"]:
+                if "audio" in step and step["audio"].get("data"):
+                    import base64
+                    audio_data = base64.b64decode(step["audio"]["data"])
+                    break
+
+        if audio_data and len(audio_data) > 1000:
+            logger.info(f"Lyria 3 Pro success: {len(audio_data)} bytes")
+            return (audio_data, "mp3")
+        return (None, None)
+
+    except Exception as e:
+        logger.warning(f"Lyria 3 generation failed: {e}")
+        return (None, None)
+
+
+def _generate_aimusic_song(prompt: str, lyrics: str, genre: str = "", mood: str = "",
+                            api_key: str = "", duration_seconds: int = 90) -> tuple:
+    """Generate a full song with vocals via AI Music API (aimusicapi.ai).
+    Suno V5-class output: studio-quality vocals, instrumentals, stems.
+    Returns (audio_bytes, format_ext) or (None, None) on failure."""
+    if not api_key:
+        return (None, None)
+    try:
+        import urllib.request
+        import json as _json
+
+        # Build the prompt — use lyrics if we have them, otherwise use the topic
+        song_prompt = lyrics[:2000] if lyrics else f"A song about {prompt[:200]}"
+        style_tags = []
+        if genre:
+            style_tags.append(genre)
+        if mood:
+            style_tags.append(mood)
+
+        # Step 1: Submit generation request
+        url = "https://api.aimusicapi.ai/api/v1/generate"
+        payload = _json.dumps({
+            "prompt": song_prompt,
+            "style": ", ".join(style_tags) if style_tags else "auto",
+            "model": "sonic-v5",
+            "duration": min(duration_seconds, 240),
+            "instrumental": False,
+            "with_lyrics": True,
+        }).encode()
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=60)
+        result = _json.loads(resp.read().decode())
+
+        task_id = result.get("task_id") or result.get("id")
+        if not task_id:
+            # Some endpoints return audio directly
+            if result.get("audio_url"):
+                audio_resp = urllib.request.urlopen(result["audio_url"], timeout=60)
+                audio_data = audio_resp.read()
+                if len(audio_data) > 1000:
+                    return (audio_data, "mp3")
+            return (None, None)
+
+        # Step 2: Poll for completion
+        import time as _time
+        poll_url = f"https://api.aimusicapi.ai/api/v1/status/{task_id}"
+        for attempt in range(20):
+            _time.sleep(8)
+            poll_req = urllib.request.Request(
+                poll_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                method="GET",
+            )
+            try:
+                poll_resp = urllib.request.urlopen(poll_req, timeout=30)
+                poll_result = _json.loads(poll_resp.read().decode())
+            except Exception:
+                continue
+
+            status = poll_result.get("status", "").lower()
+            if status in ("completed", "success", "done"):
+                audio_url = poll_result.get("audio_url") or poll_result.get("result", {}).get("audio_url")
+                if audio_url:
+                    audio_resp = urllib.request.urlopen(audio_url, timeout=60)
+                    audio_data = audio_resp.read()
+                    if len(audio_data) > 1000:
+                        logger.info(f"AI Music API success: {len(audio_data)} bytes")
+                        return (audio_data, "mp3")
+                break
+            elif status in ("failed", "error"):
+                logger.warning(f"AI Music API task failed: {poll_result.get('error', 'unknown')}")
+                break
+
+        return (None, None)
+
+    except Exception as e:
+        logger.warning(f"AI Music API generation failed: {e}")
+        return (None, None)
+
+
 def _generate_ace_step_song(tags: str, lyrics: str, duration: float = 60.0,
                              hf_token: str = "") -> tuple:
     """Generate a real sung song (vocals + instrumentation) via the free,
@@ -582,24 +737,55 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
     )
     cover_bytes = _fetch_cover_image(cover_prompt, width=1024, height=1024)
 
-    # Step 3: Generate audio — try engines in order of quality
+    # Step 3: Generate audio — try engines in order of quality (best first)
     audio_bytes = None
     audio_format = "wav"
     engine_used = "none"
 
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY") or ""
+    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+    aimusic_key = os.environ.get("AIMUSIC_API_KEY") or ""
 
-    # Engine 1: ACE-Step 1.5 — real singing with the actual lyrics (free ZeroGPU)
-    logger.info(f"Attempting song generation via ACE-Step 1.5 (genre={genre})...")
-    ace_bytes, ace_ext = _generate_ace_step_song(tags, lyrics, duration=min(max(duration_seconds, 30), 90),
-                                                  hf_token=hf_token)
-    if ace_bytes and len(ace_bytes) > 1000:
-        audio_bytes = ace_bytes
-        audio_format = ace_ext or "mp3"
-        engine_used = "ace-step-1.5"
-        logger.info(f"ACE-Step succeeded: {len(audio_bytes)} bytes ({audio_format})")
+    # Engine 1: Google Lyria 3 Pro — Suno-quality vocals, 44.1kHz stereo (free via Gemini API)
+    if gemini_key:
+        logger.info(f"Attempting song generation via Google Lyria 3 Pro (genre={genre})...")
+        lyria_bytes, lyria_ext = _generate_lyria3_song(
+            prompt, lyrics, genre=genre, mood=mood,
+            duration_seconds=min(max(duration_seconds, 30), 180),
+            gemini_key=gemini_key,
+        )
+        if lyria_bytes and len(lyria_bytes) > 1000:
+            audio_bytes = lyria_bytes
+            audio_format = lyria_ext or "mp3"
+            engine_used = "lyria-3-pro"
+            logger.info(f"Lyria 3 Pro succeeded: {len(audio_bytes)} bytes ({audio_format})")
 
-    # Engine 2: MusicGen-small — instrumental only, but fast and reliable
+    # Engine 2: AI Music API — Suno V5-class generation (30 free credits, no card)
+    if not audio_bytes and aimusic_key:
+        logger.info("Falling back to AI Music API (Sonic V5)...")
+        aim_bytes, aim_ext = _generate_aimusic_song(
+            prompt, lyrics, genre=genre, mood=mood,
+            api_key=aimusic_key,
+            duration_seconds=min(max(duration_seconds, 30), 240),
+        )
+        if aim_bytes and len(aim_bytes) > 1000:
+            audio_bytes = aim_bytes
+            audio_format = aim_ext or "mp3"
+            engine_used = "aimusic-sonic-v5"
+            logger.info(f"AI Music API succeeded: {len(audio_bytes)} bytes ({audio_format})")
+
+    # Engine 3: ACE-Step 1.5 — real singing with the actual lyrics (free ZeroGPU)
+    if not audio_bytes:
+        logger.info(f"Falling back to ACE-Step 1.5 (genre={genre})...")
+        ace_bytes, ace_ext = _generate_ace_step_song(tags, lyrics, duration=min(max(duration_seconds, 30), 90),
+                                                      hf_token=hf_token)
+        if ace_bytes and len(ace_bytes) > 1000:
+            audio_bytes = ace_bytes
+            audio_format = ace_ext or "mp3"
+            engine_used = "ace-step-1.5"
+            logger.info(f"ACE-Step succeeded: {len(audio_bytes)} bytes ({audio_format})")
+
+    # Engine 4: MusicGen-small — instrumental only, but fast and reliable
     if not audio_bytes and hf_token:
         try:
             logger.info("Falling back to MusicGen-small (instrumental)...")

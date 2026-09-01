@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: str = ""
     MISTRAL_API_KEY: str = ""          # NEW: Mistral AI
 
+    # Music Generation (Suno-quality)
+    GEMINI_API_KEY: str = ""           # Google Gemini API — powers Lyria 3 music gen
+    AIMUSIC_API_KEY: str = ""          # aimusicapi.ai — Suno V5-style generation (30 free credits)
+
     # Search
     SERPER_API_KEY: str = ""
 
