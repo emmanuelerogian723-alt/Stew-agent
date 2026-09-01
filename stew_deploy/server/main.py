@@ -4551,7 +4551,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif action == "companies":
             await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /proposal /resume /xlsx\n\nScheduler: /schedule — automate recurring tasks (daily reports, crypto alerts, reminders)\n\nMeeting minutes now include a .ics file you can import into Google/Outlook/Apple Calendar.\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN\nExample: /resume Name: John Doe, Role: Marketer, Experience: 3 years\nExample: /schedule create daily 09:30 Send me crypto price summary")
         elif action == "tools":
-            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx /termpaper\nTerm Papers: write a term paper on <topic>\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription\nSend videos for AI video reading (frame analysis + audio transcription)")
+            await bot.send_message(chat_id, "📚 *S.T.E.W Features*\n\n*FREE (50 msgs/month):*\nChat, /weather, /joke, /quote, /define, /wiki, /math, /currency, /news, /qr\n\n*PREMIUM (Upgrade to unlock):*\n🎵 /song — AI music with vocals\n📖 /book — Full book generation\n🤣 /meme — AI meme generator\n✍️ /caption — Viral social captions\n🌐 /webbuild — Motion-design websites\n📄 /pdf /docx /xlsx /pptx — Document generation\n💻 /code — Code execution\n🔬 /research — Deep research\n📊 /stock /forex /crypto /signal — Finance tools\n🎬 /smartclip /createvideo — AI video tools\n🎙️ /voice — Voice notes (36 accents)\n🧾 /invoice — Invoice generation\n\n*Upgrade:* /upgrade or /plan\n\nSend photos for OCR, voice notes for transcription, videos for AI analysis.")
         elif action == "clear":
             try:
                 conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
@@ -4567,23 +4567,24 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             # Trigger help by falling through - just send help text directly
             help_text = (
                 "S.T.E.W Commands\n\n"
-                "Students: /quiz /flashcards /studyguide /summarize /translate /solve /cite\n"
-                "Lecturers: /lessonplan /rubric /grade\n"
-                "Companies: /invoice /meeting /swot /businessplan /budget /proposal /resume\n"
-                "Tools: /research /code /menu /clear\nQuick: /weather /currency /news /joke /quote /define /math /qr /wiki\n"
-                "Documents: /pdf /docx /xlsx /pptx\n"
-                "Books: /book topic (up to 200 pages)\n"
-                "Songs: /song topic (AI music + lyrics)\n"
-                "Images: generate image of...\n"
-                "Sites: /webbuild a coffee shop in Lagos (any style — describe what you want)\n"
-                "About: /about (who built S.T.E.W)\n"
-                "Owner: /owner (MUTYINT info)\n"
-                "About: /about\n"
-                "Owner: /owner\n"
-                "Memes: /meme when the code finally works\n"
-                "Captions: /caption viral social media text\n"
-                "Browse: browse https://...\n"
-                "Send photos/PDFs for OCR, voice notes for transcription"
+                "━━━ FREE (50 msgs/month) ━━━\n"
+                "Chat, /weather, /joke, /quote, /define, /wiki, /math, /currency, /news, /qr\n\n"
+                "━━━ PREMIUM (Upgrade required) ━━━\n"
+                "🎵 /song — AI music with vocals (Lyria 3 / YuE / ACE-Step)\n"
+                "📖 /book — Full book generation with covers\n"
+                "🤣 /meme — AI meme generator\n"
+                "✍️ /caption — Viral social media captions\n"
+                "🌐 /webbuild — Motion-design websites\n"
+                "📄 /pdf /docx /xlsx /pptx — Document generation\n"
+                "💻 /code — Code execution\n"
+                "🔬 /research — Deep research\n"
+                "📊 /stock /forex /crypto /signal — Finance tools\n"
+                "🎬 /smartclip /createvideo — AI video tools\n"
+                "🎙️ /voice — Voice notes (36 accents)\n"
+                "🧾 /invoice — Invoice generation\n"
+                "🎓 /quiz /flashcards /studyguide — Student tools\n\n"
+                "Type /upgrade to unlock premium features\n"
+                "Type /plan to see pricing"
             )
             await bot.send_message(chat_id, help_text)
         elif action in ("upgrade_student", "upgrade_pro", "upgrade_business"):
@@ -5237,6 +5238,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             engine_label = {
                 "lyria-3-pro": "Google Lyria 3 Pro (studio vocals)",
                 "aimusic-sonic-v5": "AI Music API — Sonic V5 (studio vocals)",
+                "yue-opensource": "YuE (open-source vocals)",
                 "ace-step-1.5": "ACE-Step 1.5 (full singing)",
                 "musicgen-small": "MusicGen (instrumental)",
                 "tts-fallback": "TTS (spoken lyrics)",
@@ -8567,7 +8569,7 @@ async def google_oauth_login(body: dict, request: Request, db: AsyncSession = De
         "name": user.name,
         "email": user.email,
         "plan": user.plan,
-        "calls_limit": 1500 if user.plan == "free" else (15000 if user.plan == "pro" else 100000),
+        "calls_limit": settings.PLAN_CALL_LIMITS.get(user.plan, 50),
         "success": True,
     }
 
@@ -8952,11 +8954,18 @@ class CreateVideoRequest(BM):
     voice: str = "aria"
 
 
-async def _require_key_and_quota(api_key: str, db, endpoint: str = ""):
-    """Shared helper: validate API key and check quota. Returns user or raises."""
+async def _require_key_and_quota(api_key: str, db, endpoint: str = "", min_tier: int = 0):
+    """Shared helper: validate API key, check quota, and enforce plan tier.
+    min_tier: 0=any plan, 1=Student+, 2=Pro+, 3=Business+
+    Returns user or raises HTTPException."""
     user = await _safe_get_user(api_key, db)
     if not user:
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    # Check plan tier for premium endpoints
+    if min_tier > 0 and _plan_tier(user.plan) < min_tier:
+        plan_names = {1: "Student", 2: "Pro", 3: "Business"}
+        needed = plan_names.get(min_tier, "paid")
+        raise HTTPException(403, f"This feature requires {needed} plan or higher. Upgrade at /upgrade or https://stew-agent.onrender.com/dashboard")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
         raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
@@ -8967,7 +8976,7 @@ async def _require_key_and_quota(api_key: str, db, endpoint: str = ""):
 async def api_generate_song(body: SongRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Generate a complete AI song with vocals, lyrics, and album cover.
     Engines: Google Lyria 3 Pro -> AI Music API -> ACE-Step -> MusicGen -> TTS"""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/song")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/song", min_tier=1)
 
     import asyncio as _asyncio
     from server.book_generator import generate_song
@@ -9051,7 +9060,7 @@ async def api_generate_voice(body: VoiceRequest, background_tasks: BackgroundTas
 async def api_generate_book(body: BookRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Generate a complete book with chapters, cover, and optional PDF.
     Uses LLM for content generation + Pollinations for cover art."""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/book")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/book", min_tier=1)
 
     import asyncio as _asyncio
     from server.book_generator import generate_book
@@ -9081,7 +9090,7 @@ async def api_generate_book(body: BookRequest, background_tasks: BackgroundTasks
 @app.post("/generate/meme")
 async def api_generate_meme(body: MemeRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Generate an AI meme image from text. Uses Pollinations FLUX (free, no key)."""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/meme")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/meme", min_tier=1)
 
     import httpx
     import urllib.parse
@@ -9110,7 +9119,7 @@ async def api_generate_meme(body: MemeRequest, background_tasks: BackgroundTasks
 @app.post("/generate/caption")
 async def api_generate_caption(body: CaptionRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Generate viral social media captions for Instagram, TikTok, X, etc."""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/caption")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/caption", min_tier=1)
 
     llm = get_llm_client()
     platform_map = {
@@ -9142,7 +9151,7 @@ async def api_generate_caption(body: CaptionRequest, background_tasks: Backgroun
 @app.post("/generate/webbuild")
 async def api_webbuild(body: WebBuildRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Build a motion-design website from a text description. Returns HTML."""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/webbuild")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/webbuild", min_tier=1)
 
     import asyncio as _asyncio
     llm = get_llm_client()
@@ -9218,7 +9227,7 @@ async def api_crypto(body: CryptoRequest, background_tasks: BackgroundTasks, db:
 async def api_trading_signals(body: TradingSignalRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Get trading signals (RSI, MACD, Bollinger, SMA, EMA, Support/Resistance).
     Uses 6 months of historical data for technical analysis."""
-    user = await _require_key_and_quota(body.api_key, db, "/finance/signals")
+    user = await _require_key_and_quota(body.api_key, db, "/finance/signals", min_tier=1)
 
     from server.finance_engine import get_finance_engine
     engine = get_finance_engine()
@@ -9241,7 +9250,7 @@ async def api_list_voices():
 @app.post("/generate/smartclip")
 async def api_smartclip(body: SmartClipRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Generate AI smart clips with captions from a video URL."""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/smartclip")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/smartclip", min_tier=1)
 
     # Delegate to video tools
     from server.video_tools import analyze_video
@@ -9254,7 +9263,7 @@ async def api_smartclip(body: SmartClipRequest, background_tasks: BackgroundTask
 @app.post("/generate/video")
 async def api_create_video(body: CreateVideoRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Create an AI video with images and voiceover."""
-    user = await _require_key_and_quota(body.api_key, db, "/generate/video")
+    user = await _require_key_and_quota(body.api_key, db, "/generate/video", min_tier=1)
 
     # Use LLM to generate script, then voice + images
     llm = get_llm_client()

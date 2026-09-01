@@ -603,6 +603,67 @@ def _generate_aimusic_song(prompt: str, lyrics: str, genre: str = "", mood: str 
         return (None, None)
 
 
+def _generate_yue_song(tags: str, lyrics: str, duration_seconds: int = 90,
+                            hf_token: str = "") -> tuple:
+    """Generate a full song with vocals via YuE (open-source, HuggingFace ZeroGPU).
+    YuE produces full-length songs with vocals, verses, and choruses.
+    Returns (audio_bytes, format_ext) or (None, None) on failure."""
+    try:
+        import urllib.request
+        import json as _json
+
+        # YuE is on HuggingFace Spaces — use the ZeroGPU inference endpoint
+        # Build a rich prompt
+        genre_tags = tags if tags else "pop, afrobeats"
+        song_prompt = f"Genre: {genre_tags}\nLyrics:\n{lyrics[:2000]}"
+
+        # Use HuggingFace Inference API for YuE model
+        api_url = "https://api-inference.huggingface.co/models/m-a-p/YuE-s1-7B-instruct"
+        if hf_token:
+            headers = {
+                "Authorization": f"Bearer {hf_token}",
+                "Content-Type": "application/json",
+            }
+        else:
+            headers = {"Content-Type": "application/json"}
+
+        payload = _json.dumps({
+            "inputs": song_prompt,
+            "parameters": {
+                "max_new_tokens": 512,
+                "temperature": 0.8,
+                "do_sample": True,
+            },
+        }).encode()
+
+        req = urllib.request.Request(api_url, data=payload, headers=headers, method="POST")
+        resp = urllib.request.urlopen(req, timeout=120)
+        content_type = resp.headers.get("Content-Type", "")
+
+        # If we get audio bytes directly
+        if "audio" in content_type or "octet-stream" in content_type:
+            audio_data = resp.read()
+            if len(audio_data) > 1000:
+                logger.info(f"YuE success: {len(audio_data)} bytes")
+                return (audio_data, "wav")
+
+        # If we get JSON with audio data
+        result = _json.loads(resp.read().decode())
+        if isinstance(result, dict):
+            audio_b64 = result.get("audio", result.get("data", result.get("output", "")))
+            if audio_b64 and isinstance(audio_b64, str) and len(audio_b64) > 100:
+                import base64
+                audio_data = base64.b64decode(audio_b64)
+                if len(audio_data) > 1000:
+                    logger.info(f"YuE success (decoded): {len(audio_data)} bytes")
+                    return (audio_data, "wav")
+
+        return (None, None)
+    except Exception as e:
+        logger.warning(f"YuE generation failed: {e}")
+        return (None, None)
+
+
 def _generate_ace_step_song(tags: str, lyrics: str, duration: float = 60.0,
                              hf_token: str = "") -> tuple:
     """Generate a real sung song (vocals + instrumentation) via the free,
@@ -774,7 +835,18 @@ def generate_song(prompt: str, llm_complete_fn=None, llm_chat_fn=None,
             engine_used = "aimusic-sonic-v5"
             logger.info(f"AI Music API succeeded: {len(audio_bytes)} bytes ({audio_format})")
 
-    # Engine 3: ACE-Step 1.5 — real singing with the actual lyrics (free ZeroGPU)
+    # Engine 3: YuE — open-source full-song generation with vocals (HuggingFace ZeroGPU)
+    if not audio_bytes:
+        logger.info("Falling back to YuE (open-source vocals)...")
+        yue_bytes, yue_ext = _generate_yue_song(tags, lyrics, duration_seconds=min(max(duration_seconds, 30), 120),
+                                                  hf_token=hf_token)
+        if yue_bytes and len(yue_bytes) > 1000:
+            audio_bytes = yue_bytes
+            audio_format = yue_ext or "wav"
+            engine_used = "yue-opensource"
+            logger.info(f"YuE succeeded: {len(audio_bytes)} bytes ({audio_format})")
+
+    # Engine 4: ACE-Step 1.5 — real singing with the actual lyrics (free ZeroGPU)
     if not audio_bytes:
         logger.info(f"Falling back to ACE-Step 1.5 (genre={genre})...")
         ace_bytes, ace_ext = _generate_ace_step_song(tags, lyrics, duration=min(max(duration_seconds, 30), 90),
