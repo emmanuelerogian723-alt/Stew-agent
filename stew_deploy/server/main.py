@@ -3533,6 +3533,236 @@ async def _get_mood_adaptive_system_prompt(insights: dict, base_prompt: str) -> 
     return base_prompt + mood_addition
 
 
+def build_ics_from_meeting_text(raw_details: str, generated_minutes: str) -> bytes:
+    """Best-effort .ics (iCalendar) builder from free-text meeting details or
+    generated minutes, so users can import the meeting straight into Google
+    Calendar, Outlook, or Apple Calendar. Returns b"" if no date could be found
+    (caller should skip sending the file in that case)."""
+    import re as _re
+    from datetime import datetime as _dt, timedelta as _td
+
+    text = f"{raw_details}\n{generated_minutes}"
+
+    # Try to pull a Title
+    title_match = _re.search(r"(?im)^\s*title\s*:\s*(.+)$", text)
+    title = title_match.group(1).strip() if title_match else "Meeting"
+
+    # Try to pull a Date (several common formats)
+    date_match = _re.search(r"(?im)^\s*date\s*:\s*(.+)$", text)
+    date_str = date_match.group(1).strip() if date_match else None
+
+    # Try to pull a Time
+    time_match = _re.search(r"(?im)^\s*time\s*:\s*(.+)$", text)
+    time_str = time_match.group(1).strip() if time_match else None
+
+    dt_start = None
+    if date_str:
+        candidate = f"{date_str} {time_str}" if time_str else date_str
+        for fmt in (
+            "%B %d, %Y %I:%M %p", "%B %d, %Y", "%d %B %Y %I:%M %p", "%d %B %Y",
+            "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y",
+        ):
+            try:
+                dt_start = _dt.strptime(candidate.strip(), fmt)
+                break
+            except ValueError:
+                continue
+
+    if not dt_start:
+        # No parseable date — don't guess, skip the .ics file entirely
+        return b""
+
+    dt_end = dt_start + _td(hours=1)
+
+    # Try to pull participants / description
+    participants_match = _re.search(r"(?im)^\s*participants?\s*:\s*(.+)$", text)
+    participants = participants_match.group(1).strip() if participants_match else ""
+    agenda_match = _re.search(r"(?im)^\s*agenda\s*:\s*(.+)$", text)
+    agenda = agenda_match.group(1).strip() if agenda_match else ""
+    description = f"Participants: {participants}\\nAgenda: {agenda}".replace("\n", "\\n")
+
+    # Reminder (minutes before), default 30
+    reminder_match = _re.search(r"(?im)^\s*reminder\s*:\s*(\d+)", text)
+    reminder_minutes = int(reminder_match.group(1)) if reminder_match else 30
+
+    def _fmt(dt):
+        return dt.strftime("%Y%m%dT%H%M%S")
+
+    uid = f"stew-{_dt.utcnow().strftime('%Y%m%d%H%M%S')}@stewagent"
+    ics = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//Stew Agent//Meeting Minutes//EN\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:{uid}\r\n"
+        f"DTSTAMP:{_fmt(_dt.utcnow())}\r\n"
+        f"DTSTART:{_fmt(dt_start)}\r\n"
+        f"DTEND:{_fmt(dt_end)}\r\n"
+        f"SUMMARY:{title}\r\n"
+        f"DESCRIPTION:{description}\r\n"
+        "BEGIN:VALARM\r\n"
+        "ACTION:DISPLAY\r\n"
+        f"TRIGGER:-PT{reminder_minutes}M\r\n"
+        "DESCRIPTION:Meeting reminder\r\n"
+        "END:VALARM\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    return ics.encode("utf-8")
+
+
+async def _read_video(video_bytes: bytes, filename: str, user_question: str = "") -> dict:
+    """Read/analyze a video by:
+    1. Extracting key frames with ffmpeg
+    2. Transcribing the audio track (if present)
+    3. Sending frames to vision AI for visual understanding
+    4. Combining visual + audio analysis into a comprehensive summary
+
+    Returns {"analysis": str}
+    """
+    import os
+    import tempfile
+    import base64 as _b64
+    import asyncio
+
+    tmpdir = tempfile.mkdtemp(prefix="stew_video_")
+    video_path = os.path.join(tmpdir, filename)
+    frames_dir = os.path.join(tmpdir, "frames")
+    audio_path = os.path.join(tmpdir, "audio.wav")
+    os.makedirs(frames_dir, exist_ok=True)
+
+    try:
+        with open(video_path, "wb") as f:
+            f.write(video_bytes)
+
+        # Get video metadata
+        meta_result = await asyncio.to_thread(
+            lambda: os.popen(f'ffprobe -v quiet -print_format json -show_format -show_streams "{video_path}" 2>/dev/null').read()
+        )
+        duration = 0
+        width = 0
+        height = 0
+        try:
+            import json as _json
+            meta = _json.loads(meta_result)
+            duration = float(meta.get("format", {}).get("duration", 0))
+            streams = meta.get("streams", [])
+            for s in streams:
+                if s.get("codec_type") == "video":
+                    width = s.get("width", 0)
+                    height = s.get("height", 0)
+                if s.get("codec_type") == "audio":
+                    pass  # has audio track
+        except Exception:
+            pass
+
+        # Determine how many frames to extract (max 6, spread across duration)
+        num_frames = min(6, max(1, int(duration / 5))) if duration > 0 else 4
+        frame_descriptions = []
+
+        # Extract frames at evenly-spaced timestamps
+        if duration > 0 and num_frames > 1:
+            intervals = [duration * (i + 0.5) / num_frames for i in range(num_frames)]
+        else:
+            intervals = [0]
+
+        frame_paths = []
+        for i, ts in enumerate(intervals):
+            frame_path = os.path.join(frames_dir, f"frame_{i:02d}.jpg")
+            cmd = f'ffmpeg -y -ss {ts:.2f} -i "{video_path}" -frames:v 1 -q:v 2 "{frame_path}" -loglevel quiet'
+            await asyncio.to_thread(os.system, cmd)
+            if os.path.exists(frame_path) and os.path.getsize(frame_path) > 1000:
+                frame_paths.append((frame_path, ts))
+
+        # Try to extract and transcribe audio
+        audio_transcript = ""
+        has_audio = False
+        audio_cmd = f'ffmpeg -y -i "{video_path}" -vn -ac 1 -ar 16000 "{audio_path}" -loglevel quiet'
+        await asyncio.to_thread(os.system, audio_cmd)
+        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
+            has_audio = True
+            try:
+                with open(audio_path, "rb") as af:
+                    audio_bytes = af.read()
+                transcript, err = await _transcribe_audio_bytes(audio_bytes, "video_audio.wav")
+                if transcript:
+                    audio_transcript = transcript
+            except Exception as ae:
+                logger.warning(f"Video audio transcription failed: {ae}")
+
+        # Send frames to vision AI
+        visual_descriptions = []
+        if frame_paths:
+            llm = get_llm_client()
+            for frame_path, ts in frame_paths[:6]:
+                try:
+                    with open(frame_path, "rb") as ff:
+                        frame_b64 = _b64.b64encode(ff.read()).decode()
+                    timestamp_str = f"{int(ts // 60)}:{int(ts % 60):02d}" if ts > 0 else "0:00"
+                    vision_prompt = (
+                        f"This is frame {frame_paths.index((frame_path, ts)) + 1} of {len(frame_paths)} "
+                        f"at timestamp {timestamp_str} from a video. "
+                        f"Describe what you see in detail — people, objects, text on screen, "
+                        f"UI elements, charts, scenes, actions, and any other visual information."
+                    )
+                    if user_question:
+                        vision_prompt += f" The user asked: {user_question}. Focus on what's relevant."
+                    try:
+                        vision_result = await asyncio.to_thread(llm.vision_chat, frame_b64, vision_prompt, "image/jpeg")
+                        desc = vision_result.get("content", "")
+                        if desc:
+                            visual_descriptions.append(f"[{timestamp_str}] {desc[:600]}")
+                    except Exception as ve:
+                        logger.warning(f"Vision failed on frame {frame_path}: {ve}")
+                except Exception as fe:
+                    logger.warning(f"Frame read error: {fe}")
+
+        # Combine all information
+        llm = get_llm_client()
+        synthesis_parts = []
+        synthesis_parts.append(f"Video metadata: {duration:.1f}s, {width}x{height}px, {len(frame_paths)} frames extracted.")
+        if visual_descriptions:
+            synthesis_parts.append("\n\nVISUAL ANALYSIS (frame-by-frame):\n" + "\n".join(visual_descriptions))
+        if audio_transcript:
+            synthesis_parts.append(f"\n\nAUDIO TRANSCRIPT:\n{audio_transcript[:3000]}")
+        if not visual_descriptions and not audio_transcript:
+            synthesis_parts.append("\n\nNo frames or audio could be extracted from this video.")
+
+        parts_joined = "\n".join(synthesis_parts)
+        synthesis_prompt = (
+            f"You are S.T.E.W, analyzing a video for a user. Here is everything extracted:\n\n"
+            f"{parts_joined}\n\n"
+            f"Provide a comprehensive, well-structured analysis of this video. Include:\n"
+            f"1. A summary of what happens in the video\n"
+            f"2. Key visual content (people, text, scenes, UI elements)\n"
+            f"3. What is being said (if audio was transcribed)\n"
+            f"4. Any important details, data, or context\n"
+            f"5. If the user asked a question, answer it based on the video content\n\n"
+            f"User question: {user_question or 'No specific question — provide a general analysis.'}"
+        )
+
+        try:
+            result = await asyncio.to_thread(llm.chat, [
+                {"role": "system", "content": "You are S.T.E.W, a video analysis AI. Be thorough and precise."},
+                {"role": "user", "content": synthesis_prompt},
+            ])
+            analysis = clean_response(result.get("content", ""))
+        except Exception as ce:
+            # Fallback: just join the raw parts
+            analysis = "\n".join(synthesis_parts)
+            if user_question:
+                analysis = f"Here's what I extracted from your video:\n\n{analysis}"
+
+        return {"analysis": analysis}
+
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     """Receive Telegram messages. ACKs Telegram INSTANTLY, then processes the
@@ -3985,6 +4215,43 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                             f"Upgrade with /upgrade to keep full features after it runs out."
                         )
 
+    # ── HANDLE INCOMING VIDEOS (Video Reading: frames + audio transcription) ───
+    if (msg.get("has_video") or msg.get("has_video_note") or msg.get("has_animation")) and msg.get("file_id"):
+        await bot.send_chat_action(chat_id, "typing")
+        caption = msg.get("caption", "")
+        try:
+            file_bytes = await bot.download_file(msg["file_id"])
+            if not file_bytes:
+                await bot.send_message(chat_id, "I couldn't download the video. Please try again.")
+                return {"ok": True}
+
+            file_size_mb = len(file_bytes) / (1024 * 1024)
+            if file_size_mb > 20:
+                await bot.send_message(chat_id, f"That video is {file_size_mb:.1f}MB — too large for me to process on the free tier. Please send a shorter clip (under 20MB).")
+                return {"ok": True}
+
+            await bot.send_message(chat_id, "Analyzing your video... extracting frames and audio...")
+            await bot.send_chat_action(chat_id, "typing")
+
+            try:
+                video_analysis = await _read_video(file_bytes, msg.get("file_name", "video.mp4"), caption)
+                reply = video_analysis.get("analysis", "")
+                if reply:
+                    # Send in chunks if long
+                    for i in range(0, len(reply), 3800):
+                        await bot.send_message(chat_id, reply[i:i+3800])
+                else:
+                    await bot.send_message(chat_id, "I couldn't extract enough information from that video. Try a clearer or longer clip.")
+            except Exception as ve:
+                logger.error(f"Video analysis error: {ve}", exc_info=True)
+                await bot.send_message(chat_id, f"I couldn't fully analyze that video ({str(ve)[:120]}). Try sending a shorter clip or a photo instead.")
+            return {"ok": True}
+
+        except Exception as e:
+            logger.error(f"Telegram video handling error: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Could not process that video. Please try again with a shorter clip.")
+            return {"ok": True}
+
     # ── HANDLE INCOMING PHOTOS (Vision-first, OCR fallback) ────────────────────
     if msg.get("has_photo") and msg.get("file_id"):
         await bot.send_chat_action(chat_id, "typing")
@@ -4163,7 +4430,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # (parse_update always sets text="" for those). Both are handled further
     # down; dropping them here silently ate every voice note before
     # transcription ever ran.
-    if not msg.get("text") and not msg.get("has_voice") and not msg.get("has_audio") and not msg.get("is_callback"):
+    if not msg.get("text") and not msg.get("has_voice") and not msg.get("has_audio") and not msg.get("has_video") and not msg.get("has_video_note") and not msg.get("has_animation") and not msg.get("is_callback"):
         return {"ok": True}
 
     user_text = msg["text"]
@@ -4224,13 +4491,13 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         }
         action = callback_map.get(callback_data, "")
         if action == "students":
-            await bot.send_message(chat_id, "Student Tools: /quiz /flashcards /studyguide /summarize /translate /solve /code\n\nExample: /quiz photosynthesis")
+            await bot.send_message(chat_id, "Student Tools: /quiz /flashcards /studyguide /summarize /translate /solve /code /cite\n\nExample: /quiz photosynthesis\nExample: /cite APA - Book: Things Fall Apart, Author: Chinua Achebe, Year: 1958")
         elif action == "lecturers":
             await bot.send_message(chat_id, "Lecturer Tools: /lessonplan /rubric /grade /quiz /pptx\n\nExample: /lessonplan Intro to Calculus for 100 level")
         elif action == "companies":
-            await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nScheduler: /schedule — automate recurring tasks (daily reports, crypto alerts, reminders)\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN\nExample: /schedule create daily 09:30 Send me crypto price summary")
+            await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /proposal /resume /xlsx\n\nScheduler: /schedule — automate recurring tasks (daily reports, crypto alerts, reminders)\n\nMeeting minutes now include a .ics file you can import into Google/Outlook/Apple Calendar.\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN\nExample: /resume Name: John Doe, Role: Marketer, Experience: 3 years\nExample: /schedule create daily 09:30 Send me crypto price summary")
         elif action == "tools":
-            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx /termpaper\nTerm Papers: write a term paper on <topic>\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
+            await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx /termpaper\nTerm Papers: write a term paper on <topic>\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription\nSend videos for AI video reading (frame analysis + audio transcription)")
         elif action == "clear":
             try:
                 conv_q = await db.execute(select(Conversation).where(Conversation.user_id == tg_user.id).order_by(Conversation.updated_at.desc()).limit(1))
@@ -4246,9 +4513,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             # Trigger help by falling through - just send help text directly
             help_text = (
                 "S.T.E.W Commands\n\n"
-                "Students: /quiz /flashcards /studyguide /summarize /translate /solve\n"
+                "Students: /quiz /flashcards /studyguide /summarize /translate /solve /cite\n"
                 "Lecturers: /lessonplan /rubric /grade\n"
-                "Companies: /invoice /meeting /swot /businessplan /budget\n"
+                "Companies: /invoice /meeting /swot /businessplan /budget /proposal /resume\n"
                 "Tools: /research /code /menu /clear\nQuick: /weather /currency /news /joke /quote /define /math /qr /wiki\n"
                 "Documents: /pdf /docx /xlsx /pptx\n"
                 "Books: /book topic (up to 200 pages)\n"
@@ -4662,7 +4929,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "3. /translate - Translate languages\n"
             "4. /research - Deep research\n"
             "5. /code - Run Python code\n"
-            "6. /agent - Supercomputer Agent Mode (multi-step reasoning + tools)\n"
+            "6. /agent - Supercomputer Agent Mode (100-agent swarm + multi-step tool execution)\n"
             "7. /clear - Clear chat history\n\n"
             "For Students:\n"
             "8. /quiz - Generate quiz questions\n"
@@ -5175,29 +5442,88 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
 
-    # ── /agent COMMAND (Supercomputer Agent Mode) ──────────────────────────────
-    # Direct access to S.T.E.W's full autonomous tool-calling loop — the same
-    # ReAct-style architecture Codex/agentic coding tools use: the LLM decides
-    # which tool to call, we execute it, feed the result back, and it keeps
-    # reasoning/acting until the goal is done or iterations run out.
+    # ── /agent COMMAND (Supercomputer Agent Mode — 100-Agent Swarm) ────────────
+    # Two-phase architecture:
+    # Phase 1: Deploy the 100-agent swarm — AI decomposes the task, assigns
+    #          specialist agents, runs them in parallel, and synthesizes.
+    # Phase 2: Tool-calling loop — the agent can use real tools (code, search,
+    #          web browse, document generation, live prices) to execute.
+    # The swarm handles the thinking/analysis; the tool loop handles the doing.
     if user_text.startswith("/agent"):
         goal = user_text[6:].strip()
         if not goal:
             await bot.send_message(
                 chat_id,
                 "🤖 *Supercomputer Agent Mode*\n\n"
-                "Give me a goal and I'll break it down, use real tools (code execution, "
-                "web search, live prices/weather, Wikipedia, document generation, QR codes, "
-                "URL shortening) and chain them together to get it done.\n\n"
+                "Give me a goal and I'll deploy the 100-agent swarm to analyze it from "
+                "multiple specialist angles, then use real tools (code execution, web search, "
+                "live prices/weather, Wikipedia, document generation, QR codes) to execute.\n\n"
                 "Example: /agent Research the current price of bitcoin, calculate what ₦500,000 "
-                "would buy in BTC, and summarize it for me"
+                "would buy in BTC, and summarize it for me\n"
+                "Example: /agent Compare MTN and Airtel data plans, then make a recommendation table"
             )
             return {"ok": True}
-        await bot.send_message(chat_id, "🤖 Supercomputer Agent Mode activated. Working on it...")
+
+        await bot.send_message(chat_id, "🤖 Supercomputer Agent Mode activated. Deploying 100-agent swarm...")
         await bot.send_chat_action(chat_id, "typing")
         try:
+            # ── Phase 1: 100-AGENT SWARM ────────────────────────────────────
+            swarm_summary = ""
+            try:
+                from agents.agent_pool import AgentPool
+
+                class SwarmBrain:
+                    async def call_llm(self, prompt: str, system: str = "", max_tokens: int = 2048) -> str:
+                        llm = get_llm_client()
+                        messages = [
+                            {"role": "system", "content": system or "You are a helpful AI agent."},
+                            {"role": "user", "content": prompt},
+                        ]
+                        try:
+                            result = await asyncio.to_thread(llm.chat, messages)
+                            return result.get("content", "")
+                        except Exception as e:
+                            logger.warning(f"Swarm agent brain call failed: {e}")
+                            return f"Agent could not complete: {e}"
+
+                pool = AgentPool()
+                await bot.send_message(chat_id, f"🌀 {pool.get_pool_status()['total_agents']} agents online. Decomposing task and deploying specialists...")
+                await bot.send_chat_action(chat_id, "typing")
+
+                swarm_result = await pool.execute_task(
+                    task=goal,
+                    brain=SwarmBrain(),
+                    num_agents=5,
+                    synthesize=True,
+                )
+
+                agents_used = swarm_result.get("agents_used", 0)
+                exec_time = swarm_result.get("execution_time", 0)
+                swarm_summary = swarm_result.get("synthesis", "")
+
+                if swarm_summary:
+                    agent_names = [r.get("agent", "?") for r in swarm_result.get("agent_results", [])[:5]]
+                    await bot.send_message(chat_id, f"✅ {agents_used} specialist agents completed in {exec_time}s. Agents: {', '.join(agent_names)}")
+                    await bot.send_chat_action(chat_id, "typing")
+
+            except Exception as swarm_err:
+                logger.warning(f"Swarm deployment failed, continuing with tool agent: {swarm_err}")
+                swarm_summary = ""
+
+            # ── Phase 2: TOOL-CALLING LOOP (execution) ───────────────────────
             from server.tool_agent import run_agent_loop
-            agent_result = await run_agent_loop(goal, bot=bot, chat_id=chat_id, max_iterations=8)
+
+            # If the swarm produced a synthesis, prepend it as context for the tool agent
+            agent_goal = goal
+            if swarm_summary:
+                agent_goal = (
+                    f"GOAL: {goal}\n\n"
+                    f"SWARM ANALYSIS (from 100-agent specialist team):\n{swarm_summary[:3000]}\n\n"
+                    f"Now use tools to execute this goal. The swarm analysis above gives you "
+                    f"expert context — verify and execute using your tools."
+                )
+
+            agent_result = await run_agent_loop(agent_goal, bot=bot, chat_id=chat_id, max_iterations=8)
 
             if agent_result.get("files"):
                 import base64 as _b64_agent
@@ -5230,6 +5556,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, clean_response(response))
             elif agent_result.get("files"):
                 await bot.send_message(chat_id, "Done! Your file is ready above.")
+            elif swarm_summary:
+                # If tool agent produced nothing but swarm did, send the swarm synthesis
+                await bot.send_message(chat_id, clean_response(swarm_summary[:3800]))
             else:
                 await bot.send_message(chat_id, "Task completed.")
 
@@ -5503,26 +5832,51 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.startswith("/meeting"):
         details = user_text[8:].strip()
         if not details:
-            await bot.send_message(chat_id, "Send: /meeting Q3 Review - attendees: John, Sarah")
+            await bot.send_message(chat_id, "Send: /meeting Q3 Review - attendees: John, Sarah\n\nOr structured:\n/meeting\nTitle: AI Team Meeting\nDate: September 5, 2026\nTime: 2:00 PM\nParticipants: Emmanuel, David\nAgenda: Review updates\nReminder: 30 minutes before")
             return {"ok": True}
         await bot.send_message(chat_id, "Creating meeting minutes...")
         await bot.send_chat_action(chat_id, "typing")
         try:
             llm = get_llm_client()
-            result = await asyncio.to_thread(llm.chat, [
-                {"role": "system", "content": "Meeting minutes writer. Include: title, date, attendees, agenda, discussion, decisions, action items with owners, next meeting."},
-                {"role": "user", "content": f"Minutes for: {details}. Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}"},
-            ])
-            minutes = clean_response(result["content"])
-            doc_result = generate_pdf(minutes, "Meeting Minutes")
+            try:
+                result = await asyncio.to_thread(llm.chat, [
+                    {"role": "system", "content": "Meeting minutes writer. Include: title, date, attendees, agenda, discussion, decisions, action items with owners, next meeting."},
+                    {"role": "user", "content": f"Minutes for: {details}. Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}"},
+                ])
+            except Exception as llm_err:
+                logger.error(f"/meeting LLM call failed: {llm_err}", exc_info=True)
+                await bot.send_message(chat_id, "S.T.E.W's AI is briefly overloaded. Please try /meeting again in ~30 seconds.")
+                return {"ok": True}
+
+            minutes = clean_response(result.get("content", "") if isinstance(result, dict) else str(result))
+            if not minutes or not minutes.strip():
+                await bot.send_message(chat_id, "Couldn't generate minutes from that — try adding more detail (title, date, attendees, agenda).")
+                return {"ok": True}
+
+            try:
+                doc_result = generate_pdf(minutes, "Meeting Minutes")
+            except Exception as pdf_err:
+                logger.error(f"/meeting PDF generation failed: {pdf_err}", exc_info=True)
+                doc_result = {}
+
             if doc_result.get("success") and doc_result.get("file"):
                 import base64 as _b64
                 file_bytes = _b64.b64decode(doc_result["file"])
                 await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "meeting_minutes.pdf"), "Meeting Minutes")
             else:
                 await bot.send_message(chat_id, minutes[:3800])
+
+            # Also generate a .ics calendar file so it can be imported into
+            # Google Calendar / Outlook / Apple Calendar directly.
+            try:
+                ics_bytes = build_ics_from_meeting_text(details, minutes)
+                if ics_bytes:
+                    await bot.send_document(chat_id, ics_bytes, "meeting.ics", "📅 Add to your calendar (Google/Outlook/Apple)")
+            except Exception as ics_err:
+                logger.warning(f"/meeting .ics generation skipped: {ics_err}")
         except Exception as e:
-            await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
+            logger.error(f"/meeting command failed: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Something went wrong generating the meeting minutes. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /swot COMMAND (Companies) ──────────────────────────────────────────────
@@ -5554,6 +5908,105 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, swot[:3800])
         except Exception as e:
             await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
+        return {"ok": True}
+
+    # ── /resume COMMAND (Business / Career) ────────────────────────────────────
+    if user_text.startswith("/resume") or user_text.startswith("/cv"):
+        prefix_len = 7 if user_text.startswith("/resume") else 3
+        details = user_text[prefix_len:].strip()
+        if not details:
+            await bot.send_message(chat_id, "Send your details, e.g.:\n/resume\nName: Emmanuel Erogian\nRole: Software Engineer\nExperience: 2 years building web apps at XYZ Ltd\nEducation: BSc Computer Science, University of Lagos\nSkills: Python, React, SQL, Leadership")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Building your resume...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            try:
+                result = await asyncio.to_thread(llm.chat, [
+                    {"role": "system", "content": "Professional resume/CV writer. Produce a clean, ATS-friendly resume with sections: Name & contact placeholder, Professional Summary, Work Experience (with bullet achievements), Education, Skills, Certifications (if mentioned). Use strong action verbs and quantify achievements where possible. Keep it to one page worth of content."},
+                    {"role": "user", "content": f"Build a resume/CV from these details:\n{details}"},
+                ])
+            except Exception as llm_err:
+                logger.error(f"/resume LLM call failed: {llm_err}", exc_info=True)
+                await bot.send_message(chat_id, "S.T.E.W's AI is briefly overloaded. Please try /resume again in ~30 seconds.")
+                return {"ok": True}
+            resume_text = clean_response(result.get("content", "") if isinstance(result, dict) else str(result))
+            try:
+                doc_result = generate_pdf(resume_text, "Resume / CV")
+            except Exception as pdf_err:
+                logger.error(f"/resume PDF generation failed: {pdf_err}", exc_info=True)
+                doc_result = {}
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "resume.pdf"), "Your Resume/CV — ready to send to employers")
+            else:
+                await bot.send_message(chat_id, resume_text[:3800])
+        except Exception as e:
+            logger.error(f"/resume command failed: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Something went wrong building the resume. Please try again or rephrase your request.")
+        return {"ok": True}
+
+    # ── /cite COMMAND (Studies) ─────────────────────────────────────────────────
+    if user_text.startswith("/cite"):
+        details = user_text[5:].strip()
+        if not details:
+            await bot.send_message(chat_id, "Send: /cite APA - Book: Things Fall Apart, Author: Chinua Achebe, Year: 1958, Publisher: Heinemann\n\nStyles: APA, MLA, Chicago, Harvard")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Generating citation...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            try:
+                result = await asyncio.to_thread(llm.chat, [
+                    {"role": "system", "content": "Academic citation generator. Given source details and a requested style (APA, MLA, Chicago, Harvard, or default to APA 7th edition if unspecified), produce: 1) the correctly formatted in-text citation, 2) the correctly formatted full reference-list/bibliography entry. Be precise about punctuation, italics (use *asterisks* for italics), and order of elements for the requested style."},
+                    {"role": "user", "content": details},
+                ])
+            except Exception as llm_err:
+                logger.error(f"/cite LLM call failed: {llm_err}", exc_info=True)
+                await bot.send_message(chat_id, "S.T.E.W's AI is briefly overloaded. Please try /cite again in ~30 seconds.")
+                return {"ok": True}
+            citation = clean_response(result.get("content", "") if isinstance(result, dict) else str(result))
+            await bot.send_message(chat_id, citation[:3800])
+        except Exception as e:
+            logger.error(f"/cite command failed: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Something went wrong generating the citation. Please try again or rephrase your request.")
+        return {"ok": True}
+
+    # ── /proposal COMMAND (Business) ────────────────────────────────────────────
+    if user_text.startswith("/proposal"):
+        details = user_text[9:].strip()
+        if not details:
+            await bot.send_message(chat_id, "Send: /proposal Web design services for a restaurant, budget 300000 NGN, timeline 3 weeks")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Drafting business proposal...")
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            llm = get_llm_client()
+            try:
+                result = await asyncio.to_thread(llm.chat, [
+                    {"role": "system", "content": "Business proposal writer. Produce a persuasive, professional proposal with sections: Executive Summary, Problem/Opportunity, Proposed Solution/Scope of Work, Timeline, Pricing/Investment, Why Choose Us, Next Steps. Be concrete and client-ready."},
+                    {"role": "user", "content": f"Write a business proposal for: {details}"},
+                ])
+            except Exception as llm_err:
+                logger.error(f"/proposal LLM call failed: {llm_err}", exc_info=True)
+                await bot.send_message(chat_id, "S.T.E.W's AI is briefly overloaded. Please try /proposal again in ~30 seconds.")
+                return {"ok": True}
+            proposal_text = clean_response(result.get("content", "") if isinstance(result, dict) else str(result))
+            try:
+                doc_result = generate_pdf(proposal_text, "Business Proposal")
+            except Exception as pdf_err:
+                logger.error(f"/proposal PDF generation failed: {pdf_err}", exc_info=True)
+                doc_result = {}
+            if doc_result.get("success") and doc_result.get("file"):
+                import base64 as _b64
+                file_bytes = _b64.b64decode(doc_result["file"])
+                await bot.send_document(chat_id, file_bytes, doc_result.get("filename", "proposal.pdf"), "Business Proposal")
+            else:
+                await bot.send_message(chat_id, proposal_text[:3800])
+        except Exception as e:
+            logger.error(f"/proposal command failed: {e}", exc_info=True)
+            await bot.send_message(chat_id, "Something went wrong drafting the proposal. Please try again or rephrase your request.")
         return {"ok": True}
 
     # ── /businessplan COMMAND (Companies) ──────────────────────────────────────

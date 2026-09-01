@@ -229,6 +229,9 @@ class TelegramBot:
                 "has_document": False,
                 "has_voice": False,
                 "has_audio": False,
+                "has_video": False,
+                "has_video_note": False,
+                "has_animation": False,
                 "file_id": None,
                 "file_name": None,
                 "file_type": None,
@@ -248,6 +251,9 @@ class TelegramBot:
         has_document = "document" in msg and msg["document"]
         has_voice = "voice" in msg and msg["voice"]
         has_audio = "audio" in msg and msg["audio"]
+        has_video = "video" in msg and msg["video"]
+        has_video_note = "video_note" in msg and msg["video_note"]
+        has_animation = "animation" in msg and msg["animation"]
 
         # Determine file info
         file_id = None
@@ -279,6 +285,24 @@ class TelegramBot:
             file_name = audio.get("file_name", f"audio_{msg['message_id']}.mp3")
             file_type = "audio"
             file_size = audio.get("file_size", 0)
+        elif has_video:
+            video = msg["video"]
+            file_id = video.get("file_id")
+            file_name = video.get("file_name", f"video_{msg['message_id']}.mp4")
+            file_type = "video"
+            file_size = video.get("file_size", 0)
+        elif has_video_note:
+            vn = msg["video_note"]
+            file_id = vn.get("file_id")
+            file_name = f"video_note_{msg['message_id']}.mp4"
+            file_type = "video_note"
+            file_size = vn.get("file_size", 0)
+        elif has_animation:
+            anim = msg["animation"]
+            file_id = anim.get("file_id")
+            file_name = anim.get("file_name", f"animation_{msg['message_id']}.mp4")
+            file_type = "animation"
+            file_size = anim.get("file_size", 0)
 
         return {
             "update_id": data.get("update_id"),
@@ -297,6 +321,9 @@ class TelegramBot:
             "has_document": has_document,
             "has_voice": has_voice,
             "has_audio": has_audio,
+            "has_video": has_video,
+            "has_video_note": has_video_note,
+            "has_animation": has_animation,
             "file_id": file_id,
             "file_name": file_name,
             "file_type": file_type,
