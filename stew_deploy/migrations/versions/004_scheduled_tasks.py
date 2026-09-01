@@ -1,14 +1,14 @@
 """Add scheduled_tasks table for the Stew Scheduler engine.
 
-Revision ID: 003_scheduled_tasks
-Revises: 002_finetune_fields
+Revision ID: 004_scheduled_tasks
+Revises: 003
 Create Date: 2026-09-01
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "003_scheduled_tasks"
-down_revision = "002_finetune_fields"
+revision = "004_scheduled_tasks"
+down_revision = "003"
 branch_labels = None
 depends_on = None
 

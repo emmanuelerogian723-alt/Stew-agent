@@ -20,6 +20,7 @@ RUN pip install --upgrade pip && \
 
 # Copy application code
 COPY server/ ./server/
+COPY agents/ ./agents/
 COPY dashboard.html .
 COPY landing.html .
 COPY playground.html .
@@ -36,4 +37,4 @@ RUN mkdir -p memory/data output logs workspace screenshots
 EXPOSE 8000
 
 # Run DB migrations then start server
-CMD alembic upgrade head 2>/dev/null || true; uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 2
+CMD alembic upgrade head 2>/dev/null || true; uvicorn server.main:app --host 0.0.0.0 --port 8000 --workers 1
