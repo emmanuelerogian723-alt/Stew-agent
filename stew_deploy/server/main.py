@@ -3276,7 +3276,7 @@ VOICE_OPTIONS = {
     "aria": ("en-US-AriaNeural", "Aria — warm female (US English)"),
     "jenny": ("en-US-JennyNeural", "Jenny — friendly female (US English)"),
     "guy": ("en-US-GuyNeural", "Guy — confident male (US English)"),
-    "davis": ("en-US-DavisNeural", "Davis — calm male (US English)"),
+    "davis": ("en-US-ChristopherNeural", "Davis — calm male (US English)"),
     "emma": ("en-US-EmmaNeural", "Emma — gentle female (US English)"),
     "british_f": ("en-GB-LibbyNeural", "Libby — British female"),
     "british_m": ("en-GB-RyanNeural", "Ryan — British male"),
@@ -3930,6 +3930,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # /pass check <code> — Check status of a specific pass
     # /pass stats — Show pass usage statistics
     if _raw_text_early.startswith("/pass"):
+        from sqlalchemy import select as _sel_pass
         _is_owner = tg_user_early and tg_user_early.plan == "owner"
         if not _is_owner:
             # Check if this is someone trying to redeem a pass code
@@ -3939,7 +3940,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 _pass_code = _pass_parts[1].strip().upper()
                 if len(_pass_code) >= 6 and _pass_code.replace(" ", "").isalnum():
                     # Look up the pass
-                    from sqlalchemy import select as _sel_pass
                     _pass_result = await db.execute(
                         _sel_pass(AccessPass).where(AccessPass.code == _pass_code)
                     )

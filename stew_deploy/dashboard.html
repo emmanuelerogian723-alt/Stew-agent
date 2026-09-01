@@ -1276,10 +1276,11 @@ async function regenerateKey(){
 function switchTab(name, evt){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
-  if(tab==='scheduler')loadScheduledTasks();
+  if(name==='scheduler' && typeof loadScheduledTasks==='function') loadScheduledTasks();
   if(evt) evt.target.classList.add('active');
-  else { document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.trim().toLowerCase()===name) t.classList.add('active'); }); }
-  document.getElementById('tab-'+name).classList.add('active');
+  else { document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.trim().toLowerCase().includes(name)) t.classList.add('active'); }); }
+  const el = document.getElementById('tab-'+name);
+  if(el) el.classList.add('active');
 }
 
 // Payment
