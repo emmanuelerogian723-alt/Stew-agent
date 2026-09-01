@@ -69,9 +69,15 @@ async def web_search(query: str, num: int = 5) -> dict:
 
 @skill("web_browse", "Fetch and read any webpage URL", "web")
 async def web_browse(url: str, question: str = "") -> dict:
-    from server.browser import StewBrowser
-    b = StewBrowser()
-    page = await b.fetch(url)
+    # Use autonomous WebCrawler first (multi-strategy, no Playwright needed)
+    from server.web_crawler import get_crawler
+    crawler = get_crawler()
+    page = await crawler.fetch_page(url, timeout=25)
+    if not page.get("content") or len(page.get("content", "")) < 100:
+        # Fallback to StewBrowser (Playwright/Crawl4AI if available)
+        from server.browser import StewBrowser
+        b = StewBrowser()
+        page = await b.fetch(url)
     if question and "content" in page:
         page["answer_hint"] = f"Question: {question}\nContent excerpt: {page['content'][:2000]}"
     return page
@@ -82,6 +88,22 @@ async def duckduckgo_search(query: str) -> dict:
     from server.browser import StewBrowser
     b = StewBrowser()
     return await b.search_web_fallback(query)
+
+
+@skill("web_crawl", "Autonomous web crawl — search + fetch pages + compile report (no API key)", "web")
+async def web_crawl(query: str, num_pages: int = 3) -> dict:
+    """Full autonomous crawl: search Google/Bing/DDG, fetch top pages, compile report."""
+    from server.web_crawler import get_crawler
+    crawler = get_crawler()
+    return await crawler.crawl(query, num_pages=num_pages, num_results=8)
+
+
+@skill("autonomous_search", "Search the web without any API key — scrapes Google/Bing/DDG directly", "web")
+async def autonomous_search(query: str, num: int = 8) -> dict:
+    """No-API-key search — scrapes real search engines directly."""
+    from server.web_crawler import get_crawler
+    crawler = get_crawler()
+    return await crawler.search(query, num)
 
 
 @skill("fill_form", "Fill and submit a web form automatically", "web")

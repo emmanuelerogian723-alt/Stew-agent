@@ -49,68 +49,68 @@ class WebSearch:
 
     def search(self, query: str, num_results: int = 8) -> dict:
         """
-        Perform a real web search via fallback providers.
-        Circuit breaker: stops after 4 consecutive failures to avoid timeouts.
-        NEVER fabricates results.
+        Perform a real web search via the autonomous WebCrawler engine.
+        
+        PRIMARY: WebCrawler — scrapes Google, Bing, DDG directly (no API key!)
+        SECONDARY (optional): Serper API if configured (paid, but fast)
+        
+        The old approach tried Serper first (costing API credits) and fell
+        back to DuckDuckGo. The new approach uses the autonomous crawler
+        that scrapes real search engines — exactly how Kimi/Perplexity work.
+        No paid API is needed. Serper is only used as a speed boost if the
+        key is already configured.
         """
-        failed = 0
-        MAX_FAILURES = 4
+        import asyncio as _aio
+        
+        # Try 1: Autonomous WebCrawler (no API key needed!)
+        try:
+            from server.web_crawler import get_crawler
+            crawler = get_crawler()
+            result = crawler.search_sync(query, num_results)
+            if result.get("organic"):
+                logger.info(f"WebCrawler search succeeded (source: {result.get('source', '?')})")
+                return result
+        except Exception as e:
+            logger.warning(f"WebCrawler search error: {e}")
 
-        # Try 1: Serper API (if configured — paid but fast)
+        # Try 2: Serper API (if configured — paid, but fast fallback)
         if self.api_key:
             result = self._serper_search(query, num_results)
             if result.get("organic"):
                 return result
-            failed += 1
 
-        # Try 2: DuckDuckGo HTML (free, direct — works from non-cloud IPs)
+        # Try 3: DuckDuckGo HTML (free, direct)
         result = self._duckduckgo_html_search(query, num_results)
         if result.get("organic"):
             return result
-        failed += 1
 
-        # Try 3: Jina Reader proxy search (free, no key — fetches DDG through
-        # r.jina.ai which bypasses cloud IP rate-limits entirely).
-        # This is the primary reliable path on Render/cloud hosting.
+        # Try 4: Jina Reader proxy
         result = self._jina_reader_search(query, num_results)
         if result.get("organic"):
             return result
-        failed += 1
 
-        # Try 4: DuckDuckGo via Allorigins proxy (for blocked IPs)
+        # Try 5: DuckDuckGo via Allorigins proxy
         result = self._duckduckgo_proxy_search(query, num_results)
         if result.get("organic"):
             return result
-        failed += 1
-        if failed >= MAX_FAILURES:
-            logger.warning(f"Search circuit breaker tripped after {failed} failures for: {query}")
-            return {
-                "organic": [],
-                "answer_box": {},
-                "knowledge_graph": {},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "query": query,
-                "grounded": False,
-                "error": f"Search failed after {failed} attempts",
-            }
 
-        # Try 5: DuckDuckGo Lite
+        # Try 6: DuckDuckGo Lite
         result = self._duckduckgo_lite_search(query, num_results)
         if result.get("organic"):
             return result
 
-        # Try 6: SearXNG public instances
+        # Try 7: SearXNG
         result = self._searxng_search(query, num_results)
         if result.get("organic"):
             return result
 
-        # Try 7: Brave Search API (if configured)
+        # Try 8: Brave (if configured)
         if self.brave_key:
             result = self._brave_search(query, num_results)
             if result.get("organic"):
                 return result
 
-        # Try 8: Jina AI search API (if configured — needs key)
+        # Try 9: Jina AI search API (if configured)
         if self.jina_key:
             result = self._jina_search(query, num_results)
             if result.get("organic"):
@@ -682,82 +682,63 @@ class WebSearch:
 
     def stew_extension_research(self, query: str, num_pages: int = 3) -> dict:
         """
-        Deep research: search, read top pages, and compile a report.
-        Uses the same search chain but also fetches page content.
+        Deep research using the autonomous WebCrawler engine.
+        Search -> fetch top pages -> compile report. No API key needed.
+        Uses async crawl internally with sync wrapper.
         """
+        # Primary: Use WebCrawler's crawl() which does search + page fetch
+        try:
+            from server.web_crawler import get_crawler
+            crawler = get_crawler()
+            result = crawler.crawl_sync(query, num_pages)
+            if result.get("grounded") and result.get("pages"):
+                logger.info(f"WebCrawler research: {len(result['pages'])} pages for '{query}'")
+                return result
+        except Exception as e:
+            logger.warning(f"WebCrawler research error: {e}")
+
+        # Fallback: old-style sequential search + fetch
         import httpx
         from bs4 import BeautifulSoup
-        
-        # Step 1: Search
+
         search_result = self.search(query, num_results=8)
         organic = search_result.get("organic", [])
-        
         if not organic:
-            return {
-                "grounded": False,
-                "report": "",
-                "organic": [],
-                "pages": [],
-                "query": query,
-            }
-        
-        # Step 2: Read top N pages
+            return {"grounded": False, "report": "", "organic": [], "pages": [], "query": query}
+
         pages = []
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml",
         }
-        
         for result in organic[:num_pages]:
             url = result.get("link", "")
             if not url:
                 continue
-            # Try Jina AI reader first (free, bypasses blocks)
             try:
                 jina_url = f"https://r.jina.ai/{url}"
                 resp = httpx.get(jina_url, timeout=20, headers={"Accept": "text/plain"})
                 if resp.status_code == 200 and len(resp.text) > 100:
-                    pages.append({
-                        "title": result.get("title", ""),
-                        "url": url,
-                        "content": resp.text[:5000],
-                        "source": "jina_reader",
-                    })
+                    pages.append({"title": result.get("title", ""), "url": url, "content": resp.text[:5000], "source": "jina_reader"})
                     continue
             except Exception:
                 pass
-            # Fallback: direct fetch
             try:
                 resp = httpx.get(url, timeout=10, headers=headers, follow_redirects=True)
                 if resp.status_code == 200:
                     soup = BeautifulSoup(resp.text, "html.parser")
                     soup.select("script, style, nav, footer, aside").extract()
                     text = soup.get_text(separator=" ", strip=True)[:5000]
-                    pages.append({
-                        "title": result.get("title", ""),
-                        "url": url,
-                        "content": text,
-                        "source": "direct_fetch",
-                    })
+                    pages.append({"title": result.get("title", ""), "url": url, "content": text, "source": "direct_fetch"})
             except Exception:
                 pass
-        
-        # Step 3: Build report from search results + page content
+
         report_parts = []
         for r in organic[:5]:
             report_parts.append(f"- {r.get('title','')}: {r.get('snippet','')}")
         for p in pages:
             report_parts.append(f"\n[Full page: {p['title']}]\n{p['content'][:2000]}")
-        
-        report = "\n".join(report_parts)
-        
-        return {
-            "grounded": True,
-            "report": report,
-            "organic": organic,
-            "pages": pages,
-            "query": query,
-        }
+        return {"grounded": True, "report": "\n".join(report_parts), "organic": organic, "pages": pages, "query": query}
 
 
 # Singleton

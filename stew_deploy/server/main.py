@@ -2879,28 +2879,52 @@ async def run_skill_endpoint(body: SkillRequest, db: AsyncSession = Depends(get_
 
 @app.post("/browse")
 async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
-    """Browse any URL and extract content. Uses Serper for search queries, httpx for direct URLs."""
+    """Browse any URL and extract content. Uses the autonomous WebCrawler
+    for search queries (no API key needed — scrapes Google/Bing/DDG directly).
+    For direct URLs, uses multi-strategy page fetch."""
     user = await _safe_get_user(body.api_key, db)
-    from server.browser import StewBrowser
-    browser = StewBrowser()
+    from server.web_crawler import get_crawler
+    crawler = get_crawler()
     
     url = body.url.strip()
     
-    # Detect search queries (Google URLs or plain text queries)
+    # Detect search queries
     is_google_search = "google.com/search" in url or "google.com/search?" in url
     is_search_query = not url.startswith("http") or is_google_search
     
     if is_search_query:
-        # Extract query from Google URL or use as-is
         if is_google_search:
             from urllib.parse import urlparse, parse_qs
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
             query = params.get("q", [""])[0]
         else:
-            query = url  # plain text query
+            query = url
         
-        # Use Serper API (real Google results) first
+        # Use the autonomous WebCrawler — scrapes real search engines, no API key
+        try:
+            search_results = await crawler.search(query, 8)
+            if search_results.get("grounded"):
+                organic = search_results.get("organic", [])
+                return {
+                    "success": True,
+                    "question": body.question,
+                    "title": f"Search: {query}",
+                    "url": url if url.startswith("http") else f"https://google.com/search?q={query}",
+                    "content": "\n".join([f"{r['title']}\n{r['link']}\n{r['snippet']}\n" for r in organic]),
+                    "links": [{"text": r["title"][:80], "url": r["link"]} for r in organic[:10]],
+                    "word_count": sum(len(r.get("snippet", "").split()) for r in organic),
+                    "rendered": True,
+                    "source": f"web_crawler_{search_results.get('source', 'unknown')}",
+                    "search_results": organic,
+                    "answer_box": search_results.get("answer_box", {}),
+                    "knowledge_graph": search_results.get("knowledge_graph", {}),
+                    "grounded": True,
+                }
+        except Exception as e:
+            logger.warning(f"WebCrawler search in browse failed: {e}")
+
+        # Fallback: old search system
         searcher = get_searcher()
         try:
             search_results = await asyncio.to_thread(searcher.search, query, 8)
@@ -2915,46 +2939,30 @@ async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
                     "links": [{"text": r["title"][:80], "url": r["link"]} for r in organic[:10]],
                     "word_count": sum(len(r.get("snippet", "").split()) for r in organic),
                     "rendered": True,
-                    "source": "serper_google_search",
+                    "source": "fallback_search",
                     "search_results": organic,
-                    "answer_box": search_results.get("answer_box", {}),
-                    "knowledge_graph": search_results.get("knowledge_graph", {}),
                     "grounded": True,
                 }
         except Exception as e:
-            logger.warning(f"Browse Serper search failed: {e}")
+            logger.warning(f"Fallback search failed: {e}")
         
-        # Fallback: DuckDuckGo HTML search (no JS needed)
+        from server.browser import StewBrowser
+        browser = StewBrowser()
         result = await browser.search_web_fallback(query)
         result["success"] = True
         result["question"] = body.question
         result["source"] = "duckduckgo_fallback"
         return result
     else:
-        # Direct URL fetch
+        # Direct URL fetch — use WebCrawler (multi-strategy: direct + Jina + proxy)
+        result = await crawler.fetch_page(url)
+        if result.get("content") and len(result["content"]) > 100:
+            return {"success": True, "question": body.question, **result}
+        
+        # Fallback: StewBrowser (Playwright + Crawl4AI if available)
+        from server.browser import StewBrowser
+        browser = StewBrowser()
         result = await browser.fetch(url)
-        # Detect Google JS-required page (httpx can't render JS)
-        if "enable" in result.get("title", "").lower() if isinstance(result.get("title"), str) else False:
-            # Google returned a JS-required page, try Serper instead
-            logger.warning(f"Google returned JS-required page for {url}, trying Serper")
-            searcher = get_searcher()
-            try:
-                search_results = await asyncio.to_thread(searcher.search, url, 8)
-                if search_results.get("grounded"):
-                    return {
-                        "success": True,
-                        "question": body.question,
-                        "title": f"Search results",
-                        "url": url,
-                        "content": "\n".join([f"{r['title']}\n{r['link']}\n{r['snippet']}\n" for r in search_results.get("organic", [])]),
-                        "links": [{"text": r["title"][:80], "url": r["link"]} for r in search_results.get("organic", [])[:10]],
-                        "word_count": sum(len(r.get("snippet", "").split()) for r in search_results.get("organic", [])),
-                        "rendered": False,
-                        "source": "serper_fallback",
-                        "grounded": True,
-                    }
-            except Exception as e:
-                logger.warning(f"Serper fallback failed: {e}")
         return {"success": True, "question": body.question, **result}
 
 
@@ -3167,21 +3175,82 @@ SEARCH CONTEXT:
 
 @app.get("/search/test")
 async def search_test():
-    """Test if web search is working. Returns provider status."""
+    """Test if web search is working. Tests all search engines."""
     try:
-        searcher = get_searcher()
-        result = await asyncio.to_thread(searcher.search, "test query python", 3)
-        organic = result.get("organic", [])
+        from server.web_crawler import get_crawler
+        crawler = get_crawler()
+        # Test each engine individually
+        engines_status = {}
+        for name, fn in [("google", crawler.google_search), ("bing", crawler.bing_search),
+                         ("ddg", crawler.ddg_search), ("jina", crawler.jina_search)]:
+            try:
+                result = await fn("test query python", 3)
+                engines_status[name] = {
+                    "ok": bool(result.get("organic")),
+                    "results": len(result.get("organic", [])),
+                    "source": result.get("source", ""),
+                }
+            except Exception as e:
+                engines_status[name] = {"ok": False, "error": str(e)[:100]}
+
+        # Full search test
+        full_result = await crawler.search("test query python", 3)
         return {
             "success": True,
-            "grounded": result.get("grounded", False),
-            "source": result.get("source", "unknown"),
-            "num_results": len(organic),
-            "first_result": organic[0] if organic else None,
-            "has_allorigins": "duckduckgo_proxy" in str(result.get("source", "")),
+            "engines": engines_status,
+            "full_search": {
+                "grounded": full_result.get("grounded", False),
+                "source": full_result.get("source", "unknown"),
+                "num_results": len(full_result.get("organic", [])),
+                "first_result": full_result.get("organic", [None])[0] if full_result.get("organic") else None,
+            },
         }
     except Exception as e:
         return {"success": False, "error": str(e)[:300]}
+
+
+@app.post("/crawl")
+async def crawl_web(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Autonomous web crawl — search + fetch pages + compile report.
+    No API key needed for search (scrapes Google/Bing/DDG directly).
+    
+    Body:
+      query: search query string
+      num_pages: how many pages to fully fetch and read (default 3)
+      fetch_content: if True, returns full page content (default True)
+    """
+    query = body.get("query", "").strip()
+    if not query:
+        raise HTTPException(400, "Query is required")
+
+    num_pages = min(body.get("num_pages", 3), 10)
+    user = await _safe_get_user(body.get("api_key", ""), db)
+
+    from server.web_crawler import get_crawler
+    crawler = get_crawler()
+
+    try:
+        result = await crawler.crawl(query, num_pages=num_pages, num_results=8)
+        return {
+            "success": result.get("grounded", False),
+            "query": query,
+            "search_source": result.get("search_source", ""),
+            "num_results": len(result.get("organic", [])),
+            "num_pages_fetched": len(result.get("pages", [])),
+            "organic": result.get("organic", []),
+            "pages": [{"title": p["title"], "url": p["url"],
+                       "content": p.get("content", "")[:3000],
+                       "word_count": p.get("word_count", 0),
+                       "source": p.get("source", "")} for p in result.get("pages", [])],
+            "report": result.get("report", ""),
+            "grounded": result.get("grounded", False),
+        }
+    except Exception as e:
+        logger.error(f"Crawl error: {e}", exc_info=True)
+        raise HTTPException(500, f"Crawl failed: {str(e)[:200]}")
 
 # Audio/voice file extensions Telegram may send as a "document" instead of "voice"/"audio"
 _AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "oga", "opus", "flac", "aac", "wma", "aiff", "amr"}
@@ -7672,8 +7741,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_message(chat_id, f"Researching: {query[:80]}...")
         await bot.send_typing(chat_id)
         try:
-            searcher = get_searcher()
-            research_results = await asyncio.to_thread(searcher.stew_extension_research, query, 3)
+            # Use the autonomous WebCrawler — no API key needed
+            from server.web_crawler import get_crawler
+            crawler = get_crawler()
+            research_results = await crawler.crawl(query, num_pages=3, num_results=8)
             if research_results.get("grounded"):
                 num_sources = len(research_results.get("organic", []))
                 await bot.send_message(chat_id, f"Found {num_sources} sources. Analyzing...")
@@ -8233,9 +8304,15 @@ Requirements:
             await bot.send_message(chat_id, f"Reading: {target_url}")
             await bot.send_typing(chat_id)
             try:
-                from server.browser import get_browser
-                browser = get_browser()
-                page = await browser.fetch(target_url, timeout=25)
+                # Use WebCrawler first (multi-strategy, no Playwright needed)
+                from server.web_crawler import get_crawler
+                crawler = get_crawler()
+                page = await crawler.fetch_page(target_url, timeout=25)
+                if not page.get("content") or len(page.get("content", "")) < 100:
+                    # Fallback to StewBrowser (Playwright/Crawl4AI)
+                    from server.browser import get_browser
+                    browser = get_browser()
+                    page = await browser.fetch(target_url, timeout=25)
                 if page.get("content"):
                     # Summarize the page
                     llm = get_llm_client()
