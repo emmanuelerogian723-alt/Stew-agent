@@ -345,6 +345,8 @@ footer{position:relative;z-index:10;border-top:1px solid var(--border);padding:6
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<!-- Google Identity Services — fallback if Firebase popup fails -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 // Firebase config — S.T.E.W Agent
 const firebaseConfig = {
@@ -510,6 +512,14 @@ const fbAuth = firebase.auth();
         <h3>Paystack · Naira Billing</h3>
         <p>Upgrade with Paystack. No dollar card required. Built for African developers first.</p>
         <div class="b-number">07</div>
+      </div>
+      <div class="b-card b8 big">
+        <div class="b-icon">⏰</div>
+        <div class="b-tag">New Feature</div>
+        <h3>Scheduled Tasks & Automation</h3>
+        <p>Set up recurring AI tasks that run automatically — daily reports, crypto price alerts, news summaries, reminders, and more. Stew executes on schedule and delivers results to your Telegram.</p>
+        <div class="mini-code">POST /schedule/create<br>{"name": "Crypto Alert", "prompt": "Summarize BTC and ETH prices", "schedule_type": "daily", "schedule_config": "09:30", "delivery_method": "telegram"}</div>
+        <div class="b-number">08</div>
       </div>
     </div>
   </div>
@@ -895,32 +905,102 @@ async function doLogin(e){
   }
   btn.disabled=false;btn.textContent='Sign In →';
 }
-// ── Google Sign-In ──
+// ── Google Sign-In (Firebase first, GIS fallback) ──
+const googleBtnHTML='<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg> Continue with Google';
+
 async function doGoogleLogin(){
-  const btn=document.getElementById('googleBtn');btn.disabled=true;btn.textContent='Connecting...';
+  const btn=document.getElementById('googleBtn');
+  btn.disabled=true;btn.textContent='Connecting...';
+
+  // Method 1: Try Firebase popup
   try{
     const provider=new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({prompt:'select_account'});
     const result=await fbAuth.signInWithPopup(provider);
     const fbUser=result.user;
     const idToken=await fbUser.getIdToken();
+    await completeGoogleLogin(idToken, fbUser.email, fbUser.displayName||fbUser.email.split('@')[0], fbUser.uid, btn);
+    return;
+  }catch(e){
+    console.log('Firebase popup failed:', e.code || e.message);
+    if(e.code==='auth/popup-closed-by-user'){
+      btn.disabled=false;btn.innerHTML=googleBtnHTML;
+      return;
+    }
+    if(e.code==='auth/unauthorized-domain'||e.code==='auth/operation-not-allowed'||e.code==='auth/api-key-not-valid'){
+      console.log('Firebase domain not authorized — falling back to GIS');
+    } else {
+      console.log('Firebase error, trying GIS fallback:', e.code);
+    }
+  }
+
+  // Method 2: Fall back to Google Identity Services (GIS) — works without Firebase domain auth
+  try{
+    const credential=await googleGISLogin();
+    // Send Google credential to backend
     const fpData=collectFingerprint();
-    const r=await fetch(BASE+'/auth/firebase',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id_token:idToken,email:fbUser.email,name:fbUser.displayName||fbUser.email.split('@')[0],...fpData})});
+    const r=await fetch(BASE+'/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({credential:credential, ...fpData})});
     const d=await r.json();
     if(r.ok&&d.api_key){
       localStorage.setItem('stew_api_key',d.api_key);
       localStorage.setItem('stew_apikey',d.api_key);
       localStorage.setItem('stew_token',d.access_token);
-      localStorage.setItem('stew_user',JSON.stringify({name:d.name||fbUser.displayName,email:fbUser.email,plan:d.plan||'free',api_key:d.api_key}));
-      localStorage.setItem('stew_firebase_uid',fbUser.uid);
-      showMsg('Welcome, '+(d.name||'user')+'! Redirecting...','auth-msg ok');
+      localStorage.setItem('stew_user',JSON.stringify({name:d.name,email:d.email,plan:d.plan||'free',api_key:d.api_key}));
+      showMsg('Welcome, '+d.name+'! Redirecting...','auth-msg ok');
       setTimeout(function(){window.location.href='/dashboard';},600);
-    }else{showMsg('Error: '+(d.detail||'Google sign-in failed'),'auth-msg err');}
-  }catch(e){
-    if(e.code!=='auth/popup-closed-by-user'){showMsg('Google sign-in failed: '+(e.message||''),'auth-msg err');}
+    }else{
+      showMsg('Error: '+(d.detail||'Google sign-in failed'),'auth-msg err');
+    }
+  }catch(gisErr){
+    console.log('GIS also failed:', gisErr);
+    showMsg('Google sign-in failed: '+(gisErr.message||'Please try email sign-up instead'),'auth-msg err');
   }
-  btn.disabled=false;btn.innerHTML='<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg> Continue with Google';
+
+  btn.disabled=false;btn.innerHTML=googleBtnHTML;
+}
+
+async function completeGoogleLogin(idToken, email, name, uid, btn){
+  const fpData=collectFingerprint();
+  const r=await fetch(BASE+'/auth/firebase',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id_token:idToken,email:email,name:name,...fpData})});
+  const d=await r.json();
+  if(r.ok&&d.api_key){
+    localStorage.setItem('stew_api_key',d.api_key);
+    localStorage.setItem('stew_apikey',d.api_key);
+    localStorage.setItem('stew_token',d.access_token);
+    localStorage.setItem('stew_user',JSON.stringify({name:d.name||name,email:email,plan:d.plan||'free',api_key:d.api_key}));
+    localStorage.setItem('stew_firebase_uid',uid);
+    showMsg('Welcome, '+(d.name||name)+'! Redirecting...','auth-msg ok');
+    setTimeout(function(){window.location.href='/dashboard';},600);
+  }else{
+    showMsg('Error: '+(d.detail||'Google sign-in failed'),'auth-msg err');
+    if(btn){btn.disabled=false;btn.innerHTML=googleBtnHTML;}
+  }
+}
+
+function googleGISLogin(){
+  return new Promise((resolve,reject)=>{
+    if(!window.google||!window.google.accounts){
+      reject(new Error('Google Identity not loaded'));
+      return;
+    }
+    const client=google.accounts.oauth2.initTokenClient({
+      client_id:'389447033478-7lh3qg2g5jq04r2kujjqeomvr3r5c1hp.apps.googleusercontent.com',
+      scope:'openid email profile',
+      callback:(response)=>{
+        if(response.access_token){
+          resolve(response.access_token);
+        }else{
+          reject(new Error('No access token'));
+        }
+      },
+      error_callback:(err)=>{
+        reject(new Error(err.message||'GIS popup failed'));
+      }
+    });
+    client.requestAccessToken();
+  });
 }
 
 // ── Device Fingerprint Collection ──

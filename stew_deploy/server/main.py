@@ -106,7 +106,7 @@ from server.skills_engine import run_skill, list_skills as get_skills_list
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("S.T.E.W API v5.0 starting up…")
+    logger.info("S.T.E.W API v6.0 starting up…")
     await init_db()
     os.makedirs("logs", exist_ok=True)
     os.makedirs("output", exist_ok=True)
@@ -132,6 +132,7 @@ async def lifespan(app: FastAPI):
             {"command": "webbuild", "description": "Build a motion-design website (Kimi style)"},
             {"command": "meme", "description": "Generate an AI meme image"},
             {"command": "caption", "description": "Generate viral social media captions"},
+            {"command": "schedule", "description": "Create and manage scheduled tasks"},
             {"command": "feature", "description": "Request a new feature"},
             {"command": "features", "description": "View feature requests"},
             {"command": "vote", "description": "Vote for a feature request"},
@@ -149,9 +150,23 @@ async def lifespan(app: FastAPI):
     except Exception as _cmd_err:
         logger.warning(f"Failed to register bot commands: {_cmd_err}")
 
+    # Start the Stew Scheduler engine
+    try:
+        from server.scheduler import start_scheduler
+        await start_scheduler()
+        logger.info("Stew Scheduler engine started")
+    except Exception as e:
+        logger.warning(f"Scheduler engine failed to start: {e}")
+
     yield
     stop_keepalive()
     stop_bot_stats()
+    # Stop the scheduler
+    try:
+        from server.scheduler import stop_scheduler
+        await stop_scheduler()
+    except Exception:
+        pass
     logger.info("S.T.E.W API shutting down.")
 
 
@@ -4213,7 +4228,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif action == "lecturers":
             await bot.send_message(chat_id, "Lecturer Tools: /lessonplan /rubric /grade /quiz /pptx\n\nExample: /lessonplan Intro to Calculus for 100 level")
         elif action == "companies":
-            await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN")
+            await bot.send_message(chat_id, "Company Tools: /invoice /meeting /swot /businessplan /budget /xlsx\n\nScheduler: /schedule — automate recurring tasks (daily reports, crypto alerts, reminders)\n\nExample: /invoice Client: Acme Corp, Service: Web Design, Amount: 250000 NGN\nExample: /schedule create daily 09:30 Send me crypto price summary")
         elif action == "tools":
             await bot.send_message(chat_id, "Tools: /research /code /pdf /docx /xlsx /pptx /termpaper\nTerm Papers: write a term paper on <topic>\nGenerate images: 'generate image of...'\nSites: /webbuild <description> (motion-design websites)\nMemes: /meme <text> (AI meme generator)\nCaptions: /caption <context> (viral social captions)\nBooks: /book topic (up to 200 pages with covers)\nSongs: /song topic (AI music + lyrics + cover)\nBrowse: 'browse https://...'\nSend photos/PDFs for OCR\nSend voice notes for transcription")
         elif action == "clear":
@@ -5612,6 +5627,161 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         except Exception as e:
             await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
+
+    # ── /schedule COMMAND (Scheduler) ──────────────────────────────────────────
+    if user_text.startswith("/schedule"):
+        args = user_text[9:].strip()
+        if not args:
+            await bot.send_message(chat_id,
+                "Stew Scheduler — automate recurring tasks!\n\n"
+                "Usage:\n"
+                "1. Create: /schedule create daily 09:30 Send me a news summary about tech in Nigeria\n"
+                "2. Create interval: /schedule create interval 30m Check crypto prices and give me a summary\n"
+                "3. Create weekly: /schedule create weekly mon:08:00 Write a Monday motivation message\n"
+                "4. Create once: /schedule create once 2026-09-15T10:00:00 Remind me to submit my project\n"
+                "5. List: /schedule list\n"
+                "6. Pause: /schedule pause <task_id>\n"
+                "7. Resume: /schedule resume <task_id>\n"
+                "8. Delete: /schedule delete <task_id>\n\n"
+                "Schedule types: daily (HH:MM), interval (Ns/Nm/Nh/Nd), weekly (day:HH:MM), once (ISO datetime)\n"
+                "Delivery: results are sent to you here on Telegram automatically."
+            )
+            return {"ok": True}
+
+        parts = args.split(maxsplit=4)
+        subcmd = parts[0].lower() if parts else ""
+
+        if subcmd == "create" and len(parts) >= 4:
+            # /schedule create <type> <config> <prompt...>
+            sched_type = parts[1].lower()
+            sched_config = parts[2]
+            prompt_text = parts[3] if len(parts) > 3 else ""
+
+            if sched_type not in ("interval", "daily", "weekly", "once"):
+                await bot.send_message(chat_id, "Invalid schedule type. Use: interval, daily, weekly, or once")
+                return {"ok": True}
+
+            try:
+                from server.scheduler import compute_next_run
+                from datetime import datetime as _dt
+                next_run = compute_next_run(sched_type, sched_config, _dt.utcnow())
+                if next_run is None:
+                    raise ValueError("Could not compute next run")
+            except Exception as e:
+                await bot.send_message(chat_id, f"Invalid schedule config: {e}")
+                return {"ok": True}
+
+            # Create the task in DB
+            try:
+                new_task = ScheduledTask(
+                    user_id=tg_user.id,
+                    name=prompt_text[:60] or f"Scheduled {sched_type} task",
+                    prompt=prompt_text,
+                    schedule_type=sched_type,
+                    schedule_config=sched_config,
+                    delivery_method="telegram",
+                    delivery_target=str(chat_id),
+                )
+                db.add(new_task)
+                await db.commit()
+                await db.refresh(new_task)
+
+                await bot.send_message(chat_id,
+                    f"✅ Scheduled task created!\n\n"
+                    f"Task: {new_task.name}\n"
+                    f"Type: {sched_type} ({sched_config})\n"
+                    f"Next run: {next_run.strftime('%Y-%m-%d %H:%M UTC')}\n"
+                    f"ID: {new_task.id}\n\n"
+                    f"I'll run this automatically and send you the result here."
+                )
+            except Exception as e:
+                await bot.send_message(chat_id, f"Failed to create task: {e}")
+            return {"ok": True}
+
+        elif subcmd == "list":
+            try:
+                result = await db.execute(
+                    select(ScheduledTask)
+                    .where(ScheduledTask.user_id == tg_user.id)
+                    .order_by(ScheduledTask.created_at.desc())
+                )
+                tasks = result.scalars().all()
+                if not tasks:
+                    await bot.send_message(chat_id, "No scheduled tasks yet. Use /schedule create to make one.")
+                else:
+                    msg = "📋 Your Scheduled Tasks:\n\n"
+                    for t in tasks:
+                        status = "🟢 Active" if t.is_active else "⏸️ Paused"
+                        msg += f"{status} | {t.name}\n"
+                        msg += f"  Type: {t.schedule_type} ({t.schedule_config})\n"
+                        msg += f"  Runs: {t.run_count}"
+                        if t.last_run_at:
+                            msg += f" | Last: {t.last_run_at.strftime('%Y-%m-%d %H:%M')}"
+                        msg += f"\n  ID: {t.id}\n\n"
+                    await bot.send_message(chat_id, msg[:4000])
+            except Exception as e:
+                await bot.send_message(chat_id, f"Error listing tasks: {e}")
+            return {"ok": True}
+
+        elif subcmd == "pause" and len(parts) >= 2:
+            try:
+                task_id = parts[1]
+                result = await db.execute(
+                    select(ScheduledTask)
+                    .where(ScheduledTask.id == task_id, ScheduledTask.user_id == tg_user.id)
+                )
+                task = result.scalar_one_or_none()
+                if task:
+                    task.is_active = False
+                    await db.commit()
+                    await bot.send_message(chat_id, f"⏸️ Task '{task.name}' paused.")
+                else:
+                    await bot.send_message(chat_id, "Task not found.")
+            except Exception as e:
+                await bot.send_message(chat_id, f"Error: {e}")
+            return {"ok": True}
+
+        elif subcmd == "resume" and len(parts) >= 2:
+            try:
+                task_id = parts[1]
+                result = await db.execute(
+                    select(ScheduledTask)
+                    .where(ScheduledTask.id == task_id, ScheduledTask.user_id == tg_user.id)
+                )
+                task = result.scalar_one_or_none()
+                if task:
+                    from server.scheduler import compute_next_run as _cnr
+                    task.is_active = True
+                    task.next_run_at = _cnr(task.schedule_type, task.schedule_config, _dt.utcnow())
+                    await db.commit()
+                    await bot.send_message(chat_id, f"▶️ Task '{task.name}' resumed. Next run: {task.next_run_at}")
+                else:
+                    await bot.send_message(chat_id, "Task not found.")
+            except Exception as e:
+                await bot.send_message(chat_id, f"Error: {e}")
+            return {"ok": True}
+
+        elif subcmd == "delete" and len(parts) >= 2:
+            try:
+                task_id = parts[1]
+                result = await db.execute(
+                    select(ScheduledTask)
+                    .where(ScheduledTask.id == task_id, ScheduledTask.user_id == tg_user.id)
+                )
+                task = result.scalar_one_or_none()
+                if task:
+                    await db.delete(task)
+                    await db.commit()
+                    await bot.send_message(chat_id, f"🗑️ Task '{task.name}' deleted.")
+                else:
+                    await bot.send_message(chat_id, "Task not found.")
+            except Exception as e:
+                await bot.send_message(chat_id, f"Error: {e}")
+            return {"ok": True}
+
+        else:
+            await bot.send_message(chat_id, "Unknown /schedule command. Send /schedule for help.")
+            return {"ok": True}
 
     # ── /code COMMAND ──────────────────────────────────────────────────────────
     if user_text.startswith("/code"):
@@ -7760,6 +7930,96 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+@app.post("/auth/google")
+async def google_oauth_login(body: dict, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Google Identity Services (GIS) fallback auth.
+    Accepts a Google OAuth access token and creates/logs in the user.
+    This endpoint works without Firebase Admin SDK.
+    """
+    import httpx
+    from server.security import get_client_ip
+
+    access_token = body.get("credential", "")
+    canvas_hash = body.get("canvas_hash", "")
+    webgl_hash = body.get("webgl_hash", "")
+    screen_resolution = body.get("screen_resolution", "")
+    fp_timezone = body.get("timezone", "")
+    fp_language = body.get("language", "")
+
+    if not access_token:
+        raise HTTPException(400, "Missing credential (Google access token)")
+
+    # Verify the Google token by calling Google's userinfo endpoint
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if resp.status_code != 200:
+                raise HTTPException(401, "Invalid Google token")
+            userinfo = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Google token verification failed: {e}")
+
+    email = userinfo.get("email", "")
+    name = userinfo.get("name", "") or userinfo.get("given_name", "") or email.split("@")[0]
+    google_id = userinfo.get("id", "")
+
+    if not email:
+        raise HTTPException(400, "Google did not return an email address")
+
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "")
+
+    fp_hash = compute_fingerprint(
+        user_agent=user_agent,
+        canvas_hash=canvas_hash,
+        webgl_hash=webgl_hash,
+        screen_resolution=screen_resolution,
+        timezone=fp_timezone,
+        language=fp_language,
+    )
+
+    # Check if user exists
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user:
+        if not user.is_active:
+            raise HTTPException(403, "Account is deactivated")
+    else:
+        # Create new user
+        import secrets
+        user = User(
+            name=name,
+            email=email,
+            api_key="stew_" + secrets.token_urlsafe(48),
+            plan="free",
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()
+
+    # Generate JWT token
+    from server.security import create_access_token
+    access_token_jwt = create_access_token({"sub": user.id, "email": user.email})
+
+    await db.commit()
+
+    return {
+        "api_key": user.api_key,
+        "access_token": access_token_jwt,
+        "token_type": "bearer",
+        "name": user.name,
+        "email": user.email,
+        "plan": user.plan,
+        "calls_limit": 1500 if user.plan == "free" else (15000 if user.plan == "pro" else 100000),
+        "success": True,
+    }
+
+
 @app.post("/auth/forgot-password")
 async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -7860,3 +8120,200 @@ async def integration_call(body: IntegrationRequest, db: AsyncSession = Depends(
     except Exception as e:
         raise HTTPException(500, str(e))
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SCHEDULER API — Schedule recurring AI tasks (like Hermes cron)
+# ═══════════════════════════════════════════════════════════════════════════
+
+from server.models import ScheduledTask
+from server.scheduler import compute_next_run
+from datetime import datetime as _dt
+
+
+class CreateScheduledTaskRequest(BaseModel):
+    name: str
+    prompt: str
+    schedule_type: str  # interval|daily|weekly|once
+    schedule_config: str  # "10m", "09:30", "mon:09:30", "2026-09-15T10:00:00"
+    delivery_method: str = "telegram"  # telegram|email|webhook|dashboard
+    delivery_target: str = ""  # chat_id, email, url
+    max_runs: Optional[int] = None
+    api_key: str = ""
+
+
+@app.post("/schedule/create")
+async def create_scheduled_task(body: CreateScheduledTaskRequest, db: AsyncSession = Depends(get_db)):
+    """Create a new scheduled task. The scheduler will execute it automatically."""
+    user = await _safe_get_user(body.api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required.")
+
+    # Validate schedule type
+    if body.schedule_type not in ("interval", "daily", "weekly", "once"):
+        raise HTTPException(400, "schedule_type must be: interval, daily, weekly, or once")
+
+    # Validate delivery method
+    if body.delivery_method not in ("telegram", "email", "webhook", "dashboard"):
+        raise HTTPException(400, "delivery_method must be: telegram, email, webhook, or dashboard")
+
+    # Validate schedule config
+    try:
+        next_run = compute_next_run(body.schedule_type, body.schedule_config, _dt.utcnow())
+        if next_run is None:
+            raise ValueError("Could not compute next run time")
+    except Exception as e:
+        raise HTTPException(400, f"Invalid schedule_config: {e}")
+
+    task = ScheduledTask(
+        user_id=user.id,
+        name=body.name,
+        prompt=body.prompt,
+        schedule_type=body.schedule_type,
+        schedule_config=body.schedule_config,
+        delivery_method=body.delivery_method,
+        delivery_target=body.delivery_target,
+        max_runs=body.max_runs,
+        next_run_at=next_run,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+
+    return {
+        "success": True,
+        "task_id": task.id,
+        "name": task.name,
+        "schedule_type": task.schedule_type,
+        "schedule_config": task.schedule_config,
+        "delivery_method": task.delivery_method,
+        "next_run_at": task.next_run_at.isoformat() if task.next_run_at else None,
+        "message": f"Scheduled task '{task.name}' created. Next run: {task.next_run_at}",
+    }
+
+
+@app.get("/schedule/list")
+async def list_scheduled_tasks(api_key: str = "", db: AsyncSession = Depends(get_db)):
+    """List all scheduled tasks for the authenticated user."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required.")
+
+    result = await db.execute(
+        select(ScheduledTask)
+        .where(ScheduledTask.user_id == user.id)
+        .order_by(ScheduledTask.created_at.desc())
+    )
+    tasks = result.scalars().all()
+
+    return {
+        "success": True,
+        "count": len(tasks),
+        "tasks": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "prompt": t.prompt[:200],
+                "schedule_type": t.schedule_type,
+                "schedule_config": t.schedule_config,
+                "delivery_method": t.delivery_method,
+                "delivery_target": t.delivery_target,
+                "is_active": t.is_active,
+                "last_run_at": t.last_run_at.isoformat() if t.last_run_at else None,
+                "next_run_at": t.next_run_at.isoformat() if t.next_run_at else None,
+                "run_count": t.run_count,
+                "max_runs": t.max_runs,
+                "last_result": (t.last_result or "")[:200],
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in tasks
+        ],
+    }
+
+
+@app.post("/schedule/{task_id}/pause")
+async def pause_scheduled_task(task_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Pause a scheduled task."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    if not user:
+        raise HTTPException(401, "Valid API key required.")
+
+    result = await db.execute(
+        select(ScheduledTask)
+        .where(ScheduledTask.id == task_id, ScheduledTask.user_id == user.id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    task.is_active = False
+    await db.commit()
+
+    return {"success": True, "message": f"Task '{task.name}' paused."}
+
+
+@app.post("/schedule/{task_id}/resume")
+async def resume_scheduled_task(task_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Resume a paused scheduled task."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    if not user:
+        raise HTTPException(401, "Valid API key required.")
+
+    result = await db.execute(
+        select(ScheduledTask)
+        .where(ScheduledTask.id == task_id, ScheduledTask.user_id == user.id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    # Recompute next run
+    next_run = compute_next_run(task.schedule_type, task.schedule_config, _dt.utcnow())
+    task.is_active = True
+    task.next_run_at = next_run
+    await db.commit()
+
+    return {"success": True, "message": f"Task '{task.name}' resumed. Next run: {next_run}"}
+
+
+@app.delete("/schedule/{task_id}")
+async def delete_scheduled_task(task_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Delete a scheduled task."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    if not user:
+        raise HTTPException(401, "Valid API key required.")
+
+    result = await db.execute(
+        select(ScheduledTask)
+        .where(ScheduledTask.id == task_id, ScheduledTask.user_id == user.id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    await db.delete(task)
+    await db.commit()
+
+    return {"success": True, "message": f"Task '{task.name}' deleted."}
+
+
+@app.post("/schedule/{task_id}/run-now")
+async def run_task_now(task_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Trigger a scheduled task to run immediately, regardless of schedule."""
+    user = await _safe_get_user(body.get("api_key", ""), db)
+    if not user:
+        raise HTTPException(401, "Valid API key required.")
+
+    result = await db.execute(
+        select(ScheduledTask)
+        .where(ScheduledTask.id == task_id, ScheduledTask.user_id == user.id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    # Force next_run_at to now
+    task.next_run_at = _dt.utcnow()
+    await db.commit()
+
+    return {"success": True, "message": f"Task '{task.name}' will execute within 30 seconds."}

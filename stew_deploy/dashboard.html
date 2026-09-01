@@ -233,6 +233,44 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;background:rgba(
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <!-- Scheduler Tab -->
+  <div class="tab-content" id="tab-scheduler">
+    <div class="d-card">
+      <h2>⏰ Scheduled Tasks</h2>
+      <p style="color:#999;margin-bottom:20px;">Automate recurring AI tasks — daily reports, crypto alerts, news summaries, and more. Stew runs them on schedule and delivers results to your Telegram.</p>
+
+      <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+        <input type="text" id="schedName" placeholder="Task name (e.g. Crypto Alert)" style="flex:1;min-width:200px;padding:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#fff;" />
+        <select id="schedType" style="padding:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#fff;">
+          <option value="interval">Interval (every N)</option>
+          <option value="daily">Daily (HH:MM)</option>
+          <option value="weekly">Weekly (day:HH:MM)</option>
+          <option value="once">Once (datetime)</option>
+        </select>
+        <input type="text" id="schedConfig" placeholder="e.g. 30m / 09:30 / mon:08:00" style="padding:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#fff;width:180px;" />
+      </div>
+      <textarea id="schedPrompt" placeholder="What should Stew do? e.g. Summarize today's top tech news in Nigeria" style="width:100%;min-height:80px;padding:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#fff;margin-bottom:16px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+        <label style="color:#999;">Delivery:</label>
+        <select id="schedDelivery" style="padding:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#fff;">
+          <option value="telegram">Telegram</option>
+          <option value="webhook">Webhook</option>
+          <option value="dashboard">Dashboard only</option>
+        </select>
+        <input type="text" id="schedTarget" placeholder="Telegram chat ID (for delivery)" style="flex:1;min-width:150px;padding:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#fff;" />
+      </div>
+      <button onclick="createScheduledTask()" style="padding:12px 24px;background:linear-gradient(135deg,#00ff9d,#00d9ff);border:none;border-radius:8px;font-weight:700;color:#000;cursor:pointer;font-size:14px;">Create Task</button>
+      <div id="schedMsg" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="d-card" style="margin-top:20px;">
+      <h3>Your Scheduled Tasks</h3>
+      <div id="schedList" style="margin-top:16px;">
+        <p style="color:#666;">Loading tasks...</p>
+      </div>
+    </div>
+  </div>
+
 <script>
 // Firebase config — S.T.E.W Agent
 const firebaseConfig = {
@@ -335,6 +373,7 @@ const fbAuth = firebase.auth();
     <button class="tab" onclick="switchTab('playground')">Playground</button>
     <button class="tab" onclick="switchTab('imagegen')">Image Gen</button>
     <button class="tab" onclick="switchTab('ocr')">OCR</button>
+  <button class="tab" onclick="switchTab('scheduler')">⏰ Scheduler</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -1237,6 +1276,7 @@ async function regenerateKey(){
 function switchTab(name, evt){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  if(tab==='scheduler')loadScheduledTasks();
   if(evt) evt.target.classList.add('active');
   else { document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.trim().toLowerCase()===name) t.classList.add('active'); }); }
   document.getElementById('tab-'+name).classList.add('active');
@@ -1806,6 +1846,93 @@ if(new URLSearchParams(window.location.search).get('payment') === 'success'){
       window.history.replaceState({}, document.title, window.location.pathname);
     }, 1500);
   }
+}
+
+
+// ── Scheduler Functions ──
+async function createScheduledTask(){
+  const name=document.getElementById('schedName').value.trim();
+  const prompt=document.getElementById('schedPrompt').value.trim();
+  const type=document.getElementById('schedType').value;
+  const config=document.getElementById('schedConfig').value.trim();
+  const delivery=document.getElementById('schedDelivery').value;
+  const target=document.getElementById('schedTarget').value.trim();
+  const apiKey=localStorage.getItem('stew_api_key')||localStorage.getItem('stew_apikey');
+  if(!name||!prompt||!config){document.getElementById('schedMsg').innerHTML='<span style="color:#ff4444;">Fill all fields</span>';return;}
+  if(!apiKey){document.getElementById('schedMsg').innerHTML='<span style="color:#ff4444;">Not logged in</span>';return;}
+  document.getElementById('schedMsg').innerHTML='<span style="color:#00ff9d;">Creating...</span>';
+  try{
+    const r=await fetch(BASE+'/schedule/create',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,prompt,schedule_type:type,schedule_config:config,delivery_method:delivery,delivery_target:target,api_key:apiKey})});
+    const d=await r.json();
+    if(r.ok&&d.success){
+      document.getElementById('schedMsg').innerHTML='<span style="color:#00ff9d;">✅ '+d.message+'</span>';
+      document.getElementById('schedName').value='';
+      document.getElementById('schedPrompt').value='';
+      document.getElementById('schedConfig').value='';
+      loadScheduledTasks();
+    }else{
+      document.getElementById('schedMsg').innerHTML='<span style="color:#ff4444;">'+(d.detail||'Failed')+'</span>';
+    }
+  }catch(e){
+    document.getElementById('schedMsg').innerHTML='<span style="color:#ff4444;">Error: '+e.message+'</span>';
+  }
+}
+
+async function loadScheduledTasks(){
+  const apiKey=localStorage.getItem('stew_api_key')||localStorage.getItem('stew_apikey');
+  if(!apiKey){document.getElementById('schedList').innerHTML='<p style="color:#666;">Not logged in</p>';return;}
+  try{
+    const r=await fetch(BASE+'/schedule/list?api_key='+encodeURIComponent(apiKey));
+    const d=await r.json();
+    if(!r.ok||!d.success){document.getElementById('schedList').innerHTML='<p style="color:#666;">No tasks</p>';return;}
+    if(d.count===0){document.getElementById('schedList').innerHTML='<p style="color:#666;">No scheduled tasks yet. Create one above!</p>';return;}
+    let html='';
+    d.tasks.forEach(function(t){
+      const status=t.is_active?'<span style="color:#00ff9d;">Active</span>':'<span style="color:#ff9900;">Paused</span>';
+      html+='<div style="padding:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;margin-bottom:12px;">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      html+='<strong>'+t.name+'</strong> '+status;
+      html+='</div>';
+      html+='<div style="color:#999;font-size:13px;margin-bottom:4px;">Type: '+t.schedule_type+' ('+t.schedule_config+')</div>';
+      html+='<div style="color:#999;font-size:13px;margin-bottom:4px;">Runs: '+t.run_count;
+      if(t.last_run_at)html+=' | Last: '+t.last_run_at;
+      if(t.next_run_at)html+=' | Next: '+t.next_run_at;
+      html+='</div>';
+      html+='<div style="color:#777;font-size:12px;margin-bottom:8px;">'+(t.last_result||'No result yet')+'</div>';
+      html+='<div style="display:flex;gap:8px;">';
+      if(t.is_active){
+        html+='<button onclick="pauseTask(\''+t.id+'\')" style="padding:6px 12px;background:rgba(255,153,0,.2);border:1px solid rgba(255,153,0,.3);border-radius:4px;color:#ff9900;cursor:pointer;font-size:12px;">Pause</button>';
+      }else{
+        html+='<button onclick="resumeTask(\''+t.id+'\')" style="padding:6px 12px;background:rgba(0,255,157,.2);border:1px solid rgba(0,255,157,.3);border-radius:4px;color:#00ff9d;cursor:pointer;font-size:12px;">Resume</button>';
+      }
+      html+='<button onclick="deleteTask(\''+t.id+'\')" style="padding:6px 12px;background:rgba(255,68,68,.2);border:1px solid rgba(255,68,68,.3);border-radius:4px;color:#ff4444;cursor:pointer;font-size:12px;">Delete</button>';
+      html+='</div>';
+      html+='</div>';
+    });
+    document.getElementById('schedList').innerHTML=html;
+  }catch(e){
+    document.getElementById('schedList').innerHTML='<p style="color:#ff4444;">Error: '+e.message+'</p>';
+  }
+}
+
+async function pauseTask(id){
+  const apiKey=localStorage.getItem('stew_api_key')||localStorage.getItem('stew_apikey');
+  await fetch(BASE+'/schedule/'+id+'/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey})});
+  loadScheduledTasks();
+}
+
+async function resumeTask(id){
+  const apiKey=localStorage.getItem('stew_api_key')||localStorage.getItem('stew_apikey');
+  await fetch(BASE+'/schedule/'+id+'/resume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey})});
+  loadScheduledTasks();
+}
+
+async function deleteTask(id){
+  if(!confirm('Delete this task?'))return;
+  const apiKey=localStorage.getItem('stew_api_key')||localStorage.getItem('stew_apikey');
+  await fetch(BASE+'/schedule/'+id,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:apiKey})});
+  loadScheduledTasks();
 }
 
 </script>

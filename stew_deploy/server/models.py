@@ -259,3 +259,33 @@ class MoodEntry(Base):
     day_of_week: Mapped[int] = mapped_column(Integer, default=0)  # 0=Mon, 6=Sun
     hour_of_day: Mapped[int] = mapped_column(Integer, default=12)  # 0-23
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+
+class ScheduledTask(Base):
+    """User-defined recurring or one-time scheduled tasks for the Stew scheduler."""
+    __tablename__ = "scheduled_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)  # What the agent should do
+    # Schedule type: 'interval' (every N seconds/minutes/hours), 'daily' (HH:MM), 'weekly' (day+HH:MM), 'once' (ISO datetime)
+    schedule_type: Mapped[str] = mapped_column(String(20), nullable=False)  # interval|daily|weekly|once
+    # For interval: "300s", "10m", "2h" etc. For daily: "09:30". For weekly: "mon:09:30". For once: ISO datetime string.
+    schedule_config: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Delivery: 'telegram', 'email', 'webhook', 'dashboard'
+    delivery_method: Mapped[str] = mapped_column(String(50), default="telegram")
+    delivery_target: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # chat_id, email, url
+    # Status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    last_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    run_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_runs: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # None = unlimited
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship()
+
