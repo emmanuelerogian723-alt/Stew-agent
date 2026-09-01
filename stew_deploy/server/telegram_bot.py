@@ -14,6 +14,43 @@ logger = logging.getLogger(__name__)
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 
+def _transcode_to_ogg_opus(mp3_bytes: bytes) -> bytes:
+    """Transcode MP3 (or any ffmpeg-readable audio) bytes to OGG/Opus in memory.
+    Telegram's sendVoice API only renders a proper voice-note waveform/duration
+    for genuine OGG/OPUS streams — sending MP3 mislabeled as OGG produces a
+    broken 00:00 player in the client. Returns b"" on failure."""
+    import subprocess
+    import tempfile
+    import os as _os
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f_in:
+            f_in.write(mp3_bytes)
+            in_path = f_in.name
+        out_path = in_path.replace(".mp3", ".ogg")
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", in_path,
+                 "-c:a", "libopus", "-b:a", "48k", "-ar", "48000", "-ac", "1", out_path],
+                timeout=30, capture_output=True,
+            )
+            if result.returncode == 0 and _os.path.exists(out_path):
+                with open(out_path, "rb") as f_out:
+                    ogg_bytes = f_out.read()
+                if len(ogg_bytes) > 100:
+                    return ogg_bytes
+            else:
+                logger.warning(f"ffmpeg OGG transcode failed: {result.stderr.decode(errors='ignore')[:300]}")
+        finally:
+            for p in (in_path, out_path):
+                try:
+                    _os.remove(p)
+                except OSError:
+                    pass
+    except Exception as e:
+        logger.warning(f"_transcode_to_ogg_opus error: {e}")
+    return b""
+
+
 class TelegramBot:
     def __init__(self, token: str):
         self.token = token
@@ -200,12 +237,30 @@ class TelegramBot:
             return {"ok": False, "description": str(e)}
 
     async def send_voice(self, chat_id: int, audio_bytes: bytes, caption: str = "") -> dict:
-        """Send a voice message (OGG format)."""
+        """Send a voice message. Telegram's sendVoice REQUIRES actual OGG/OPUS-encoded
+        audio — our TTS engine (edge-tts) produces MP3 bytes, so we must transcode
+        before sending, otherwise Telegram shows a broken 00:00 player (empty voice note)."""
+        ogg_bytes = _transcode_to_ogg_opus(audio_bytes)
+        if ogg_bytes:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{self.base}/sendVoice",
+                    data={"chat_id": str(chat_id), "caption": caption[:1024]},
+                    files={"voice": ("voice.ogg", ogg_bytes, "audio/ogg")},
+                )
+                result = resp.json()
+                if result.get("ok"):
+                    return result
+                logger.warning(f"sendVoice with transcoded OGG failed: {result.get('description','?')}, falling back to sendAudio (mp3)")
+        else:
+            logger.warning("ffmpeg transcode to OGG/Opus failed, falling back to sendAudio (mp3)")
+        # Fallback: send as a regular audio file (mp3) — still plays fine in Telegram,
+        # just shows as an audio attachment instead of a voice-note waveform bubble.
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
-                f"{self.base}/sendVoice",
+                f"{self.base}/sendAudio",
                 data={"chat_id": str(chat_id), "caption": caption[:1024]},
-                files={"voice": ("voice.ogg", audio_bytes, "audio/ogg")},
+                files={"audio": ("voice.mp3", audio_bytes, "audio/mpeg")},
             )
             return resp.json()
 

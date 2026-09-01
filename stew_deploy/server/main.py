@@ -3342,6 +3342,63 @@ VOICE_OPTIONS = {
     "singapore_f": ("en-SG-LunaNeural", "Luna — Singaporean female"),
 }
 
+# ── Natural-language voice intent detection ─────────────────────────────────
+# Lets users just say "change your voice to X" / "talk like a Turkish woman" /
+# "switch to a male voice" in plain chat — no /voice command needed. This is
+# what makes Stew behave like an agent instead of a rigid command parser.
+_VOICE_INTENT_RE = re.compile(
+    r'\b(change|switch|set|use|pick|make it|sound like|talk like|speak like|talk in|speak in)\b'
+    r'.{0,25}\b(voice|accent|sound|tone)\b'
+    r'|\b(voice|accent)\b.{0,15}\b(to|change|switch)\b'
+    r'|\btalk (in|like|as|with)\b.{0,20}\baccent\b'
+    r'|\bspeak (in|like|as|with)\b.{0,20}\baccent\b'
+    r'|\b(sound|talk|speak) (more )?(male|female|british|nigerian|american)\b',
+    re.IGNORECASE,
+)
+# Catches "talk like Emel" / "speak as Aria" style phrasing where the user names
+# a specific voice directly, without using the words "voice"/"accent".
+_VOICE_VERB_RE = re.compile(r'\b(talk|speak|sound)\s+(like|as|in)\b', re.IGNORECASE)
+
+# Aliases so free-text matches even when the user doesn't say the exact key
+# (e.g. "turkish" -> turkish_f, "british accent" -> british_f, "male voice" -> guy)
+_VOICE_ALIASES = {
+    "american": "aria", "us": "aria", "female american": "aria", "male american": "guy",
+    "british": "british_f", "uk": "british_f", "english accent": "british_f",
+    "nigerian": "nigeria", "naija": "nigeria",
+    "kenyan": "kenya", "south african": "sa_f", "tanzanian": "tz_f",
+    "afrikaans": "afrikaans_f", "zulu": "zulu_f", "swahili": "swahili_f",
+    "indian": "indian_f", "french": "french_f", "spanish": "spanish",
+    "hindi": "hindi", "arabic": "arabic", "portuguese": "portuguese_f",
+    "chinese": "chinese_f", "japanese": "japanese_f", "korean": "korean_f",
+    "turkish": "turkish_f", "vietnamese": "vietnamese_f", "thai": "thai_f",
+    "filipino": "filipino_f", "singaporean": "singapore_f", "singapore": "singapore_f",
+    "male": "guy", "female": "aria", "man": "guy", "woman": "aria",
+}
+
+
+def _match_voice_from_text(text: str) -> tuple[str, str] | None:
+    """Try to resolve a natural-language phrase to a VOICE_OPTIONS entry.
+    Checks exact keys, voice-name mentions (e.g. 'Emel'), and language/gender
+    aliases. Returns (key, (voice_id, desc)) or None."""
+    low = text.lower()
+    # 1. Exact key match (e.g. "turkish_f", "nigeria_m")
+    for key in VOICE_OPTIONS:
+        if key.replace("_", " ") in low or key in low:
+            return key, VOICE_OPTIONS[key]
+    # 2. Voice display-name match (e.g. "Emel", "Aria", "Xiaoxiao")
+    for key, (voice_id, desc) in VOICE_OPTIONS.items():
+        display_name = desc.split(" — ")[0].strip().lower()
+        if display_name and display_name in low:
+            return key, (voice_id, desc)
+    # 3. Alias match (e.g. "turkish", "male voice", "british accent")
+    # Sort longest-first so "south african" matches before "african" substrings etc.
+    for alias in sorted(_VOICE_ALIASES, key=len, reverse=True):
+        if alias in low:
+            key = _VOICE_ALIASES[alias]
+            return key, VOICE_OPTIONS[key]
+    return None
+
+
 async def _synthesize_voice(text: str, voice: str = "en-US-AriaNeural") -> tuple[bytes, str]:
     """Synthesize speech via edge-tts (free, no API key). Returns (mp3_bytes, error).
     Falls back to en-US-AriaNeural if the requested voice fails."""
@@ -4213,8 +4270,47 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
 
     # Free/meta commands never cost quota — only real work does.
-    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users", "/voice", "/clip", "/smartclip", "/createvideo", "/aivideo", "/aivideos", "/webbuild", "/meme", "/caption", "/mood", "/about", "/owner", "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ", "/weather", "/qr", "/joke", "/quote", "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
+    # FREE commands: basic utility that costs us nothing (no LLM, no GPU, no premium API).
+    # Everything else (song, book, meme, webbuild, documents, code, research,
+    # finance tools, AI video, invoice) requires a paid plan (Student+).
+    _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users",
+                          "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote",
+                          "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
+
+    _premium_cmd_prefixes = ("/song", "/book", "/meme", "/caption", "/webbuild",
+                             "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ",
+                             "/code", "/research", "/invoice",
+                             "/smartclip", "/createvideo", "/aivideo", "/aivideos",
+                             "/stock", "/forex", "/crypto", "/signal",
+                             "/voice ", "/clip", "/quiz", "/flashcards", "/studyguide",
+                             "/lessonplan", "/rubric", "/grade", "/meeting", "/swot",
+                             "/businessplan", "/budget", "/proposal", "/resume", "/agent")
+
+    _is_callback_early_orig = _is_callback_early
     _is_free_cmd_early = _is_callback_early or any(_raw_text_early.startswith(p) for p in _free_cmd_prefixes)
+    _is_premium_cmd_early = (not _is_callback_early) and any(_raw_text_early.startswith(p) for p in _premium_cmd_prefixes)
+
+    # Hard paywall: block premium features outright for free-plan users.
+    if tg_user_early and _is_premium_cmd_early and _plan_tier(tg_user_early.plan) < 1:
+        _upgrade_kb = [
+            [{"text": f"🎓 Upgrade — Student ₦{settings.PLAN_PRICES['student']:,}", "callback_data": "menu_upgrade_student"}],
+            [{"text": f"💎 Upgrade — Pro ₦{settings.PLAN_PRICES['pro']:,}", "callback_data": "menu_upgrade_pro"}],
+            [{"text": f"🏢 Upgrade — Business ₦{settings.PLAN_PRICES['business']:,}", "callback_data": "menu_upgrade_business"}],
+        ]
+        _feature_name = _raw_text_early.split()[0].lstrip("/") or "this feature"
+        await bot.send_inline_keyboard(
+            chat_id,
+            f"🔒 *{_feature_name}* is a premium feature.\n\n"
+            f"Free tier includes 50 basic messages/month (chat + utilities only).\n"
+            f"Songs, books, memes, documents, code, research, trading tools, AI video "
+            f"and more require a paid plan.\n\n"
+            f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo — 500 msgs + all features\n"
+            f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — 10,000 msgs + priority\n"
+            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — 100,000 msgs\n\n"
+            f"Or type /upgrade to see all plans.",
+            _upgrade_kb,
+        )
+        return {"ok": True}
 
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
         _allowed_early, _used_early, _limit_early = await _check_quota(tg_user_early, db)
@@ -4605,6 +4701,57 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             except Exception as _pay_err:
                 logger.error(f"Telegram upgrade payment init failed: {_pay_err}")
                 await bot.send_message(chat_id, "Couldn't start the payment right now. Please try /upgrade again in a moment.")
+        return {"ok": True}
+
+    # ── NATURAL-LANGUAGE VOICE SWITCHING ─────────────────────────────────────
+    # Stew is an agent, not a rigid command parser — if the user just says
+    # "change your voice to Turkish female" or "speak like a British man" in
+    # plain chat, detect that intent and switch the voice, exactly like the
+    # /voice <name> command would, no slash-command required.
+    _voice_kw_hit = _VOICE_INTENT_RE.search(user_lower) is not None
+    _voice_verb_hit = _VOICE_VERB_RE.search(user_lower) is not None
+    if not user_text.startswith("/") and (_voice_kw_hit or _voice_verb_hit):
+        _matched = _match_voice_from_text(user_text)
+        if _matched:
+            if _plan_tier(tg_user.plan) < 1:
+                _upgrade_kb = [
+                    [{"text": f"🎓 Upgrade — Student ₦{settings.PLAN_PRICES['student']:,}", "callback_data": "menu_upgrade_student"}],
+                    [{"text": f"💎 Upgrade — Pro ₦{settings.PLAN_PRICES['pro']:,}", "callback_data": "menu_upgrade_pro"}],
+                ]
+                await bot.send_inline_keyboard(
+                    chat_id,
+                    "🔒 Voice notes are a premium feature.\n\n"
+                    f"Upgrade to Student (₦{settings.PLAN_PRICES['student']:,}/mo) or higher to unlock voice replies in any accent.",
+                    _upgrade_kb,
+                )
+                return {"ok": True}
+            _v_key, (_v_id, _v_desc) = _matched
+            tg_user.preferred_voice = _v_id
+            tg_user.voice_enabled = True
+            await db.commit()
+            await bot.send_message(chat_id, f"Got it — switched to {_v_desc} 🎙️\nI'll reply with voice notes using this voice from now on. Say \"stop voice replies\" or /voice off anytime to go back to text.")
+            return {"ok": True}
+        elif _voice_kw_hit:
+            # They clearly want a voice change but we couldn't resolve which one —
+            # act like an agent: ask a short clarifying question instead of ignoring it.
+            await bot.send_message(chat_id, "Which voice? e.g. \"change your voice to Nigerian female\", \"switch to a British male voice\", or send /voice list to see all 36 options.")
+            return {"ok": True}
+        # else: verb-only hit with no resolvable voice name (e.g. "talk like a pirate")
+        # — not really a voice-switch request, fall through to normal chat handling.
+
+    # Natural-language voice OFF/ON (e.g. "stop talking with voice", "go back to text")
+    if not user_text.startswith("/") and re.search(r'\b(stop|turn off|disable)\b.{0,20}\bvoice\b', user_lower):
+        tg_user.voice_enabled = False
+        await db.commit()
+        await bot.send_message(chat_id, "Voice replies OFF 🔇 — I'll reply with text now. Say \"talk to me with voice\" anytime to turn it back on.")
+        return {"ok": True}
+    if not user_text.startswith("/") and re.search(r'\b(start|turn on|enable)\b.{0,20}\b(talk|reply|speak).{0,10}(voice|with voice)\b|\btalk to me with voice\b', user_lower):
+        if _plan_tier(tg_user.plan) < 1:
+            await bot.send_message(chat_id, "🔒 Voice notes are a premium feature — /upgrade to unlock them.")
+            return {"ok": True}
+        tg_user.voice_enabled = True
+        await db.commit()
+        await bot.send_message(chat_id, "Voice replies ON 🔊 — I'll reply with voice notes now. Say \"stop voice\" anytime to switch back to text.")
         return {"ok": True}
 
     # /upgrade — show plan options with live Paystack checkout links
