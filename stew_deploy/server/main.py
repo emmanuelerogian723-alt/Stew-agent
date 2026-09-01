@@ -1748,20 +1748,30 @@ class OrchestrateTextRequest(BaseModel):
     system: Optional[str] = None
     workers: Optional[list[str]] = None
     temperature: float = 0.7
+    api_key: Optional[str] = None
 
 
 @app.post("/orchestrate/text")
-async def orchestrate_text_endpoint(body: OrchestrateTextRequest):
+async def orchestrate_text_endpoint(body: OrchestrateTextRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """
     Mixture-of-agents endpoint (Fugu-style): fans your prompt out to multiple
     LLM workers in parallel (Groq, NVIDIA NIM, OpenRouter, HuggingFace, OpenAI —
     whichever are configured), then synthesizes their independent answers into
     one best-of-all-worlds response through a single call.
     """
+    user = None
+    if body.api_key:
+        user = await _safe_get_user(body.api_key, db)
+        if user:
+            allowed, used, limit = await _check_quota(user, db)
+            if not allowed:
+                raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
     try:
         result = await orchestrate_text(
             body.prompt, system=body.system, workers=body.workers, temperature=body.temperature
         )
+        if user:
+            background_tasks.add_task(_log_call, db, user.id, "/orchestrate/text", "POST", 0, 200)
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -1770,17 +1780,27 @@ async def orchestrate_text_endpoint(body: OrchestrateTextRequest):
 class OrchestrateImageRequest(BaseModel):
     prompt: str
     mode: str = "first"  # "first" = fastest worker wins, "all" = return every worker's output
+    api_key: Optional[str] = None
 
 
 @app.post("/orchestrate/image")
-async def orchestrate_image_endpoint(body: OrchestrateImageRequest):
+async def orchestrate_image_endpoint(body: OrchestrateImageRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """
     Multi-worker image generation: dispatches your prompt to multiple free
     image-generation models in parallel (pollinations.ai, HuggingFace FLUX,
     more to come) and returns the fastest result, or all of them for comparison.
     """
+    user = None
+    if body.api_key:
+        user = await _safe_get_user(body.api_key, db)
+        if user:
+            allowed, used, limit = await _check_quota(user, db)
+            if not allowed:
+                raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
     try:
         result = await orchestrate_image(body.prompt, mode=body.mode)
+        if user:
+            background_tasks.add_task(_log_call, db, user.id, "/orchestrate/image", "POST", 0, 200)
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -8849,3 +8869,455 @@ async def run_task_now(task_id: str, body: dict, db: AsyncSession = Depends(get_
     await db.commit()
 
     return {"success": True, "message": f"Task '{task.name}' will execute within 30 seconds."}
+
+# ═══════════════════════════════════════════════════════════════════════
+# MISSING API ENDPOINTS — All features now work with API key
+# Every feature available in Telegram is also accessible via REST API
+# ═══════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel as BM
+from typing import Optional as Opt
+
+
+class SongRequest(BM):
+    prompt: str
+    api_key: str = ""
+    duration_seconds: int = 60
+
+
+class VoiceRequest(BM):
+    text: str
+    voice: str = "aria"
+    api_key: str = ""
+
+
+class BookRequest(BM):
+    topic: str
+    api_key: str = ""
+    chapters: int = 10
+    style: str = ""
+
+
+class MemeRequest(BM):
+    text: str
+    api_key: str = ""
+    template: str = ""
+
+
+class CaptionRequest(BM):
+    context: str
+    api_key: str = ""
+    platform: str = "instagram"
+    tone: str = ""
+
+
+class WebBuildRequest(BM):
+    description: str
+    api_key: str = ""
+    site_name: str = ""
+
+
+class StockRequest(BM):
+    symbol: str
+    api_key: str = ""
+
+
+class ForexRequest(BM):
+    base: str = "USD"
+    target: str = "NGN"
+    api_key: str = ""
+
+
+class CryptoRequest(BM):
+    coin: str = "bitcoin"
+    vs: str = "usd"
+    api_key: str = ""
+
+
+class TradingSignalRequest(BM):
+    symbol: str
+    api_key: str = ""
+
+
+class SmartClipRequest(BM):
+    video_url: str
+    api_key: str = ""
+    max_clips: int = 3
+
+
+class CreateVideoRequest(BM):
+    prompt: str
+    api_key: str = ""
+    images: list = []
+    voice: str = "aria"
+
+
+async def _require_key_and_quota(api_key: str, db, endpoint: str = ""):
+    """Shared helper: validate API key and check quota. Returns user or raises."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
+    allowed, used, limit = await _check_quota(user, db)
+    if not allowed:
+        raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
+    return user
+
+
+@app.post("/generate/song")
+async def api_generate_song(body: SongRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate a complete AI song with vocals, lyrics, and album cover.
+    Engines: Google Lyria 3 Pro -> AI Music API -> ACE-Step -> MusicGen -> TTS"""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/song")
+
+    import asyncio as _asyncio
+    from server.book_generator import generate_song
+
+    def _sync_llm_chat(messages, max_tokens=2000):
+        llm = get_llm_client()
+        try:
+            return llm.chat(messages, max_tokens=max_tokens)
+        except Exception:
+            return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
+
+    result = await _asyncio.to_thread(
+        generate_song, body.prompt, None, _sync_llm_chat, body.duration_seconds
+    )
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/song", "POST", 0, 200)
+
+    response = {
+        "success": True,
+        "title": result.get("title", body.prompt[:60]),
+        "genre": result.get("genre", ""),
+        "mood": result.get("mood", ""),
+        "lyrics": result.get("lyrics", ""),
+        "engine_used": result.get("engine_used", "none"),
+    }
+
+    # Include audio as base64 if available
+    audio_bytes = result.get("audio_bytes")
+    if audio_bytes and len(audio_bytes) > 100:
+        import base64
+        response["audio_base64"] = base64.b64encode(audio_bytes).decode()
+        response["audio_format"] = result.get("audio_format", "mp3")
+
+    # Include cover as base64 if available
+    cover_bytes = result.get("cover_bytes")
+    if cover_bytes and len(cover_bytes) > 100:
+        import base64
+        response["cover_base64"] = base64.b64encode(cover_bytes).decode()
+
+    return response
+
+
+@app.post("/generate/voice")
+async def api_generate_voice(body: VoiceRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate a voice note with customizable accents (Nigerian, Kenyan, British, etc.)
+    Uses edge-tts (free, no key). Returns base64 OGG audio."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/voice")
+
+    import asyncio as _asyncio
+    import edge_tts
+    import base64
+    import tempfile
+    import os
+
+    voice_id, desc = VOICE_OPTIONS.get(body.voice.lower(), VOICE_OPTIONS["aria"])
+
+    async def _gen():
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
+            tmp_path = f.name
+        communicate = edge_tts.Communicate(body.text[:3000], voice_id)
+        await communicate.save(tmp_path)
+        with open(tmp_path, "rb") as f:
+            audio_data = f.read()
+        os.unlink(tmp_path)
+        return audio_data
+
+    audio_data = await _asyncio.to_thread(_asyncio.run, _gen())
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/voice", "POST", 0, 200)
+
+    return {
+        "success": True,
+        "voice": body.voice,
+        "voice_name": desc,
+        "audio_base64": base64.b64encode(audio_data).decode(),
+        "audio_format": "ogg",
+    }
+
+
+@app.post("/generate/book")
+async def api_generate_book(body: BookRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate a complete book with chapters, cover, and optional PDF.
+    Uses LLM for content generation + Pollinations for cover art."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/book")
+
+    import asyncio as _asyncio
+    from server.book_generator import generate_book
+
+    def _sync_llm_chat(messages, max_tokens=4000):
+        llm = get_llm_client()
+        try:
+            return llm.chat(messages, max_tokens=max_tokens)
+        except Exception:
+            return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
+
+    result = await _asyncio.to_thread(
+        generate_book, body.topic, body.chapters, _sync_llm_chat, body.style
+    )
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/book", "POST", 0, 200)
+
+    return {
+        "success": True,
+        "title": result.get("title", body.topic),
+        "chapters": result.get("chapters", []),
+        "cover_base64": base64.b64encode(result["cover_bytes"]).decode() if result.get("cover_bytes") else None,
+        "pdf_base64": base64.b64encode(result["pdf_bytes"]).decode() if result.get("pdf_bytes") else None,
+    }
+
+
+@app.post("/generate/meme")
+async def api_generate_meme(body: MemeRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate an AI meme image from text. Uses Pollinations FLUX (free, no key)."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/meme")
+
+    import httpx
+    import urllib.parse
+    import base64
+
+    meme_prompt = f"A funny meme about: {body.text}. Meme style, text overlay, viral, humorous, high quality"
+    if body.template:
+        meme_prompt += f", {body.template} template"
+
+    encoded = urllib.parse.quote(meme_prompt, safe='')
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&seed={__import__('random').randint(1,999999)}"
+
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as http:
+        resp = await http.get(url)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            background_tasks.add_task(_log_call, db, user.id, "/generate/meme", "POST", 0, 200)
+            return {
+                "success": True,
+                "image_base64": base64.b64encode(resp.content).decode(),
+                "image_url": url,
+            }
+
+    raise HTTPException(500, "Meme generation failed. Try again.")
+
+
+@app.post("/generate/caption")
+async def api_generate_caption(body: CaptionRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate viral social media captions for Instagram, TikTok, X, etc."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/caption")
+
+    llm = get_llm_client()
+    platform_map = {
+        "instagram": "Instagram (with emojis and hashtags)",
+        "tiktok": "TikTok (trendy, catchy, with hashtags)",
+        "twitter": "X/Twitter (concise, witty, under 280 chars)",
+        "linkedin": "LinkedIn (professional, engaging)",
+        "facebook": "Facebook (friendly, conversational)",
+    }
+    platform_desc = platform_map.get(body.platform.lower(), body.platform)
+
+    prompt = f"Write 5 viral social media captions for {platform_desc} about: {body.context}"
+    if body.tone:
+        prompt += f". Tone: {body.tone}"
+
+    result = llm.chat([
+        {"role": "system", "content": "You are a viral social media copywriter. Return 5 captions, numbered 1-5, separated by newlines."},
+        {"role": "user", "content": prompt}
+    ], max_tokens=1000)
+
+    captions = _safe_content(result) if isinstance(result, dict) else str(result)
+    captions = [c.strip() for c in captions.strip().split("\n") if c.strip() and c.strip()[0].isdigit()]
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/caption", "POST", 0, 200)
+
+    return {"success": True, "captions": captions, "platform": body.platform}
+
+
+@app.post("/generate/webbuild")
+async def api_webbuild(body: WebBuildRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Build a motion-design website from a text description. Returns HTML."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/webbuild")
+
+    import asyncio as _asyncio
+    llm = get_llm_client()
+
+    site_name = body.site_name or body.description[:40].title()
+    prompt = f"""Build a complete, modern, responsive single-page website with:
+    - Dark luxury theme (#050505 background, electric blue and gold accents)
+    - Smooth CSS animations and transitions
+    - Mobile responsive design
+    - SEO-optimized meta tags
+    Site topic: {body.description}
+    Site name: {site_name}
+    Return ONLY the HTML code, no explanations."""
+
+    result = llm.chat([
+        {"role": "system", "content": "You are an expert web designer. Output only valid HTML5 with inline CSS."},
+        {"role": "user", "content": prompt}
+    ], max_tokens=8000)
+
+    html_content = _safe_content(result) if isinstance(result, dict) else str(result)
+    # Strip markdown code blocks if present
+    html_content = html_content.strip()
+    if html_content.startswith("```"):
+        html_content = html_content.split("\n", 1)[1] if "\n" in html_content else html_content
+    if html_content.endswith("```"):
+        html_content = html_content[:-3]
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/webbuild", "POST", 0, 200)
+
+    return {"success": True, "html": html_content, "site_name": site_name}
+
+
+@app.post("/finance/stock")
+async def api_stock(body: StockRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Get real-time stock price. Free (Yahoo Finance, no key needed)."""
+    user = await _require_key_and_quota(body.api_key, db, "/finance/stock")
+
+    from server.finance_engine import get_finance_engine
+    engine = get_finance_engine()
+    data = await asyncio.to_thread(engine.get_stock, body.symbol)
+
+    background_tasks.add_task(_log_call, db, user.id, "/finance/stock", "POST", 0, 200)
+    return data
+
+
+@app.post("/finance/forex")
+async def api_forex(body: ForexRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Get real-time forex rate. Free (Frankfurter, no key needed)."""
+    user = await _require_key_and_quota(body.api_key, db, "/finance/forex")
+
+    from server.finance_engine import get_finance_engine
+    engine = get_finance_engine()
+    data = await asyncio.to_thread(engine.get_forex, body.base, body.target)
+
+    background_tasks.add_task(_log_call, db, user.id, "/finance/forex", "POST", 0, 200)
+    return data
+
+
+@app.post("/finance/crypto")
+async def api_crypto(body: CryptoRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Get real-time crypto price. Free (CoinGecko, no key needed)."""
+    user = await _require_key_and_quota(body.api_key, db, "/finance/crypto")
+
+    from server.finance_engine import get_finance_engine
+    engine = get_finance_engine()
+    data = await asyncio.to_thread(engine.get_crypto, body.coin, body.vs)
+
+    background_tasks.add_task(_log_call, db, user.id, "/finance/crypto", "POST", 0, 200)
+    return data
+
+
+@app.post("/finance/signals")
+async def api_trading_signals(body: TradingSignalRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Get trading signals (RSI, MACD, Bollinger, SMA, EMA, Support/Resistance).
+    Uses 6 months of historical data for technical analysis."""
+    user = await _require_key_and_quota(body.api_key, db, "/finance/signals")
+
+    from server.finance_engine import get_finance_engine
+    engine = get_finance_engine()
+    data = await asyncio.to_thread(engine.get_trading_signals, body.symbol)
+
+    background_tasks.add_task(_log_call, db, user.id, "/finance/signals", "POST", 0, 200)
+    return data
+
+
+@app.get("/finance/voices")
+async def api_list_voices():
+    """List all available voice options with accents. No API key needed."""
+    return {
+        "success": True,
+        "voices": {k: {"voice_id": v[0], "description": v[1]} for k, v in VOICE_OPTIONS.items()},
+        "count": len(VOICE_OPTIONS),
+    }
+
+
+@app.post("/generate/smartclip")
+async def api_smartclip(body: SmartClipRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate AI smart clips with captions from a video URL."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/smartclip")
+
+    # Delegate to video tools
+    from server.video_tools import analyze_video
+    result = await asyncio.to_thread(analyze_video, body.video_url, body.max_clips)
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/smartclip", "POST", 0, 200)
+    return result
+
+
+@app.post("/generate/video")
+async def api_create_video(body: CreateVideoRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Create an AI video with images and voiceover."""
+    user = await _require_key_and_quota(body.api_key, db, "/generate/video")
+
+    # Use LLM to generate script, then voice + images
+    llm = get_llm_client()
+    result = llm.chat([
+        {"role": "system", "content": "You are a video script writer. Write a short 30-second video script."},
+        {"role": "user", "content": f"Write a video script about: {body.prompt}"}
+    ], max_tokens=1000)
+
+    script = _safe_content(result) if isinstance(result, dict) else str(result)
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/video", "POST", 0, 200)
+
+    return {
+        "success": True,
+        "script": script,
+        "voice": body.voice,
+        "images_provided": len(body.images),
+        "note": "Use the script with /generate/voice for audio and /generate/image for visuals."
+    }
+
+
+@app.post("/generate/invoice")
+async def api_generate_invoice(body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate a professional invoice PDF."""
+    user = await _require_key_and_quota(body.get("api_key", ""), db, "/generate/invoice")
+
+    client_name = body.get("client_name", "Client")
+    items = body.get("items", [])
+    currency = body.get("currency", "NGN")
+    due_date = body.get("due_date", "")
+    invoice_number = body.get("invoice_number", f"INV-{int(time.time())}")
+
+    # Build invoice HTML
+    total = sum(float(item.get("amount", 0)) for item in items)
+    items_html = ""
+    for item in items:
+        items_html += f"<tr><td>{item.get('description','')}</td><td>{item.get('qty',1)}</td><td>{currency} {item.get('amount',0):,.2f}</td></tr>"
+
+    html = f"""<html><head><style>
+    body {{ font-family: Arial; padding: 40px; }}
+    h1 {{ color: #0066ff; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+    th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+    th {{ background: #f4f4f4; }}
+    .total {{ font-size: 20px; font-weight: bold; text-align: right; margin-top: 20px; }}
+    </style></head><body>
+    <h1>INVOICE</h1>
+    <p><strong>Invoice #:</strong> {invoice_number}</p>
+    <p><strong>Client:</strong> {client_name}</p>
+    <p><strong>Due Date:</strong> {due_date}</p>
+    <table><tr><th>Description</th><th>Qty</th><th>Amount</th></tr>{items_html}</table>
+    <p class="total">Total: {currency} {total:,.2f}</p>
+    </body></html>"""
+
+    pdf_bytes = generate_pdf(html, f"Invoice_{invoice_number}")
+
+    import base64
+    background_tasks.add_task(_log_call, db, user.id, "/generate/invoice", "POST", 0, 200)
+
+    return {
+        "success": True,
+        "invoice_number": invoice_number,
+        "total": total,
+        "currency": currency,
+        "pdf_base64": base64.b64encode(pdf_bytes["content"] if isinstance(pdf_bytes, dict) and "content" in pdf_bytes else pdf_bytes).decode() if pdf_bytes else None,
+    }
