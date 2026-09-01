@@ -185,24 +185,59 @@ curl https://stew-agent-r3m7.onrender.com/v1/models \
 
 ## Installing in Acode Terminal (Android)
 
-Acode is a code editor for Android with a built-in terminal. Here's how to use S.T.E.W Agent from it:
+Acode's built-in terminal runs *Alpine Linux*, which uses `apk` (not `npm` or `apt`) to install system packages. `npm install stew-ai` will NOT work — that's not a real package, and `npm`/`node` aren't installed by default. Follow these exact steps.
 
-### Step 1: Install Termux (for package support)
+### Option A — Stew Code CLI (recommended, feels like Claude Code)
 
-Acode's built-in terminal is limited. For full pip/npm support, install Termux from F-Droid:
-https://f-droid.org/packages/com.termux/
-
-### Step 2: Set up Python in Termux
+This gives you a persistent `stew` command you can run from anywhere in the terminal — an interactive AI REPL, just like Claude Code.
 
 ```bash
-# In Termux
-pkg update && pkg install python
-pip install openai
+# 1. Install Node.js, npm and git via Alpine's package manager
+apk add nodejs npm git
+
+# 2. Clone the repo
+git clone https://github.com/emmanuelerogian723-alt/Stew-agent.git
+cd Stew-agent/stew_deploy/cli
+
+# 3. Link it globally — this creates the 'stew' command
+npm link
+
+# 4. Run it from anywhere
+stew
 ```
 
-### Step 3: Create your test script
+First run asks for your API key once (get one free at https://stew-agent-r3m7.onrender.com/dashboard) and saves it to `~/.stew/config.json`. After that, just type `stew` and start chatting:
 
-Create a file `stew_test.py` in Acode:
+```
+🧠 STEW CODE  — terminal AI agent
+
+you    what is the capital of Nigeria?
+stew   Abuja.
+
+you    /exit
+bye 👋
+```
+
+Built-in commands:
+
+```
+/help          show all commands
+/clear         clear conversation history
+/model <name>  switch model (e.g. stew-fast, stew-mistral)
+/exit          quit
+```
+
+No npm dependencies are installed — Stew Code uses Node's built-in `fetch` and `readline`, so `npm link` finishes instantly.
+
+### Option B — Python SDK script
+
+```bash
+# Install Python + pip via apk
+apk add python3 py3-pip
+pip install openai --break-system-packages
+```
+
+Create `stew_test.py` in Acode:
 
 ```python
 from openai import OpenAI
@@ -218,55 +253,27 @@ response = client.chat.completions.create(
 )
 
 print("Response:", response.choices[0].message.content)
-print("Model:", response.model)
-print("Tokens:", response.usage.total_tokens)
-```
-
-### Step 4: Run it
-
-```bash
-# In Termux (navigate to your Acode workspace)
-python stew_test.py
-```
-
-### Alternative: Node.js in Termux
-
-```bash
-pkg install nodejs
-npm install openai
-```
-
-Create `stew_test.mjs` in Acode:
-
-```javascript
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: "stew_YOUR_API_KEY",
-  baseURL: "https://stew-agent-r3m7.onrender.com/v1",
-});
-
-const res = await client.chat.completions.create({
-  model: "stew-default",
-  messages: [{ role: "user", content: "Hello from Acode on Android!" }],
-});
-
-console.log("Response:", res.choices[0].message.content);
-console.log("Model:", res.model);
-console.log("Tokens:", res.usage.total_tokens);
 ```
 
 Run it:
 
 ```bash
-node stew_test.mjs
+python3 stew_test.py
 ```
 
-### Alternative: cURL in Acode Terminal
-
-If you just want a quick test without installing anything:
+### Option C — Node.js SDK script
 
 ```bash
+apk add nodejs npm
+npm install openai
+```
+
+Create `stew_test.mjs` in Acode, then run `node stew_test.mjs`. See the [NPM SDK section](#quick-start--npm-sdk-nodejs) above for the code.
+
+### Option D — cURL (zero install)
+
+```bash
+apk add curl
 curl -X POST https://stew-agent-r3m7.onrender.com/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer stew_YOUR_API_KEY" \
