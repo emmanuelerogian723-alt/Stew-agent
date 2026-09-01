@@ -9187,7 +9187,7 @@ async def api_webbuild(body: WebBuildRequest, background_tasks: BackgroundTasks,
 @app.post("/finance/stock")
 async def api_stock(body: StockRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Get real-time stock price. Free (Yahoo Finance, no key needed)."""
-    user = await _require_key_and_quota(body.api_key, db, "/finance/stock")
+    user = await _require_key_and_quota(body.api_key, db, "/finance/stock", min_tier=1)
 
     from server.finance_engine import get_finance_engine
     engine = get_finance_engine()
@@ -9200,7 +9200,7 @@ async def api_stock(body: StockRequest, background_tasks: BackgroundTasks, db: A
 @app.post("/finance/forex")
 async def api_forex(body: ForexRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Get real-time forex rate. Free (Frankfurter, no key needed)."""
-    user = await _require_key_and_quota(body.api_key, db, "/finance/forex")
+    user = await _require_key_and_quota(body.api_key, db, "/finance/forex", min_tier=1)
 
     from server.finance_engine import get_finance_engine
     engine = get_finance_engine()
@@ -9213,7 +9213,7 @@ async def api_forex(body: ForexRequest, background_tasks: BackgroundTasks, db: A
 @app.post("/finance/crypto")
 async def api_crypto(body: CryptoRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Get real-time crypto price. Free (CoinGecko, no key needed)."""
-    user = await _require_key_and_quota(body.api_key, db, "/finance/crypto")
+    user = await _require_key_and_quota(body.api_key, db, "/finance/crypto", min_tier=1)
 
     from server.finance_engine import get_finance_engine
     engine = get_finance_engine()
