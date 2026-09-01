@@ -58,17 +58,14 @@ def _random_ua():
 
 
 def _search_headers():
+    # Keep headers simple - Sec-Fetch-* and "br" encoding cause search engines
+    # to return different (smaller/empty) pages that break parsing.
     return {
         "User-Agent": _random_ua(),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",
         "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
     }
 
 
@@ -310,6 +307,59 @@ class WebCrawler:
             logger.warning(f"DDG search error: {e}")
             return {"organic": [], "source": "ddg", "grounded": False, "error": str(e)}
 
+    # ── SEARXNG SEARCH (free, no key, JSON results!) ──────────────────
+
+    async def searxng_search(self, query, num_results=10):
+        """Search via SearXNG public instance - returns JSON, no API key.
+        This is the most reliable free search source since it returns
+        structured JSON instead of HTML that needs parsing."""
+        try:
+            client = await self._get_async_client()
+            await self._polite_delay_async("mectov.my.id")
+
+            instances = [
+                "https://search.mectov.my.id/search",
+                "https://searx.be/search",
+                "https://search.bus-hit.me/search",
+            ]
+
+            for instance_url in instances:
+                try:
+                    resp = await client.get(
+                        instance_url,
+                        params={"q": query, "format": "json", "pageno": 1},
+                        headers={"User-Agent": _random_ua(), "Accept": "application/json"},
+                        timeout=15,
+                    )
+                    if resp.status_code == 200 and resp.text.strip().startswith("{"):
+                        import json
+                        data = json.loads(resp.text)
+                        results = []
+                        for r in data.get("results", [])[:num_results]:
+                            results.append({
+                                "title": r.get("title", ""),
+                                "link": r.get("url", ""),
+                                "snippet": r.get("content", "")[:300],
+                                "position": len(results) + 1,
+                            })
+                        if results:
+                            logger.info(f"SearXNG: {len(results)} results for '{query}' from {instance_url}")
+                            return {
+                                "organic": results[:num_results],
+                                "answer_box": {},
+                                "knowledge_graph": {},
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "query": query, "grounded": True, "source": "searxng",
+                            }
+                except Exception as e:
+                    logger.warning(f"SearXNG instance {instance_url} failed: {e}")
+                    continue
+
+            return {"organic": [], "source": "searxng", "grounded": False}
+        except Exception as e:
+            logger.warning(f"SearXNG search error: {e}")
+            return {"organic": [], "source": "searxng", "grounded": False, "error": str(e)}
+
     # ── JINA READER PROXY SEARCH ─────────────────────────────────────
 
     async def jina_search(self, query, num_results=10):
@@ -378,12 +428,16 @@ class WebCrawler:
     # ── MASTER SEARCH — tries all engines ────────────────────────────
 
     async def search(self, query, num_results=10):
-        """Full autonomous search — Google → Bing → DDG → Jina.
-        No API keys needed. This is the Kimi-style approach."""
+        """Full autonomous search - SearXNG -> Bing -> DDG -> Google -> Jina.
+        No API keys needed. SearXNG is tried first (returns clean JSON).
+        Bing and DDG are next (HTML scraping works well).
+        Google is tried later (often blocks datacenter IPs).
+        Jina is the last resort proxy."""
         engines = [
-            ("google", self.google_search),
+            ("searxng", self.searxng_search),
             ("bing", self.bing_search),
             ("ddg", self.ddg_search),
+            ("google", self.google_search),
             ("jina", self.jina_search),
         ]
         errors = []
