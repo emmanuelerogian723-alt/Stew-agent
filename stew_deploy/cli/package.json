@@ -1,0 +1,17 @@
+{
+  "name": "stew-code",
+  "version": "1.0.0",
+  "description": "Stew Code — terminal AI agent CLI powered by S.T.E.W Agent (Claude-Code-style REPL)",
+  "type": "module",
+  "bin": {
+    "stew": "./stew.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emmanuelerogian723-alt/Stew-agent.git"
+  }
+}
