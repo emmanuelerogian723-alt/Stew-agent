@@ -328,6 +328,35 @@ async def chat_completions(
         provider_override = MODEL_TO_PROVIDER.get(model_name)
         llm = get_llm_client()
 
+        # ── Vision (multimodal) support ────────────────────────────────────
+        # OpenAI-style content parts with type=image_url carry base64 images.
+        # _extract_text() above strips them for the plain-text path, so we
+        # collect them here and route the request through the vision chain
+        # (llm.vision_chat) so the image actually reaches a multimodal model.
+        vision_parts = []
+        for vm in body.messages:
+            if isinstance(vm.content, list):
+                for vp in vm.content:
+                    if isinstance(vp, dict) and vp.get("type") == "image_url":
+                        vurl = (vp.get("image_url") or {}).get("url", "") or ""
+                        if vurl.startswith("data:"):
+                            vheader, _, vb64 = vurl.partition(",")
+                            vmime = "image/jpeg"
+                            if vheader.startswith("data:") and len(vheader) > 5:
+                                vmime = vheader[5:].split(";", 1)[0] or "image/jpeg"
+                            if vb64:
+                                vision_parts.append((vb64, vmime))
+        if vision_parts:
+            vb64, vmime = vision_parts[-1]  # analyze the most recent image
+            v_prompt = ""
+            for m in reversed(raw_messages):
+                if m["role"] == "user" and m["content"].strip():
+                    v_prompt = m["content"].strip()
+                    break
+            if not v_prompt:
+                v_prompt = "Describe this image in detail."
+            logger.info(f"Vision request: {len(vb64)} bytes b64, mime={vmime}")
+
         # If user passes an OpenAI model name, we still use Stew's fallback chain
         # (we don't forward to OpenAI directly — we use our own providers)
         actual_model = None if provider_override is None else None
@@ -337,7 +366,7 @@ async def chat_completions(
 
         # Call the LLM
         try:
-            if body.fusion_mode and len(llm.fallback_order) >= 2:
+            if body.fusion_mode and not vision_parts and len(llm.fallback_order) >= 2:
                 from server.orchestrator import orchestrate_text
                 # Extract system and user messages
                 sys_msg = ""
@@ -358,6 +387,16 @@ async def chat_completions(
                 model_used = "stew-fusion"
                 provider_used = "stew_fusion"
                 prompt_tokens = sum(r.get("tokens", {}).get("total", 0) for r in fusion_result.get("raw_worker_outputs", []))
+                completion_tokens = len(content) // 4
+            elif vision_parts:
+                # Multimodal path — hand the image to a vision-capable model
+                vision_result = await asyncio.to_thread(
+                    llm.vision_chat, vb64, v_prompt, vmime
+                )
+                content = clean_response(vision_result["content"])
+                model_used = vision_result.get("model", model_name)
+                provider_used = vision_result.get("provider", "stew")
+                prompt_tokens = (len(vb64) + len(v_prompt)) // 8
                 completion_tokens = len(content) // 4
             else:
                 result = await asyncio.to_thread(
