@@ -163,13 +163,18 @@ async def db_diagnostic(token: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("S.T.E.W API v6.0 starting up…")
-    # Non-fatal init: if the DB is briefly unreachable at boot we still want
-    # the server to come up (port binds, Telegram keeps working) instead of
-    # crashing the container and failing the whole Render deploy.
-    try:
-        await init_db()
-    except Exception as _init_err:
-        logger.error(f"init_db failed at startup (continuing anyway): {_init_err}", exc_info=True)
+    # Non-fatal AND non-blocking init: uvicorn binds its port only AFTER
+    # lifespan startup completes, so awaiting a DB connection attempt here
+    # delayed the port bind by up to ~60s when Postgres was unreachable —
+    # long enough for Render to mark the deploy failed. Run it in the
+    # background instead; the app tolerates a DB that arrives a bit late.
+    async def _init_db_safe():
+        try:
+            await init_db()
+            logger.info("init_db: database ready")
+        except Exception as _init_err:
+            logger.error(f"init_db failed at startup (will retry on demand): {_init_err}", exc_info=True)
+    asyncio.create_task(_init_db_safe())
     os.makedirs("logs", exist_ok=True)
     os.makedirs("output", exist_ok=True)
     start_keepalive()
