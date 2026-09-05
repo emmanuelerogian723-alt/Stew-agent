@@ -173,13 +173,21 @@ async def lifespan(app: FastAPI):
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
+import os as _env_check
+_IS_PROD = (
+    _env_check.getenv("RENDER_EXTERNAL_URL", "") != ""
+    or _env_check.getenv("RENDER", "") != ""
+    or _env_check.getenv("ENVIRONMENT", "").lower() == "production"
+)
+
 app = FastAPI(
     title="S.T.E.W Agent API",
     description="Structured Task Execution Workflow — AI Agent Backend v5.0",
     version="6.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if _IS_PROD else "/docs",
+    redoc_url=None if _IS_PROD else "/redoc",
+    openapi_url=None if _IS_PROD else "/openapi.json",
 )
 
 # Register admin API routes
@@ -565,7 +573,7 @@ async def heartbeat():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": {
             "ai_engine": "operational" if ai_ready else "degraded",
-            "web_search": "operational" if settings.SERPER_API_KEY else "unavailable",
+            "web_search": "operational",  # crawler works with no API key (SearXNG/Bing/DDG/Jina)
             "payments": "operational" if settings.PAYSTACK_SECRET_KEY else "unavailable",
             "agent_pool": "operational",
             "image_generation": "operational",

@@ -697,16 +697,22 @@ class WebCrawler:
             return {"grounded": False, "report": "No search results found.",
                     "organic": [], "pages": [], "query": query}
 
-        pages = []
-        tasks = [self.fetch_page(r.get("link", "")) for r in organic[:num_pages] if r.get("link")]
+        # Fetch MORE urls than needed (some sites block datacenter IPs) and
+        # keep only the first num_pages that actually return content.
+        fetch_candidates = [r.get("link", "") for r in organic if r.get("link")][:max(num_pages + 3, 6)]
+        tasks = [self.fetch_page(link) for link in fetch_candidates]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        pages = []
         for i, result in enumerate(results):
+            if len(pages) >= num_pages:
+                break
             if isinstance(result, Exception):
                 continue
             if result.get("content"):
+                idx = min(i, len(organic) - 1)
                 pages.append({
-                    "title": result.get("title", organic[i].get("title", "")),
-                    "url": result.get("url", ""),
+                    "title": result.get("title") or organic[idx].get("title", ""),
+                    "url": result.get("url", fetch_candidates[i]),
                     "content": result["content"][:5000],
                     "source": result.get("source", "direct"),
                     "word_count": result.get("word_count", 0),
