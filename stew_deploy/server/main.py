@@ -4027,13 +4027,36 @@ async def telegram_webhook(request: Request):
 async def _process_telegram_update_safe(data: dict):
     """Runs the real handler with its own DB session, detached from the
     request/response cycle so it can take as long as it needs without ever
-    causing Telegram to time out and retry."""
+    causing Telegram to time out and retry.
+
+    IMPORTANT: this is the outermost safety net. If ANY unhandled exception
+    escapes _handle_telegram_update (DB errors, LLM client errors, timeouts,
+    etc.) we MUST still reply to the user — otherwise the bot goes silent
+    with zero visible feedback, which is worse than an error message."""
     from server.database import AsyncSessionLocal
     async with AsyncSessionLocal() as bg_db:
         try:
             await _handle_telegram_update(data, bg_db)
         except Exception as e:
             logger.error(f"Telegram background handler error: {e}", exc_info=True)
+            try:
+                from server.telegram_bot import TelegramBot
+                _bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+                _msg = _bot.parse_update(data)
+                _chat_id = _msg.get("chat_id") if _msg else None
+                if not _chat_id:
+                    _chat_id = (
+                        data.get("message", {}).get("chat", {}).get("id")
+                        or data.get("callback_query", {}).get("message", {}).get("chat", {}).get("id")
+                    )
+                if _chat_id:
+                    await _bot.send_message(
+                        _chat_id,
+                        "Sorry, something went wrong on my end processing that. "
+                        "Please try again — if it keeps happening, try /clear then resend.",
+                    )
+            except Exception as _notify_err:
+                logger.error(f"Even the failure notification failed: {_notify_err}")
 
 
 async def _get_active_ad(db: AsyncSession, user_plan: str):
@@ -4926,7 +4949,55 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # /users — show the live total user count
     if user_text.startswith("/users"):
         _count_u = await _get_telegram_user_count(db)
-        await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
+        # Owner gets the full usage breakdown; everyone else gets the headline count.
+        if tg_user_early and tg_user_early.plan == "owner":
+            from datetime import timedelta as _td_stats
+            _now_stats = datetime.now(timezone.utc)
+            _week_ago_stats = _now_stats - _td_stats(days=7)
+            _month_ago_stats = _now_stats - _td_stats(days=30)
+
+            _total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+            _plan_rows = await db.execute(select(User.plan, func.count(User.id)).group_by(User.plan))
+            _by_plan = {row[0]: row[1] for row in _plan_rows}
+            _new_week = (await db.execute(
+                select(func.count(User.id)).where(User.created_at >= _week_ago_stats)
+            )).scalar() or 0
+            _active_week = (await db.execute(
+                select(func.count(func.distinct(APICall.user_id))).where(APICall.timestamp >= _week_ago_stats)
+            )).scalar() or 0
+            _calls_month = (await db.execute(
+                select(func.count(APICall.id)).where(APICall.timestamp >= _month_ago_stats)
+            )).scalar() or 0
+            _top_features = await db.execute(
+                select(APICall.endpoint, func.count(APICall.id).label("cnt"))
+                .where(APICall.timestamp >= _month_ago_stats)
+                .group_by(APICall.endpoint)
+                .order_by(func.count(APICall.id).desc())
+                .limit(8)
+            )
+            _feature_lines = []
+            for endpoint, cnt in _top_features:
+                _label = endpoint.replace("/telegram/", "/").replace("/generate", "").strip("/") or endpoint
+                _feature_lines.append(f"  {_label}: {cnt:,}")
+
+            _plan_lines = "\n".join(f"  {p or 'free'}: {c:,}" for p, c in sorted(_by_plan.items(), key=lambda x: -x[1]))
+            _features_block = "\n".join(_feature_lines) if _feature_lines else "  (no feature usage logged yet)"
+
+            await bot.send_message(
+                chat_id,
+                f"📊 S.T.E.W Usage Report\n\n"
+                f"Total users: {_total_users:,}\n"
+                f"New this week: {_new_week:,}\n"
+                f"Active this week: {_active_week:,}\n"
+                f"Total calls (30d): {_calls_month:,}\n\n"
+                f"By plan:\n{_plan_lines}\n\n"
+                f"Top features (30d):\n{_features_block}\n\n"
+                f"Note: most plain-chat messages log generically — this shows "
+                f"named-feature usage (webbuild, video, meme, etc). Full charts "
+                f"available via the admin dashboard endpoint.",
+            )
+        else:
+            await bot.send_message(chat_id, f"👥 {_count_u:,} people are using S.T.E.W on Telegram.")
         return {"ok": True}
 
     # /about — About S.T.E.W and its creator
@@ -8658,9 +8729,32 @@ Requirements:
     # Removed broad keywords: "search", "find", "best", "top", "when",
     # "where", "which", "2024", "2025", "2026" — these triggered search on
     # almost any question, causing the repeating search loop.
+
+    # Explicit search-command detection — restores "search X on google",
+    # "google X", "look up X", "can you search for X" as REAL triggers
+    # without reintroducing the old bug. The old bug was: a bare "search"
+    # keyword matched even status-check follow-ups like "are you done with
+    # the search?", causing a brand new real search to fire on every such
+    # message. Fix: only match imperative search phrasing, and explicitly
+    # exclude status/progress-check phrasing so follow-ups never re-trigger.
+    _is_search_status_check = any(kw in user_lower for kw in [
+        "are you done", "you done", "have you found", "did you find",
+        "any update", "still searching", "still looking", "finished searching",
+        "is it done", "is it ready", "how far", "any luck",
+    ])
+    _explicit_search_re = re.compile(
+        r'\b(search|google)\b.*\b(for|about|on|up)\b|'
+        r'\blook\s*up\b|\bgo\s+(on|to)\s+google\b|'
+        r'\bcan\s+you\s+search\b|\bplease\s+search\b|^search\b',
+        re.IGNORECASE,
+    )
+    _explicit_search_command = bool(_explicit_search_re.search(user_text)) and not _is_search_status_check
+    if _explicit_search_command:
+        needs_search = True
+
     # Detect research requests
     tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze", "deep dive"]
-    needs_research = any(kw in user_lower for kw in tg_research_kw)
+    needs_research = any(kw in user_lower for kw in tg_research_kw) and not _is_search_status_check
 
     if needs_research:
         await bot.send_message(chat_id, f"Starting deep research on: {user_text[:100]}")

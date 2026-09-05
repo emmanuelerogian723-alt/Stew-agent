@@ -39,9 +39,19 @@ if IS_SQLITE:
         connect_args={"check_same_thread": False, "timeout": 30},
     )
 else:
+    # Render's external Postgres connections require SSL. asyncpg needs this
+    # passed explicitly via connect_args (it doesn't parse a "sslmode" query
+    # param the way psycopg2 does).
+    _pg_connect_args = {}
+    if "render.com" in ASYNC_DATABASE_URL or os.environ.get("DB_REQUIRE_SSL") == "1":
+        _pg_connect_args["ssl"] = "require"
     engine = create_async_engine(
         ASYNC_DATABASE_URL,
         echo=settings.DEBUG,
+        pool_pre_ping=True,   # detect stale cross-region connections and reconnect
+        pool_size=5,
+        max_overflow=5,
+        connect_args=_pg_connect_args,
     )
 
 # Set PRAGMA on every new SQLite connection via event listener (outside transactions)
