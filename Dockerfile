@@ -31,4 +31,4 @@ RUN mkdir -p memory/data output logs workspace screenshots uploads
 
 EXPOSE 8000
 
-CMD uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --log-level info & sleep 2; (alembic upgrade head 2>&1 || true) >> /app/logs/alembic.log; wait
+CMD uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --log-level info --loop asyncio & sleep 2; (alembic upgrade head 2>&1 || true) >> /app/logs/alembic.log; wait
