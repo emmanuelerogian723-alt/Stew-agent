@@ -108,7 +108,13 @@ from server.skills_engine import run_skill, list_skills as get_skills_list
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("S.T.E.W API v6.0 starting up…")
-    await init_db()
+    # Non-fatal init: if the DB is briefly unreachable at boot we still want
+    # the server to come up (port binds, Telegram keeps working) instead of
+    # crashing the container and failing the whole Render deploy.
+    try:
+        await init_db()
+    except Exception as _init_err:
+        logger.error(f"init_db failed at startup (continuing anyway): {_init_err}", exc_info=True)
     os.makedirs("logs", exist_ok=True)
     os.makedirs("output", exist_ok=True)
     start_keepalive()

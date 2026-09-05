@@ -42,10 +42,21 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
+    # Render's external Postgres requires SSL — asyncpg needs it passed
+    # explicitly via connect_args (mirrors server/database.py), otherwise
+    # every migration fails with "SSL/TLS required" and tables never get
+    # created on fresh databases.
+    _url = config.get_main_option("sqlalchemy.url") or ""
+    _connect_args = {}
+    if _url.startswith(("postgresql", "postgres")) and (
+        "render.com" in _url or os.environ.get("DB_REQUIRE_SSL") == "1"
+    ):
+        _connect_args["ssl"] = "require"
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=_connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
