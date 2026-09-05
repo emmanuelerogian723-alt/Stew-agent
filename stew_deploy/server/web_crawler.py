@@ -321,13 +321,19 @@ class WebCrawler:
                 "https://search.mectov.my.id/search",
                 "https://searx.be/search",
                 "https://search.bus-hit.me/search",
+                "https://searx.tiekoetter.com/search",
+                "https://baresearch.org/search",
             ]
 
             for instance_url in instances:
                 try:
                     resp = await client.get(
                         instance_url,
-                        params={"q": query, "format": "json", "pageno": 1},
+                        params={
+                            "q": query, "format": "json", "pageno": 1,
+                            "language": "en-US", "safesearch": "0",
+                            "categories": "general",
+                        },
                         headers={"User-Agent": _random_ua(), "Accept": "application/json"},
                         timeout=15,
                     )
