@@ -3090,10 +3090,17 @@ async def not_found(request: Request, exc):
 async def internal_error(request: Request, exc):
     import traceback as _tb
     logger.error(f"Internal error on {request.url.path}: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "traceback": _tb.format_exc()[-800:], "success": False},
-    )
+    from server.config import get_settings as _gs
+    if _gs().DEBUG:
+        # Full detail only in development
+        content = {"detail": str(exc), "traceback": _tb.format_exc()[-800:], "success": False}
+    else:
+        # Production: never leak server internals to the public
+        content = {
+            "detail": "Something went wrong on our side. Please try again in a moment.",
+            "success": False,
+        }
+    return JSONResponse(status_code=500, content=content)
 
 
 # ── Skills ─────────────────────────────────────────────────────────────────────

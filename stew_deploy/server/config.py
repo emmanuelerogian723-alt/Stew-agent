@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     def PLAN_CALL_LIMITS(self) -> dict:
         # "owner" = admin-unlocked Telegram accounts (see /admin <code>) — unmetered.
         # "student" = budget tier for students — fewer messages than Pro but way cheaper.
-        return {"free": 50, "student": 500, "pro": 10000, "business": 100000, "enterprise": 50000, "owner": 999999999}
+        return {"free": 1000, "student": 500, "pro": 10000, "business": 100000, "enterprise": 50000, "owner": 999999999}
 
     @property
     def PLAN_TIER_ORDER(self) -> dict:
