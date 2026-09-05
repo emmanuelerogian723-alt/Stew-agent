@@ -924,7 +924,7 @@ async def llms_txt():
 ## Key Facts
 - Base URL: https://stew-agent.onrender.com
 - OpenAI-compatible: /v1/chat/completions
-- Free tier: 1,500 API calls/month
+- Free tier: 1,000 API calls/month
 - 6 AI providers with auto-failover
 - 60+ skills, 12 personas, 100-agent swarm
 - Telegram bot: @StewAgent_bot
@@ -967,7 +967,7 @@ async def llms_full_txt():
 ## Authentication
 Header: Authorization: Bearer YOUR_API_KEY
 Get free key: https://stew-agent.onrender.com/auth/register
-Free: 1,500 calls/mo. Pro: 15,000 Naira/mo. Business: 50,000 Naira/mo.
+Free: 1,000 calls/mo. Pro: 15,000 Naira/mo. Business: 50,000 Naira/mo.
 
 ## Endpoints
 POST /chat - Main chat with web search
@@ -1051,7 +1051,7 @@ async def ai_manifest():
             {"name": "agent_swarm", "endpoint": "/agents/run", "method": "POST"}
         ],
         "authentication": {"type": "bearer", "registration_url": "/auth/register"},
-        "pricing": {"free": "1,500 calls", "pro": "15,000 Naira/mo", "business": "50,000 Naira/mo"},
+        "pricing": {"free": "1,000 calls", "pro": "15,000 Naira/mo", "business": "50,000 Naira/mo"},
         "docs": "https://stew-agent.onrender.com/docs",
         "openapi": "https://stew-agent.onrender.com/openapi.json",
         "llms_txt": "https://stew-agent.onrender.com/llms.txt"
