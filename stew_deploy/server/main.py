@@ -299,6 +299,75 @@ async def db_diagnostic(token: str):
             _raw_tls[_tlsname] = f"{type(e).__name__}: {str(e)[:150]}"
     _results["raw_tls_handshake"] = _raw_tls
 
+    # 4. FULL manual Postgres handshake over TLS: SSLRequest → TLS →
+    # StartupMessage → read server's first response byte. This shows exactly
+    # what the server does after TLS (where asyncpg dies). Message types:
+    # R=Authentication, E=ErrorResponse, S=SSL ok, N=denied.
+    _pg_handshake = {}
+    try:
+        _ctx = _sm.SSLContext(_sm.PROTOCOL_TLS_CLIENT)
+        _ctx.check_hostname = False
+        _ctx.verify_mode = _sm.CERT_NONE
+        _reader, _writer = await asyncio.wait_for(
+            asyncio.open_connection(_host, _port), timeout=10)
+        _writer.write((8).to_bytes(4, "big") + (80877103).to_bytes(4, "big"))
+        await _writer.drain()
+        _resp = await asyncio.wait_for(_reader.read(1), timeout=10)
+        _loop = asyncio.get_event_loop()
+        _tr = await _loop.start_tls(_writer.transport, _writer._protocol, _ctx, server_hostname=_host)
+        # Build StartupMessage: protocol 3.0, user, database, client_encoding
+        params = [("user", _p.username), ("database", _p.path.lstrip("/")),
+                  ("client_encoding", "utf8"), ("DateStyle", "ISO, MDY")]
+        payload = b""
+        for k, v in params:
+            payload += k.encode() + b"\x00" + v.encode() + b"\x00"
+        payload += b"\x00"
+        body = (196608).to_bytes(2, "big") + b"\x00\x00"  # protocol 3.0
+        body = body + payload
+        msg = (len(body) + 4).to_bytes(4, "big") + body
+        _tr.write(msg)
+        # read response
+        import asyncio as _aio2
+        _buf = bytearray()
+        while len(_buf) < 5:
+            _chunk = await asyncio.wait_for(_reader.read(1024), timeout=10)
+            if not _chunk:
+                _pg_handshake["result"] = f"server closed connection after startup msg (got {bytes(_buf)!r})"
+                break
+            _buf.extend(_chunk)
+        else:
+            _t = chr(_buf[0]); _ln = int.from_bytes(_buf[1:5], "big")
+            _pg_handshake["first_byte"] = _t
+            _pg_handshake["msg_length"] = _ln
+            if _t == "E":
+                _detail = bytes(_buf)[5:5+min(_ln, 200)]
+                _pg_handshake["error"] = _detail.decode("utf-8", "replace")
+            elif _t == "R":
+                _auth_type = int.from_bytes(_buf[5:9], "big")
+                _pg_handshake["auth_type"] = {0:"TrustOK",5:"MD5",10:"SCRAM-SHA-256"}.get(_auth_type, _auth_type)
+            _pg_handshake["result"] = "handshake reached auth phase OK"
+        _writer.close()
+    except Exception as e:
+        _pg_handshake["result"] = f"{type(e).__name__}: {str(e)[:180]}"
+    _results["postgres_handshake_after_tls"] = _pg_handshake
+
+    # 5. psycopg3 driver comparison (same container, same network, different library)
+    _psy = {}
+    try:
+        import psycopg as _psycopg
+        _psy["version"] = _psycopg.__version__
+        _cn = _psycopg.connect(
+            host=_host, port=_port, user=_p.username,
+            password=_p.password, dbname=_p.path.lstrip("/"),
+            connect_timeout=15, sslmode="require")
+        with _cn.cursor() as _cur:
+            _cur.execute("SELECT version()")
+            _psy["connect"] = f"OK — {_cur.fetchone()[0][:60]}"
+        _cn.close()
+    except Exception as e:
+        _psy["connect"] = f"{type(e).__name__}: {str(e)[:180]}"
+    _results["psycopg3"] = _psy
+
     return {"success": True, **_results}
 
 
