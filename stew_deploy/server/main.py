@@ -254,6 +254,45 @@ async def db_diagnostic(token: str):
         except Exception as e:
             _variants[_name] = f"{type(e).__name__}: {str(e)[:140]}"
     _results["variants"] = _variants
+
+    # 3. raw TLS handshake test (no postgres protocol at all) — isolates
+    # whether the failure is asyncpg-specific or a general TLS incompatibility.
+    _raw_tls = {}
+    import ssl as _sm
+    _results["openssl_version"] = _sm.OPENSSL_VERSION
+    for _tlsname, _minver, _maxver in [
+        ("default_ctx", None, None),
+        ("force_tls12_only", _sm.TLSVersion.TLSv1_2, _sm.TLSVersion.TLSv1_2),
+        ("force_tls13_only", _sm.TLSVersion.TLSv1_3, _sm.TLSVersion.TLSv1_3),
+    ]:
+        try:
+            _ctx = _sm.create_default_context()
+            _ctx.check_hostname = False
+            _ctx.verify_mode = _sm.CERT_NONE
+            if _minver:
+                _ctx.minimum_version = _minver
+            if _maxver:
+                _ctx.maximum_version = _maxver
+            _reader, _writer = await asyncio.wait_for(
+                asyncio.open_connection(_host, _port), timeout=10
+            )
+            # send Postgres SSLRequest packet manually: length(8) + code(80877103)
+            _writer.write((8).to_bytes(4, "big") + (80877103).to_bytes(4, "big"))
+            await _writer.drain()
+            _resp = await asyncio.wait_for(_reader.read(1), timeout=10)
+            if _resp != b"S":
+                _raw_tls[_tlsname] = f"server declined SSL upgrade: {_resp!r}"
+                _writer.close()
+                continue
+            _loop = asyncio.get_event_loop()
+            _transport = _writer.transport
+            _new_transport = await _loop.start_tls(_transport, _writer._protocol, _ctx, server_hostname=_host)
+            _raw_tls[_tlsname] = f"OK — TLS handshake succeeded, cipher={_new_transport.get_extra_info('cipher')}"
+            _writer.close()
+        except Exception as e:
+            _raw_tls[_tlsname] = f"{type(e).__name__}: {str(e)[:150]}"
+    _results["raw_tls_handshake"] = _raw_tls
+
     return {"success": True, **_results}
 
 
