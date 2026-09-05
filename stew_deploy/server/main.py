@@ -322,7 +322,7 @@ async def db_diagnostic(token: str):
         for k, v in params:
             payload += k.encode() + b"\x00" + v.encode() + b"\x00"
         payload += b"\x00"
-        body = (196608).to_bytes(2, "big") + b"\x00\x00"  # protocol 3.0
+        body = (3).to_bytes(2, "big") + (0).to_bytes(2, "big")  # protocol 3.0
         body = body + payload
         msg = (len(body) + 4).to_bytes(4, "big") + body
         _tr.write(msg)
@@ -350,6 +350,31 @@ async def db_diagnostic(token: str):
     except Exception as e:
         _pg_handshake["result"] = f"{type(e).__name__}: {str(e)[:180]}"
     _results["postgres_handshake_after_tls"] = _pg_handshake
+
+    # 4b. INTERNAL hostname test — Render services in the same region can reach
+    # the DB over the internal network (dpg-xxx-a, no domain suffix), bypassing
+    # the external TCP ingress. If this works, the fix is to use the internal
+    # connection string.
+    _internal = {}
+    _int_host = _host.split(".")[0] if "." in _host else _host
+    _internal["internal_host"] = _int_host
+    try:
+        import socket as _sock
+        _internal["dns"] = str(_sock.getaddrinfo(_int_host, 5432, _sock.AF_INET, _sock.SOCK_STREAM)[0][4])
+    except Exception as e:
+        _internal["dns"] = f"failed: {type(e).__name__}"
+    try:
+        _conn = await _apg.connect(
+            host=_int_host, port=5432, user=_p.username,
+            password=_p.password, database=_p.path.lstrip("/"),
+            timeout=15, ssl="require",
+        )
+        _ver = await _conn.fetchval("SELECT version()")
+        await _conn.close()
+        _internal["asyncpg_connect"] = f"OK — {_ver[:60]}"
+    except Exception as e:
+        _internal["asyncpg_connect"] = f"{type(e).__name__}: {str(e)[:140]}"
+    _results["internal_hostname_test"] = _internal
 
     # 5. psycopg3 driver comparison (same container, same network, different library)
     _psy = {}
