@@ -3451,6 +3451,15 @@ VOICE_OPTIONS = {
     "thai_f": ("th-TH-PremwadeeNeural", "Premwadee — Thai female"),
     "filipino_f": ("en-PH-RosaNeural", "Rosa — Filipino female"),
     "singapore_f": ("en-SG-LunaNeural", "Luna — Singaporean female"),
+    # Russian
+    "russian_f": ("ru-RU-SvetlanaNeural", "Svetlana — Russian female"),
+    "russian_m": ("ru-RU-DmitriNeural", "Dmitri — Russian male"),
+    # German
+    "german_f": ("de-DE-KatjaNeural", "Katja — German female"),
+    "german_m": ("de-DE-ConradNeural", "Conrad — German male"),
+    # Italian
+    "italian_f": ("it-IT-ElsaNeural", "Elsa — Italian female"),
+    "italian_m": ("it-IT-DiegoNeural", "Diego — Italian male"),
 }
 
 # ── Natural-language voice intent detection ─────────────────────────────────
@@ -3483,6 +3492,9 @@ _VOICE_ALIASES = {
     "chinese": "chinese_f", "japanese": "japanese_f", "korean": "korean_f",
     "turkish": "turkish_f", "vietnamese": "vietnamese_f", "thai": "thai_f",
     "filipino": "filipino_f", "singaporean": "singapore_f", "singapore": "singapore_f",
+    "russian": "russian_f", "russia": "russian_f",
+    "german": "german_f", "germany": "german_f",
+    "italian": "italian_f", "italy": "italian_f",
     "male": "guy", "female": "aria", "man": "guy", "woman": "aria",
 }
 
@@ -4845,7 +4857,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         elif _voice_kw_hit:
             # They clearly want a voice change but we couldn't resolve which one —
             # act like an agent: ask a short clarifying question instead of ignoring it.
-            await bot.send_message(chat_id, "Which voice? e.g. \"change your voice to Nigerian female\", \"switch to a British male voice\", or send /voice list to see all 36 options.")
+            await bot.send_message(chat_id, f"Which voice? e.g. \"change your voice to Nigerian female\", \"switch to a Russian male voice\", or send /voice list to see all {len(VOICE_OPTIONS)} options.")
             return {"ok": True}
         # else: verb-only hit with no resolvable voice name (e.g. "talk like a pirate")
         # — not really a voice-switch request, fall through to normal chat handling.
@@ -5629,8 +5641,25 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # ── /summarize COMMAND ─────────────────────────────────────────────────────
-    if user_text.startswith("/summarize"):
-        text_to_summarize = user_text[10:].strip()
+    # ── NATURAL-LANGUAGE SUMMARIZE ───────────────────────────────────────────────
+    # Plain-English "summarize X" / "summarise this:" / "tldr X" works without /summarize.
+    _sm_is_cmd = user_text.startswith("/summarize") or user_text.startswith("/summarise")
+    _sm_intent = None
+    if not _sm_is_cmd:
+        _sm_intent = re.search(r'\b(summarize|summarise|tl;?dr)\b', user_lower)
+        # Require real content to summarize — otherwise it's likely a question ("can you summarize?")
+        if _sm_intent:
+            _sm_probe = re.sub(r'^.{0,40}?\b(summarize|summarise|tl;?dr)\b[:\s]*', '', user_text, flags=re.IGNORECASE).strip()
+            if len(_sm_probe) < 60:
+                _sm_intent = None  # too short — let normal chat handle the request
+    if _sm_is_cmd or _sm_intent:
+        if _sm_is_cmd:
+            text_to_summarize = user_text[10:].strip()
+        else:
+            text_to_summarize = re.sub(
+                r'^.{0,40}?\b(summarize|summarise|tl;?dr)\b[:\s]*',
+                '', user_text, flags=re.IGNORECASE,
+            ).strip()
         if not text_to_summarize:
             await bot.send_message(chat_id, "Send: /summarize Your long text here...")
             return {"ok": True}
@@ -7480,8 +7509,36 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return
 
     # /webbuild — Motion Design Website Builder (Kimi K2 style)
-    if user_text.startswith("/webbuild"):
-        _wb_desc = user_text.strip()[8:].strip()  # remove "/webbuild"
+    # ── NATURAL-LANGUAGE WEBBUILD ──────────────────────────────────────────────
+    # Plain-English "build me a website for X" works without /webbuild.
+    _wb_is_cmd = user_text.startswith("/webbuild")
+    _wb_intent = None
+    if not _wb_is_cmd:
+        _wb_intent = re.search(
+            r'\b(build|create|make|design|generate)\b.{0,25}\b(website|web ?site|web ?page|landing ?page)\b'
+            r'|\b(website|landing ?page)\b.{0,10}\b(for|about|of)\b',
+            user_lower,
+        )
+        # Don't hijack questions: "how do I create a website?", "what is a landing page?"
+        if _wb_intent and re.match(r'^\s*(what|how|why|when|who|which|where|can i|should i|do i|does|is it|are websites|tell me)\b', user_lower):
+            _wb_intent = None
+    if _wb_is_cmd or _wb_intent:
+        if _wb_is_cmd:
+            _wb_desc = user_text.strip()[8:].strip()  # remove "/webbuild"
+        else:
+            # "build me a website for X" / "create a landing page about X" -> "X"
+            _wb_m = re.search(
+                r'\b(?:build|create|make|design|generate)\b.{0,25}?\b(?:website|web ?site|web ?page|landing ?page)\b\s*(?:for|about|of|on|called|named|titled)?\s*(.+)$',
+                user_text, re.IGNORECASE,
+            )
+            if _wb_m:
+                _wb_desc = _wb_m.group(1).strip()
+            else:
+                _wb_m = re.search(
+                    r'\b(?:website|web ?site|landing ?page)\b\s+(?:for|about|of|on)\s+(.+)$',
+                    user_text, re.IGNORECASE,
+                )
+                _wb_desc = _wb_m.group(1).strip() if _wb_m else ""
         if not _wb_desc:
             await bot.send_message(
                 chat_id,
@@ -7775,8 +7832,26 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # ── /research COMMAND ──────────────────────────────────────────────────────
-    if user_text.startswith("/research"):
-        query = user_text[9:].strip()
+    # ── NATURAL-LANGUAGE RESEARCH ───────────────────────────────────────────────
+    # Plain-English "research X" / "find information about X" / "look up X" works
+    # without /research.
+    _rs_is_cmd = user_text.startswith("/research")
+    _rs_intent = None
+    if not _rs_is_cmd:
+        _rs_intent = re.search(
+            r'^research\b|\bresearch (about|on|this|the)\b|\b(find|get) (information|info) (about|on)\b|\blook ?up\b',
+            user_lower,
+        )
+    if _rs_is_cmd or _rs_intent:
+        if _rs_is_cmd:
+            query = user_text[9:].strip()
+        else:
+            # Strip everything up to and including the trigger phrase
+            query = re.sub(
+                r'^.{0,40}?(research|find information (about|on)|find info (about|on)|look ?up)\b[:\s]*',
+                '', user_text, flags=re.IGNORECASE,
+            ).strip()
+            query = re.sub(r'^(about|on|the)\b[:\s]*', '', query, flags=re.IGNORECASE).strip()
         if not query:
             await bot.send_message(chat_id, "Send: /research impact of AI on African economies")
             return {"ok": True}
