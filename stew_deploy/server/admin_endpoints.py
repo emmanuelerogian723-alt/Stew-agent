@@ -91,11 +91,11 @@ async def admin_dashboard(token: str, db: AsyncSession = Depends(get_db)):
     plan_result = await db.execute(select(User.plan, func.count(User.id)).group_by(User.plan))
     users_by_plan = {row[0]: row[1] for row in plan_result}
     total_revenue = (await db.execute(select(func.sum(PaymentTransaction.amount)).where(PaymentTransaction.status == "success"))).scalar() or 0
-    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     month_revenue = (await db.execute(select(func.sum(PaymentTransaction.amount)).where(PaymentTransaction.status == "success", PaymentTransaction.created_at >= month_start))).scalar() or 0
     tx_count = (await db.execute(select(func.count(PaymentTransaction.id)))).scalar() or 0
     calls_this_month = (await db.execute(select(func.count(APICall.id)).where(APICall.timestamp >= month_start))).scalar() or 0
-    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    week_ago = datetime.utcnow() - timedelta(days=7)
     active_users = (await db.execute(select(func.count(func.distinct(APICall.user_id))).where(APICall.timestamp >= week_ago))).scalar() or 0
     fr_pending = (await db.execute(select(func.count(FeatureRequest.id)).where(FeatureRequest.status == "pending"))).scalar() or 0
     fr_total = (await db.execute(select(func.count(FeatureRequest.id)))).scalar() or 0
@@ -105,13 +105,13 @@ async def admin_dashboard(token: str, db: AsyncSession = Depends(get_db)):
     new_users_week = (await db.execute(select(func.count(User.id)).where(User.created_at >= week_ago))).scalar() or 0
     revenue_chart = []
     for i in range(6, -1, -1):
-        ds = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+        ds = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
         de = ds + timedelta(days=1)
         dr = (await db.execute(select(func.sum(PaymentTransaction.amount)).where(PaymentTransaction.status == "success", PaymentTransaction.created_at >= ds, PaymentTransaction.created_at < de))).scalar() or 0
         revenue_chart.append({"date": ds.strftime("%Y-%m-%d"), "day": ds.strftime("%a"), "revenue": dr})
     signup_chart = []
     for i in range(6, -1, -1):
-        ds = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+        ds = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
         de = ds + timedelta(days=1)
         ds_count = (await db.execute(select(func.count(User.id)).where(User.created_at >= ds, User.created_at < de))).scalar() or 0
         signup_chart.append({"date": ds.strftime("%Y-%m-%d"), "day": ds.strftime("%a"), "signups": ds_count})
@@ -236,7 +236,7 @@ async def admin_payment_analytics(token: str, db: AsyncSession = Depends(get_db)
     revenue_by_plan = {row[0]: {"revenue": row[1], "count": row[2]} for row in plan_rev}
     monthly = []
     for i in range(5, -1, -1):
-        ms = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i * 30)
+        ms = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i * 30)
         me = ms + timedelta(days=30)
         rev = (await db.execute(select(func.sum(PaymentTransaction.amount)).where(PaymentTransaction.status == "success", PaymentTransaction.created_at >= ms, PaymentTransaction.created_at < me))).scalar() or 0
         cnt = (await db.execute(select(func.count(PaymentTransaction.id)).where(PaymentTransaction.status == "success", PaymentTransaction.created_at >= ms, PaymentTransaction.created_at < me))).scalar() or 0
@@ -253,7 +253,7 @@ async def admin_telegram_stats(token: str, db: AsyncSession = Depends(get_db)):
     plans = {row[0]: row[1] for row in tg_plans}
     voice_users = (await db.execute(select(func.count(User.id)).where(User.email.like("tg_%@telegram.stew"), User.voice_enabled == True))).scalar() or 0
     conv_count = (await db.execute(select(func.count(Conversation.id)))).scalar() or 0
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     calls_today = (await db.execute(select(func.count(APICall.id)).where(APICall.timestamp >= today_start))).scalar() or 0
     return {"telegram_users": tg_count, "users_by_plan": plans, "voice_enabled_users": voice_users, "total_conversations": conv_count, "messages_today": calls_today, "bot_configured": bool(os.environ.get("TELEGRAM_BOT_TOKEN", ""))}
 

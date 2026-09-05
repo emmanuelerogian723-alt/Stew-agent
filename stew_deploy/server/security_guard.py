@@ -116,7 +116,7 @@ async def check_vpn_proxy(ip: str) -> Dict:
 
 async def count_free_accounts_by_ip(ip: str, db: AsyncSession) -> int:
     """Count free-tier accounts created from this IP in the last 24h."""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
     result = await db.execute(
         select(func.count(DeviceFingerprint.id)).where(
             DeviceFingerprint.ip_address == ip,

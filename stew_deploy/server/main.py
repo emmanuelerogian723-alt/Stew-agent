@@ -433,7 +433,7 @@ async def _log_call(_db: AsyncSession, user_id: Optional[str], endpoint: str,
 
 async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
     """Check if user has remaining quota. Returns (allowed, calls_used, limit)."""
-    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count(APICall.id)).where(
             APICall.user_id == user.id,
@@ -746,7 +746,7 @@ class VerifyPaymentRequest(BaseModel):
 async def count_free_accounts_by_ip_secured(ip: str, db: AsyncSession) -> int:
     """Count free-tier accounts from this IP in the last 24h."""
     from datetime import timedelta
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
     result = await db.execute(
         select(func.count(DeviceFingerprint.id)).where(
             DeviceFingerprint.ip_address == ip,
@@ -776,7 +776,7 @@ async def heartbeat():
     return {
         "status": "ok",
         "version": "6.0.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "services": {
             "ai_engine": "operational" if ai_ready else "degraded",
             "web_search": "operational",  # crawler works with no API key (SearXNG/Bing/DDG/Jina)
@@ -1442,7 +1442,7 @@ async def generate_api_key_endpoint(body: GenerateKeyRequest, db: AsyncSession =
 async def get_me(current_user: User = Depends(get_current_user_jwt), db: AsyncSession = Depends(get_db)):
     # Count actual API calls this month from the APICall table
     from datetime import timedelta
-    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     try:
         result = await db.execute(
             select(func.count(APICall.id)).where(
@@ -1505,7 +1505,7 @@ async def admin_debug(api_key: str, db: AsyncSession = Depends(get_db)):
     emmanuel_row = emmanuel.scalars().first()
 
     # API calls this month
-    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     calls_result = await db.execute(select(func.count(APICall.id)).where(APICall.timestamp >= month_start))
     calls_this_month = calls_result.scalar() or 0
 
@@ -1539,7 +1539,7 @@ async def admin_debug(api_key: str, db: AsyncSession = Depends(get_db)):
         "feature_requests": feature_requests,
         "ad_campaigns": ad_campaigns,
         "plan_limits": settings.PLAN_CALL_LIMITS,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -1731,7 +1731,7 @@ async def auth_usage(api_key: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
     from datetime import timedelta
-    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count(APICall.id)).where(
             APICall.user_id == user.id,
@@ -3861,7 +3861,7 @@ async def _analyze_mood(user_text: str, llm_chat_fn=None) -> dict:
 async def _store_mood(db: AsyncSession, user_id: str, mood_data: dict, message_text: str):
     """Store a mood entry in the database."""
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         entry = MoodEntry(
             user_id=user_id,
             mood=mood_data["mood"],
@@ -5158,7 +5158,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         # Owner gets the full usage breakdown; everyone else gets the headline count.
         if tg_user_early and tg_user_early.plan == "owner":
             from datetime import timedelta as _td_stats
-            _now_stats = datetime.now(timezone.utc)
+            _now_stats = datetime.utcnow()
             _week_ago_stats = _now_stats - _td_stats(days=7)
             _month_ago_stats = _now_stats - _td_stats(days=30)
 
