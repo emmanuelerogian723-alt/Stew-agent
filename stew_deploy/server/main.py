@@ -260,15 +260,21 @@ async def db_diagnostic(token: str):
     _raw_tls = {}
     import ssl as _sm
     _results["openssl_version"] = _sm.OPENSSL_VERSION
-    for _tlsname, _minver, _maxver in [
-        ("default_ctx", None, None),
-        ("force_tls12_only", _sm.TLSVersion.TLSv1_2, _sm.TLSVersion.TLSv1_2),
-        ("force_tls13_only", _sm.TLSVersion.TLSv1_3, _sm.TLSVersion.TLSv1_3),
+    for _tlsname, _minver, _maxver, _use_tls_client in [
+        ("default_ctx", None, None, False),
+        ("force_tls12_only", _sm.TLSVersion.TLSv1_2, _sm.TLSVersion.TLSv1_2, False),
+        ("force_tls13_only", _sm.TLSVersion.TLSv1_3, _sm.TLSVersion.TLSv1_3, False),
+        ("asyncpg_exact_ctx", None, None, True),  # replicate asyncpg's own SSLContext(PROTOCOL_TLS_CLIENT) build
     ]:
         try:
-            _ctx = _sm.create_default_context()
-            _ctx.check_hostname = False
-            _ctx.verify_mode = _sm.CERT_NONE
+            if _use_tls_client:
+                _ctx = _sm.SSLContext(_sm.PROTOCOL_TLS_CLIENT)
+                _ctx.check_hostname = False
+                _ctx.verify_mode = _sm.CERT_NONE
+            else:
+                _ctx = _sm.create_default_context()
+                _ctx.check_hostname = False
+                _ctx.verify_mode = _sm.CERT_NONE
             if _minver:
                 _ctx.minimum_version = _minver
             if _maxver:
