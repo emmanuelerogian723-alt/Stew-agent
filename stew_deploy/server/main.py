@@ -103,6 +103,61 @@ from server.skills_engine import run_skill, list_skills as get_skills_list
 
 
 
+# ── DB connection diagnostic (admin-gated) ───────────────────────────────────
+@app.get("/db-diagnostic")
+async def db_diagnostic(token: str):
+    """Try multiple asyncpg SSL configurations and report which connects.
+    Admin-gated; used to debug persistent DB connection failures."""
+    if token != settings.STEW_ADMIN_SECRET and token != os.environ.get("STEW_ADMIN_SECRET"):
+        return {"success": False, "detail": "unauthorized"}
+
+    import asyncpg as _apg
+    import socket as _socket
+    import ssl as _sslmod
+    from urllib.parse import urlparse as _urlparse
+
+    _raw = settings.DATABASE_URL
+    _p = _urlparse(_raw)
+    _host, _port = _p.hostname, _p.port or 5432
+    _results = {"asyncpg_version": _apg.__version__, "host": _host, "port": _port}
+
+    # 1. raw TCP reachability
+    try:
+        _ips = _socket.getaddrinfo(_host, _port, proto=_socket.IPPROTO_TCP)
+        _results["dns"] = [f"{a[4][0]}" for a in _ips[:3]]
+    except Exception as e:
+        _results["dns"] = f"FAIL: {e}"
+
+    _dsn = _raw.replace("postgresql://", "postgres://", 1) if _raw.startswith("postgresql://") else _raw
+
+    # 2. ssl variants via raw asyncpg
+    _variants = {}
+    # build ssl contexts
+    _ctx_none = _sslmod.create_default_context()
+    _ctx_none.check_hostname = False
+    _ctx_none.verify_mode = _sslmod.CERT_NONE
+    _tests = [
+        ("ssl_string_require", {"ssl": "require"}),
+        ("ssl_bool_true", {"ssl": True}),
+        ("ssl_ctx_certnone", {"ssl": _ctx_none}),
+        ("no_ssl", {}),
+    ]
+    for _name, _kw in _tests:
+        try:
+            _conn = await _apg.connect(
+                host=_host, port=_port, user=_p.username,
+                password=_p.password, database=_p.path.lstrip("/"),
+                timeout=15, **_kw,
+            )
+            _ver = await _conn.fetchval("SELECT version()")
+            await _conn.close()
+            _variants[_name] = f"OK — {_ver[:60]}"
+        except Exception as e:
+            _variants[_name] = f"{type(e).__name__}: {str(e)[:140]}"
+    _results["variants"] = _variants
+    return {"success": True, **_results}
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
