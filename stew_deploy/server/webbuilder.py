@@ -206,6 +206,33 @@ def _strip_code_fences(raw: str) -> str:
     return raw.strip()
 
 
+def repair_truncated_html(html: str) -> str:
+    """Best-effort repair for a website whose HTML was cut off mid-generation.
+    Trims back to the last complete closing tag, closes the document, and forces
+    reveal-animation content visible (its JS may never have been generated —
+    without this the page renders completely blank)."""
+    if "</html" in html.lower():
+        return html
+    body = None
+    for tag in ("</footer>", "</section>", "</div>", "</main>", "</nav>", "</body>"):
+        i = html.lower().rfind(tag)
+        if i != -1:
+            body = html[: i + len(tag)]
+            break
+    if body is None:
+        body = html
+    force_visible = (
+        "\n<style>/* stew auto-repair: page was truncated before its reveal script "
+        "was generated - force all content visible */\n"
+        ".reveal{opacity:1 !important;transform:none !important;}\n"
+        ".card,.card.reveal{opacity:1 !important;transform:none !important;}\n"
+        "</style>\n</body></html>"
+    )
+    if "</body" not in body.lower():
+        body += "</body>"
+    return body + force_visible
+
+
 async def build_motion_website(description: str, style: str = "auto") -> dict:
     """
     Generate a full animated single-page website from a text description.
@@ -262,6 +289,7 @@ async def build_motion_website(description: str, style: str = "auto") -> dict:
                 {"role": "system", "content": MOTION_DESIGN_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
+            max_tokens=12000,
         )
     except Exception as e:
         logger.error(f"Motion website generation LLM error: {e}")
@@ -272,6 +300,33 @@ async def build_motion_website(description: str, style: str = "auto") -> dict:
     if "<!doctype" not in raw.lower() and "<html" not in raw.lower():
         logger.warning(f"Motion website: model did not return HTML. First 200 chars: {raw[:200]}")
         return {"success": False, "error": "Generation did not produce valid HTML - please try again"}
+
+    # ── Continue generation if the model hit its token cap mid-HTML ──
+    # A truncated page renders BLANK when it uses reveal animations
+    # (opacity:0 + JS), so this loop is what keeps /webbuild links alive.
+    for _attempt in range(3):
+        if "</html" in raw.lower():
+            break
+        logger.warning(f"Motion website: HTML truncated at {len(raw)} chars - asking model to continue (attempt {_attempt + 1})")
+        _cont = await asyncio.to_thread(
+            llm.chat,
+            [
+                {"role": "system", "content": MOTION_DESIGN_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+                {"role": "assistant", "content": raw[-8000:]},
+                {"role": "user", "content": "CONTINUE the HTML EXACTLY from where you stopped. Your output was cut mid-file. Do NOT repeat anything already written, do NOT start over, do NOT add commentary or code fences. Output ONLY the remaining HTML, continuing seamlessly from: ..." + raw[-400:]},
+            ],
+            max_tokens=12000,
+        )
+        _cont_text = _strip_code_fences(_cont.get("content", ""))
+        if not _cont_text:
+            break
+        raw = raw + "\n" + _cont_text
+
+    # ── Completeness validation + auto-repair ──
+    if "</html" not in raw.lower():
+        logger.warning(f"Motion website: still truncated after continuations ({len(raw)} chars) - auto-repairing")
+        raw = repair_truncated_html(raw)
 
     if len(raw) < 800:
         return {"success": False, "error": "Generated site was too short - please try again with more detail"}

@@ -30,7 +30,7 @@ from server.auth import (
 from server.config import get_settings
 from server.database import get_db, init_db
 from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration, generate_ai_video_multi_provider
-from server.webbuilder import build_motion_website
+from server.webbuilder import build_motion_website, repair_truncated_html
 from server.persistent_memory import (
     is_configured as supabase_configured,
     save_memory as supa_save_memory,
@@ -799,12 +799,19 @@ async def serve_generated_website(site_id: str, db: AsyncSession = Depends(get_d
                     "</p><p style='opacity:0.6'>Built with S.T.E.W — Telegram: @StewAgent_bot</p></body></html>",
             status_code=404,
         )
+    # Self-heal truncated pages (old /webbuild bug cut HTML mid-generation,
+    # leaving reveal-animation content invisible = blank page). Repair on
+    # serve and persist the repaired HTML so it only happens once.
+    html = repair_truncated_html(site.html)
     try:
         site.views = (site.views or 0) + 1
+        if html != site.html:
+            logger.warning(f"Site {site_id}: serving auto-repaired HTML ({len(site.html)} -> {len(html)} chars)")
+            site.html = html
         await db.commit()
     except Exception:
         pass
-    return HTMLResponse(content=site.html)
+    return HTMLResponse(content=html)
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
