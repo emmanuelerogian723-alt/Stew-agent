@@ -60,6 +60,55 @@ def _is_youtube_url(url: str) -> bool:
     return any(h in url.lower() for h in _YOUTUBE_HOSTS)
 
 
+_TIKTOK_HOSTS = ("tiktok.com", "vm.tiktok.com", "vt.tiktok.com", "m.tiktok.com")
+
+
+def _is_tiktok_url(url: str) -> bool:
+    return any(h in url.lower() for h in _TIKTOK_HOSTS)
+
+
+def _download_via_tikwm(url: str, output_path: str, timeout: int = 120) -> tuple[bool, str]:
+    """Download a TikTok video via the free, keyless tikwm API.
+
+    Root-cause note (fixed 2026-09): TikTok blocks datacenter/cloud IPs at the
+    webpage level — yt-dlp fails with 'Unexpected response from webpage request'
+    for EVERY video from Render's IP, on every client/extractor arg. The tikwm
+    API resolves the video server-side to a direct CDN mp4 URL that downloads
+    fine. It is the preferred path for TikTok; yt-dlp stays as the fallback so
+    we survive tikwm outages or rate limits."""
+    import requests as req
+    try:
+        api = f"https://www.tikwm.com/api/?url={url}"
+        resp = req.get(api, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return False, f"tikwm API HTTP {resp.status_code}"
+        data = resp.json()
+        if data.get("code") != 0:
+            return False, f"TikTok API error: {data.get('msg', 'unknown')}"
+        d = data.get("data") or {}
+        video_url = d.get("play") or d.get("hdplay") or d.get("wmplay")
+        if not video_url:
+            return False, "TikTok API returned no video URL"
+        if video_url.startswith("/"):
+            video_url = "https://www.tikwm.com" + video_url
+        dl = req.get(video_url, timeout=timeout, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+        if dl.status_code != 200:
+            return False, f"TikTok CDN HTTP {dl.status_code}"
+        size = 0
+        with open(output_path, "wb") as f:
+            for chunk in dl.iter_content(chunk_size=1024 * 256):
+                f.write(chunk)
+                size += len(chunk)
+                if size > 300 * 1024 * 1024:
+                    break
+        if size < 1000:
+            return False, "TikTok CDN returned an empty file"
+        logger.info(f"tikwm download OK: {size} bytes, duration={d.get('duration')}s, title={str(d.get('title'))[:60]}")
+        return True, ""
+    except Exception as e:
+        return False, f"tikwm download failed: {str(e)[:150]}"
+
+
 def _friendly_ytdlp_error(raw_err: str) -> str:
     """Map common yt-dlp/YouTube failure signatures to a clear user-facing message."""
     low = raw_err.lower()
@@ -103,10 +152,19 @@ def _run_ytdlp(url: str, output_path: str, timeout: int = 150) -> tuple[bool, st
     --extractor-args call was tested and caused MORE format-availability
     errors, not fewer, so each attempt uses exactly one client). Every
     failure is logged so patterns can be diagnosed from Render logs. Other
-    platforms (TikTok, Twitter/X, Instagram, direct mp4 links, Vimeo, etc.)
-    use yt-dlp's generic/native extractors, which work fine without any
-    special client flag."""
+    platforms: TikTok is routed through the keyless tikwm API first (yt-dlp is
+    blocked from datacenter IPs since 2026); Instagram Reels, Twitter/X,
+    Facebook, direct mp4 links, Vimeo etc. use yt-dlp's native extractors,
+    which work without any special client flag."""
     _update_ytdlp_once()
+
+    # TikTok: tikwm FIRST — yt-dlp is 100% blocked by TikTok from datacenter
+    # IPs ('Unexpected response from webpage request'). tikwm is fast + keyless.
+    if _is_tiktok_url(url):
+        ok, err = _download_via_tikwm(url, output_path)
+        if ok:
+            return True, ""
+        logger.warning(f"tikwm failed for {url}: {err} - falling back to yt-dlp")
 
     is_yt = _is_youtube_url(url)
     _max_filesize = "300M"  # generous safety net, not a per-clip limit — see docstring

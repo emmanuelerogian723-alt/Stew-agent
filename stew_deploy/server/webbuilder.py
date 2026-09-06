@@ -10,6 +10,7 @@ website that follows the prompt exactly.
 import asyncio
 import logging
 import re
+import urllib.parse
 
 from server.llm_client import get_llm_client
 
@@ -105,12 +106,21 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - Load 1-2 fonts via <link> (e.g. Sora for headings + Inter for body)
    - Use font-weight variations (400, 500, 600, 700, 800) for hierarchy
 
-11. NEVER use external <img> URLs — build every visual with:
-   - CSS gradients (linear, radial, conic)
-   - Inline SVG icons and illustrations
-   - Emoji for quick visual elements
-   - CSS shapes (border-radius, clip-path)
-   - Box shadows and pseudo-elements
+11. REAL PHOTOGRAPHY — every site MUST look complete with real photos:
+   - Use Pollinations image URLs ONLY (always valid, free, no key). EXACT format:
+     https://image.pollinations.ai/prompt/<url-encoded-description>?width=W&height=H&seed=N&nologo=true
+   - The prompt part must describe REAL PHOTOGRAPHY matching the business, e.g.
+     photorealistic%20modern%20coffee%20shop%20interior%20in%20lagos%2C%20warm%20evening%20light%2C%20happy%20customers
+   - URL-encode spaces as %20 and commas as %2C. Never leave raw spaces in the URL.
+   - Never ask the image for text, logos, or writing — photos only.
+   - Hero: full-bleed photo (1600x900) behind the headline with a dark gradient
+     overlay (e.g. linear-gradient(rgba(10,10,15,.65), rgba(10,10,15,.85))) so text stays readable.
+   - Include 4-8 photos total where they fit: hero, About, Gallery, product/menu cards,
+     testimonial avatars (200x200), team members (400x500).
+   - Every <img> gets descriptive alt text; add loading="lazy" to all except the hero.
+   - og:image meta tag = the hero photo URL.
+   - NEVER use any other image source (no unsplash, picsum, placehold — Pollinations only).
+   - Keep CSS gradients, inline SVG, and emoji too — for icons, patterns, and decoration.
 
 12. ADVANCED TECHNIQUES (use 3+ per site):
    - CSS conic-gradient for unique patterns
@@ -122,7 +132,12 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - Custom scrollbar styling
    - Section dividers with SVG shapes
 
-13. OUTPUT FORMAT:
+13. SEO & POLISH (always include):
+   - <link rel="icon"> emoji data-URI favicon
+   - meta description, og:title, og:description, og:image
+   - JSON-LD LocalBusiness schema in <head> with the business name, city, and offer
+
+14. OUTPUT FORMAT:
    - Output ONLY the complete HTML document: start with <!DOCTYPE html>, end with </html>
    - NO markdown code fences
    - NO explanation before or after
@@ -167,7 +182,7 @@ def _extract_design_keywords(description: str) -> dict:
     feature_keywords = {
         "booking": "online booking section with date/time picker UI",
         "contact": "contact form (name, email, message)",
-        "team": "team section with member cards and photos (CSS avatar placeholders)",
+        "team": "team section with member cards and portrait photos",
         "gallery": "gallery/portfolio section with CSS gradient image placeholders",
         "pricing": "pricing section with tiers",
         "testimonial": "testimonials section with star ratings",
@@ -204,6 +219,55 @@ def _strip_code_fences(raw: str) -> str:
     raw = re.sub(r'\n?```\s*$', '', raw)
     raw = re.sub(r'```(?:html)?\n?', '', raw, flags=re.IGNORECASE)
     return raw.strip()
+
+
+def _sanitize_pollinations_urls(html: str) -> tuple[str, int]:
+    """Normalize Pollinations image URLs the model may have written with raw
+    spaces, double-encoding, or missing params. Returns (html, image_count)."""
+    count = 0
+
+    def _fix(m):
+        nonlocal count
+        full = m.group(1)  # everything up to the closing quote / tag boundary
+        if "?" in full:
+            prompt_part, query = full.split("?", 1)
+            query = "?" + query
+        else:
+            prompt_part, query = full, ""
+        # decode once (handles raw spaces AND already-encoded input), then encode cleanly
+        prompt = urllib.parse.unquote(prompt_part)
+        prompt = " ".join(prompt.split())[:220]
+        enc = urllib.parse.quote(prompt, safe=",:")
+        if not query or "width=" not in query:
+            query = "?width=1200&height=800&nologo=true"
+        count += 1
+        return f"https://image.pollinations.ai/prompt/{enc}{query}"
+
+    # capture up to the closing quote (handles raw spaces inside attributes);
+    # also ends at < > or line end for unquoted contexts (e.g. CSS url(...))
+    html = re.sub(
+        r"https://image\.pollinations\.ai/prompt/([^\"'\r\n<>]*?)(?=\"|'|<|$)",
+        _fix, html,
+    )
+    return html, count
+
+
+def _inject_fallback_hero_photo(html: str, description: str) -> str:
+    """If the model ignored the photography rules, inject a hero background
+    photo built from the user's description so the site is never photo-less."""
+    prompt = urllib.parse.quote("photorealistic " + description[:120], safe=",:")
+    url = f"https://image.pollinations.ai/prompt/{prompt}?width=1600&height=900&seed=7&nologo=true"
+    style = (
+        "<style>/* stew fallback: no photos were generated - inject a hero "
+        "background from the description */\n"
+        "#home,.hero,section:first-of-type{background-image:"
+        f"linear-gradient(rgba(10,10,15,.6),rgba(10,10,15,.8)),url('{url}') !important;"
+        "background-size:cover !important;background-position:center !important;}"
+        "</style>"
+    )
+    if "</head>" in html:
+        return html.replace("</head>", style + "\n</head>", 1)
+    return style + html
 
 
 def repair_truncated_html(html: str) -> str:
@@ -330,6 +394,15 @@ async def build_motion_website(description: str, style: str = "auto") -> dict:
 
     if len(raw) < 800:
         return {"success": False, "error": "Generated site was too short - please try again with more detail"}
+
+    # ── Real-photo pass: sanitize image URLs, count photos, inject fallback ──
+    raw, _img_count = _sanitize_pollinations_urls(raw)
+    if _img_count == 0:
+        logger.warning("Motion website: model generated no photos - injecting fallback hero")
+        raw = _inject_fallback_hero_photo(raw, description)
+        _img_count = 1
+    else:
+        logger.info(f"Motion website: {_img_count} real photos included")
 
     title_match = re.search(r'<title>(.*?)</title>', raw, re.IGNORECASE | re.DOTALL)
     title = title_match.group(1).strip() if title_match else description[:60].strip()
