@@ -9811,35 +9811,19 @@ async def api_webbuild(body: WebBuildRequest, background_tasks: BackgroundTasks,
     """Build a motion-design website from a text description. Returns HTML."""
     user = await _require_key_and_quota(body.api_key, db, "/generate/webbuild", min_tier=1)
 
-    import asyncio as _asyncio
-    llm = get_llm_client()
+    # Upgraded: route through the motion-design website builder (same engine
+    # as Telegram /webbuild) so API/CLI users get the full premium result -
+    # motion-design system prompt, real photos, truncation repair, SEO.
+    _wb = await build_motion_website(body.description, "auto")
+    if not _wb.get("success"):
+        background_tasks.add_task(_log_call, db, user.id, "/generate/webbuild", "POST", 0, 200)
+        return {"success": False, "error": _wb.get("error", "Generation failed")}
 
-    site_name = body.site_name or body.description[:40].title()
-    prompt = f"""Build a complete, modern, responsive single-page website with:
-    - Dark luxury theme (#050505 background, electric blue and gold accents)
-    - Smooth CSS animations and transitions
-    - Mobile responsive design
-    - SEO-optimized meta tags
-    Site topic: {body.description}
-    Site name: {site_name}
-    Return ONLY the HTML code, no explanations."""
-
-    result = llm.chat([
-        {"role": "system", "content": "You are an expert web designer. Output only valid HTML5 with inline CSS."},
-        {"role": "user", "content": prompt}
-    ], max_tokens=8000)
-
-    html_content = _safe_content(result) if isinstance(result, dict) else str(result)
-    # Strip markdown code blocks if present
-    html_content = html_content.strip()
-    if html_content.startswith("```"):
-        html_content = html_content.split("\n", 1)[1] if "\n" in html_content else html_content
-    if html_content.endswith("```"):
-        html_content = html_content[:-3]
+    site_name = body.site_name or _wb.get("title") or body.description[:40].title()
 
     background_tasks.add_task(_log_call, db, user.id, "/generate/webbuild", "POST", 0, 200)
 
-    return {"success": True, "html": html_content, "site_name": site_name}
+    return {"success": True, "html": _wb["html"], "site_name": site_name, "size_bytes": _wb.get("size_bytes", 0)}
 
 
 @app.post("/finance/stock")
