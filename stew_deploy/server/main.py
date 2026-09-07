@@ -59,7 +59,7 @@ from server.security_guard import (
     record_device_fingerprint, log_security_event, get_security_dashboard,
     RISK_THRESHOLD_BLOCK, RISK_THRESHOLD_FLAG
 )
-from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan
+from server.payments import initialize_payment, validate_webhook_signature, verify_payment, upgrade_user_plan, add_user_credits
 from server.search import get_searcher
 from server.ocr_engine import ocr_file, ocr_and_reason, SUPPORTED_LANGS
 
@@ -431,8 +431,43 @@ async def _log_call(_db: AsyncSession, user_id: Optional[str], endpoint: str,
     except Exception as e:
         logger.warning(f"Failed to log API call: {e}")
 
-async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
-    """Check if user has remaining quota. Returns (allowed, calls_used, limit)."""
+def _coin_cost(feature: str) -> int:
+    """Weighted S.T.E.W Coin cost per feature (1 coin = 1 basic chat message)."""
+    return settings.FEATURE_COIN_COSTS.get(feature, 1)
+
+
+async def _ensure_plan_valid(user: User, db: AsyncSession) -> bool:
+    """Revert a paid plan to free once its 30-day cycle has expired.
+    Returns True if the plan was just expired."""
+    if user.plan in ("free", "owner"):
+        return False
+    exp = getattr(user, "plan_expires_at", None)
+    if exp is None:
+        # Legacy paid accounts created before expiry existed: grant one
+        # final 30-day cycle from today so nobody is cut off abruptly.
+        from datetime import datetime as _dt, timedelta as _td
+        user.plan_expires_at = _dt.utcnow() + _td(days=settings.PLAN_DURATION_DAYS)
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+        return False
+    if exp <= datetime.utcnow():
+        user.plan = "free"
+        user.plan_expires_at = None
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+        return True
+    return False
+
+
+async def _check_quota(user: User, db: AsyncSession, feature: str = "chat") -> tuple[bool, int, int]:
+    """Check if user has remaining quota. Returns (allowed, calls_used, limit).
+    Once the monthly allowance is exhausted, S.T.E.W Coins are consumed
+    automatically (weighted per feature) — Lovable-style top-up continuity."""
+    await _ensure_plan_valid(user, db)
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count(APICall.id)).where(
@@ -442,7 +477,20 @@ async def _check_quota(user: User, db: AsyncSession) -> tuple[bool, int, int]:
     )
     calls_used = result.scalar() or 0
     plan_limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
-    return (calls_used < plan_limit, calls_used, plan_limit)
+    if calls_used < plan_limit:
+        return (True, calls_used, plan_limit)
+    # Monthly allowance exhausted → burn coins instead of hard-blocking.
+    coins = getattr(user, "credits_balance", 0) or 0
+    cost = _coin_cost(feature)
+    if coins >= cost:
+        user.credits_balance = coins - cost
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            return (False, calls_used, plan_limit)
+        return (True, calls_used, plan_limit)
+    return (False, calls_used, plan_limit)
 
 
 def _plan_tier(plan: str) -> int:
@@ -2821,6 +2869,41 @@ async def init_payment(
     return {**result, "success": True}
 
 
+@app.post("/payments/coins")
+async def buy_coins(body: dict, db: AsyncSession = Depends(get_db)):
+    """Buy S.T.E.W Coins (one-time top-up packs, Lovable-style credits).
+    Body: {"api_key": "...", "pack": "spark"|"boost"|"mega"}"""
+    user = await _safe_get_user(str(body.get("api_key", "")), db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    pack_id = str(body.get("pack", "")).lower()
+    if pack_id not in settings.CREDIT_PACKS:
+        raise HTTPException(400, "Invalid pack. Choose from: " + ", ".join(settings.CREDIT_PACKS))
+    pack = settings.CREDIT_PACKS[pack_id]
+    result = initialize_payment(
+        email=user.email,
+        amount_kobo=pack["price"] * 100,
+        plan=f"coins_{pack_id}",
+        metadata={"user_id": user.id, "type": "credits", "pack": pack_id, "credits": pack["coins"]},
+    )
+    return {**result, "success": True, "pack": pack_id, "coins": pack["coins"], "price_naira": pack["price"]}
+
+
+@app.get("/credits/balance")
+async def credits_balance(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Return the user's S.T.E.W Coins balance + plan expiry info."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    return {
+        "credits_balance": user.credits_balance or 0,
+        "plan": user.plan,
+        "plan_expires_at": user.plan_expires_at.isoformat() if user.plan_expires_at else None,
+        "packs": settings.CREDIT_PACKS,
+        "feature_coin_costs": settings.FEATURE_COIN_COSTS,
+    }
+
+
 @app.post("/payments/verify")
 async def verify_payment_endpoint(
     body: VerifyPaymentRequest,
@@ -2830,7 +2913,22 @@ async def verify_payment_endpoint(
     tx_data = verify_payment(body.reference)
 
     if tx_data["status"] == "success":
-        plan = tx_data.get("metadata", {}).get("plan", "pro")
+        metadata = tx_data.get("metadata", {}) or {}
+        plan = metadata.get("plan", "pro")
+        if metadata.get("type") == "credits":
+            coins = int(metadata.get("credits", 0) or 0)
+            await add_user_credits(db, user.id, coins)
+            t = PaymentTransaction(
+                user_id=user.id,
+                reference=body.reference,
+                plan=f"coins:{metadata.get('pack', 'spark')}",
+                amount=tx_data["amount"],
+                status="success",
+            )
+            db.add(t)
+            await db.flush()
+            return {"message": f"{coins:,} S.T.E.W Coins added", "coins": coins, "success": True}
+
         await upgrade_user_plan(db, user.id, plan)
 
         # Record transaction
@@ -2865,17 +2963,31 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
         plan = metadata.get("plan", "pro")
 
         if user_id:
-            await upgrade_user_plan(db, user_id, plan)
-            t = PaymentTransaction(
-                user_id=user_id,
-                reference=data["reference"],
-                plan=plan,
-                amount=data["amount"],
-                status="success",
-            )
-            db.add(t)
-            await db.flush()
-            logger.info(f"Webhook: upgraded user {user_id} to {plan}")
+            if metadata.get("type") == "credits":
+                coins = int(metadata.get("credits", 0) or 0)
+                await add_user_credits(db, user_id, coins)
+                t = PaymentTransaction(
+                    user_id=user_id,
+                    reference=data["reference"],
+                    plan=f"coins:{metadata.get('pack', 'spark')}",
+                    amount=data["amount"],
+                    status="success",
+                )
+                db.add(t)
+                await db.flush()
+                logger.info(f"Webhook: credited {coins} S.T.E.W Coins to user {user_id}")
+            else:
+                await upgrade_user_plan(db, user_id, plan)
+                t = PaymentTransaction(
+                    user_id=user_id,
+                    reference=data["reference"],
+                    plan=plan,
+                    amount=data["amount"],
+                    status="success",
+                )
+                db.add(t)
+                await db.flush()
+                logger.info(f"Webhook: upgraded user {user_id} to {plan}")
 
     return {"status": "ok"}
 
@@ -2897,7 +3009,21 @@ async def payment_status(reference: str, api_key: str, db: AsyncSession = Depend
     try:
         tx_data = verify_payment(reference)
         if tx_data["status"] == "success":
-            plan = tx_data.get("metadata", {}).get("plan", "pro")
+            metadata = tx_data.get("metadata", {}) or {}
+            plan = metadata.get("plan", "pro")
+            if metadata.get("type") == "credits":
+                coins = int(metadata.get("credits", 0) or 0)
+                await add_user_credits(db, user.id, coins)
+                t = PaymentTransaction(
+                    user_id=user.id,
+                    reference=reference,
+                    plan=f"coins:{metadata.get('pack', 'spark')}",
+                    amount=tx_data["amount"],
+                    status="success",
+                )
+                db.add(t)
+                await db.flush()
+                return {"success": True, "status": "success", "message": f"{coins:,} S.T.E.W Coins added"}
             await upgrade_user_plan(db, user.id, plan)
             t = PaymentTransaction(
                 user_id=user.id,
@@ -4380,6 +4506,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             else:
                 await asyncio.sleep(0.4)
 
+    # Monetization v2: enforce the 30-day plan cycle before any tier gating.
+    if tg_user_early and tg_user_early.plan not in ("free", "owner"):
+        await _ensure_plan_valid(tg_user_early, db)
+
     _raw_text_early = (msg.get("text") or "").strip()
     _is_callback_early = bool(msg.get("is_callback"))
 
@@ -4641,7 +4771,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # finance tools, AI video, invoice) requires a paid plan (Student+).
     _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users",
                           "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote",
-                          "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news")
+                          "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news",
+                          "/credits", "/topup", "/coins")
 
     _premium_cmd_prefixes = ("/song", "/book", "/meme", "/caption", "/webbuild",
                              "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ",
@@ -4667,13 +4798,13 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_inline_keyboard(
             chat_id,
             f"🔒 *{_feature_name}* is a premium feature.\n\n"
-            f"Free tier includes 50 basic messages/month (chat + utilities only).\n"
             f"Songs, books, memes, documents, code, research, trading tools, AI video "
             f"and more require a paid plan.\n\n"
-            f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo — 500 msgs + all features\n"
-            f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — 10,000 msgs + priority\n"
-            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — 100,000 msgs\n\n"
-            f"Or type /upgrade to see all plans.",
+            f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} msgs + all features\n"
+            f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} msgs + priority\n"
+            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} msgs\n"
+            f"🏢 Enterprise — ₦{settings.PLAN_PRICES['enterprise']:,}/mo — unlimited scale\n\n"
+            f"Or grab instant *S.T.E.W Coins* with /credits — no subscription needed.",
             _upgrade_kb,
         )
         return {"ok": True}
@@ -4681,19 +4812,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if tg_user_early and tg_user_early.plan != "owner" and not _is_free_cmd_early:
         _allowed_early, _used_early, _limit_early = await _check_quota(tg_user_early, db)
         if not _allowed_early:
+            _coins_bal = getattr(tg_user_early, "credits_balance", 0) or 0
             _upgrade_kb = [
                 [{"text": f"🎓 Upgrade — Student ₦{settings.PLAN_PRICES['student']:,}", "callback_data": "menu_upgrade_student"}],
                 [{"text": f"💎 Upgrade — Pro ₦{settings.PLAN_PRICES['pro']:,}", "callback_data": "menu_upgrade_pro"}],
                 [{"text": f"🏢 Upgrade — Business ₦{settings.PLAN_PRICES['business']:,}", "callback_data": "menu_upgrade_business"}],
+                [{"text": f"🪙 Buy Coins — from ₦{min(p['price'] for p in settings.CREDIT_PACKS.values()):,}", "callback_data": "menu_buy_coins"}],
             ]
             await bot.send_inline_keyboard(
                 chat_id,
-                f"⚠️ You've reached your free monthly limit ({_used_early}/{_limit_early} messages).\n\n"
+                f"⚠️ You've reached your monthly limit ({_used_early}/{_limit_early} messages).\n\n"
                 f"Upgrade to keep using S.T.E.W without interruption:\n\n"
-                f"Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} messages (budget-friendly)\n"
+                f"Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} messages\n"
                 f"Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages\n"
                 f"Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages\n\n"
-                f"Or type /upgrade any time to see plans again.",
+                f"🪙 Or top up instantly with *S.T.E.W Coins* — no subscription, pay once, "
+                f"keeps you going right away. Balance: {_coins_bal:,} coins."
+                + ("" if _coins_bal >= 1 else "\n\nType /credits to grab coins now."),
                 _upgrade_kb,
             )
             return {"ok": True}
@@ -5004,6 +5139,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "menu_upgrade_student": "upgrade_student",
             "menu_upgrade_pro": "upgrade_pro",
             "menu_upgrade_business": "upgrade_business",
+            "menu_buy_coins": "menu_buy_coins",
+            "buy_spark": "buy_spark",
+            "buy_boost": "buy_boost",
+            "buy_mega": "buy_mega",
         }
         action = callback_map.get(callback_data, "")
         if action == "students":
@@ -5049,6 +5188,43 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "Type /plan to see pricing"
             )
             await bot.send_message(chat_id, help_text)
+        elif action == "menu_buy_coins":
+            _coins_kb = [
+                [{"text": f"⚡ Spark — ₦{settings.CREDIT_PACKS['spark']['price']:,} ({settings.CREDIT_PACKS['spark']['coins']:,} coins)", "callback_data": "buy_spark"}],
+                [{"text": f"🚀 Boost — ₦{settings.CREDIT_PACKS['boost']['price']:,} ({settings.CREDIT_PACKS['boost']['coins']:,} coins)", "callback_data": "buy_boost"}],
+                [{"text": f"🏆 Mega — ₦{settings.CREDIT_PACKS['mega']['price']:,} ({settings.CREDIT_PACKS['mega']['coins']:,} coins)", "callback_data": "buy_mega"}],
+            ]
+            await bot.send_inline_keyboard(
+                chat_id,
+                "🪙 *S.T.E.W Coins* — one-time top-ups, no subscription.\n\n"
+                "Coins are consumed automatically once your monthly allowance "
+                "runs out. Pick a pack:",
+                _coins_kb,
+            )
+            return {"ok": True}
+        elif action in ("buy_spark", "buy_boost", "buy_mega"):
+            _pack_id = {"buy_spark": "spark", "buy_boost": "boost", "buy_mega": "mega"}[action]
+            _pack = settings.CREDIT_PACKS[_pack_id]
+            try:
+                _pay = initialize_payment(
+                    email=tg_user.email if 'tg_user' in dir() else tg_user_early.email,
+                    amount_kobo=_pack["price"] * 100,
+                    plan=f"coins_{_pack_id}",
+                    metadata={
+                        "user_id": (tg_user.id if 'tg_user' in dir() else tg_user_early.id),
+                        "type": "credits", "pack": _pack_id, "credits": _pack["coins"],
+                    },
+                )
+                await bot.send_message(
+                    chat_id,
+                    f"🪙 {_pack['coins']:,} S.T.E.W Coins for ₦{_pack['price']:,}\n\n"
+                    f"Complete your purchase here:\n\n{_pay['authorization_url']}\n\n"
+                    f"Your coins land in your balance the moment payment is confirmed.",
+                )
+            except Exception as _coins_err:
+                logger.error(f"Telegram coins payment init failed: {_coins_err}")
+                await bot.send_message(chat_id, "Couldn't start the payment right now. Please try /credits again in a moment.")
+            return {"ok": True}
         elif action in ("upgrade_student", "upgrade_pro", "upgrade_business"):
             _plan = {"upgrade_student": "student", "upgrade_pro": "pro", "upgrade_business": "business"}[action]
             try:
@@ -5140,15 +5316,20 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # /usage — show current plan + how much of the free tier has been used
     if user_text.startswith("/usage"):
+        await _ensure_plan_valid(tg_user, db)
         _allowed_u, _used_u, _limit_u = await _check_quota(tg_user, db)
         if tg_user.plan == "owner":
             await bot.send_message(chat_id, "Plan: Owner (Admin)\nUsage: Unlimited — no limits apply to this account.")
         else:
+            _bal_u = getattr(tg_user, "credits_balance", 0) or 0
+            _exp_u = getattr(tg_user, "plan_expires_at", None)
+            _exp_line = f"\nRenews/expires: {_exp_u.strftime('%d %b, %Y')}" if _exp_u else ""
             await bot.send_message(
                 chat_id,
-                f"Plan: {tg_user.plan.title()}\n"
+                f"Plan: {tg_user.plan.title()}{_exp_line}\n"
                 f"Used this month: {_used_u:,} / {_limit_u:,} messages\n"
-                f"{'✅ You have quota remaining.' if _allowed_u else '⚠️ Limit reached — type /upgrade.'}",
+                f"🪙 Coins balance: {_bal_u:,}\n"
+                f"{'✅ You have quota remaining.' if _allowed_u else '⚠️ Limit reached — coins kick in automatically if you have any. Top up with /credits or upgrade with /upgrade.'}",
             )
         return {"ok": True}
 
@@ -5156,13 +5337,42 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.startswith("/plan"):
         await bot.send_message(
             chat_id,
-            "S.T.E.W Plans\n\n"
+            "💎 S.T.E.W Plans (premium tier)\n\n"
             f"Free — ₦0 — {settings.PLAN_CALL_LIMITS['free']:,} messages/month\n"
             f"🎓 Student — ₦{settings.PLAN_PRICES['student']:,}/mo — {settings.PLAN_CALL_LIMITS['student']:,} messages/month\n"
             f"   (budget tier — great for coursework, quizzes, small AI videos)\n"
             f"💎 Pro — ₦{settings.PLAN_PRICES['pro']:,}/mo — {settings.PLAN_CALL_LIMITS['pro']:,} messages/month\n"
-            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n\n"
-            "Type /upgrade to pay with Paystack.",
+            f"🏢 Business — ₦{settings.PLAN_PRICES['business']:,}/mo — {settings.PLAN_CALL_LIMITS['business']:,} messages/month\n"
+            f"🏛 Enterprise — ₦{settings.PLAN_PRICES['enterprise']:,}/mo — for teams & heavy workloads\n\n"
+            f"All paid plans run on a {settings.PLAN_DURATION_DAYS}-day cycle.\n\n"
+            f"🪙 *S.T.E.W Coins* — no subscription needed:\n"
+            f"⚡ Spark — {settings.CREDIT_PACKS['spark']['coins']:,} coins — ₦{settings.CREDIT_PACKS['spark']['price']:,}\n"
+            f"🚀 Boost — {settings.CREDIT_PACKS['boost']['coins']:,} coins — ₦{settings.CREDIT_PACKS['boost']['price']:,}\n"
+            f"🏆 Mega — {settings.CREDIT_PACKS['mega']['coins']:,} coins — ₦{settings.CREDIT_PACKS['mega']['price']:,}\n\n"
+            "Coins kick in automatically when your monthly allowance runs out.\n\n"
+            "Type /upgrade for plans or /credits for coins.",
+        )
+        return {"ok": True}
+
+    # /credits, /coins, /topup — S.T.E.W Coins balance + purchase
+    if user_text.startswith(("/credits", "/coins", "/topup")):
+        _bal = getattr(tg_user, "credits_balance", 0) or 0
+        _coins_kb = [
+            [{"text": f"⚡ Spark — ₦{settings.CREDIT_PACKS['spark']['price']:,} ({settings.CREDIT_PACKS['spark']['coins']:,} coins)", "callback_data": "buy_spark"}],
+            [{"text": f"🚀 Boost — ₦{settings.CREDIT_PACKS['boost']['price']:,} ({settings.CREDIT_PACKS['boost']['coins']:,} coins)", "callback_data": "buy_boost"}],
+            [{"text": f"🏆 Mega — ₦{settings.CREDIT_PACKS['mega']['price']:,} ({settings.CREDIT_PACKS['mega']['coins']:,} coins)", "callback_data": "buy_mega"}],
+        ]
+        await bot.send_inline_keyboard(
+            chat_id,
+            f"🪙 *S.T.E.W Coins*\n\n"
+            f"Your balance: *{_bal:,} coins*\n\n"
+            f"Coins are one-time top-ups — no subscription. They're consumed "
+            f"automatically once your monthly plan allowance runs out, so you "
+            f"never get cut off mid-work.\n\n"
+            f"Heavier features burn more coins (video 25, research 8, image 5, "
+            f"document 5, voice 3, chat 1).\n\n"
+            f"Pick a pack below:",
+            _coins_kb,
         )
         return {"ok": True}
 

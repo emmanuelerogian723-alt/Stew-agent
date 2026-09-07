@@ -133,11 +133,28 @@ async def init_db():
         # Lightweight migration: add new columns if they don't exist (SQLite)
         if IS_SQLITE:
             await _sqlite_migrate(conn)
+        elif not IS_SUPABASE:
+            # Postgres: idempotent column adds for monetization v2 (2026)
+            await _postgres_migrate(conn)
         # Supabase: auto-create the persistent-memory tables + storage bucket
         # (same database the REST/storage API uses), so no manual SQL step.
         if IS_SUPABASE:
             await _supabase_bootstrap(conn)
 
+
+
+async def _postgres_migrate(conn):
+    """Idempotent ALTER TABLEs for the Postgres path (Render).
+    Survives fresh databases and pre-existing ones alike."""
+    stmts = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_balance INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMP NULL",
+    ]
+    for s in stmts:
+        try:
+            await conn.execute(text(s))
+        except Exception as e:
+            logger.warning(f"Postgres migrate statement skipped: {e}")
 
 async def _supabase_bootstrap(conn):
     """Create stew_memories / stew_conversations / stew_profiles /

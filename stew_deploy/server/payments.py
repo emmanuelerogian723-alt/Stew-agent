@@ -116,10 +116,31 @@ def validate_webhook_signature(payload_bytes: bytes, signature: str) -> bool:
 
 
 async def upgrade_user_plan(db: AsyncSession, user_id: str, plan: str) -> User:
+    from datetime import datetime, timedelta
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
     user.plan = plan
+    # Paid plans run for exactly one 30-day cycle. Renewing while active
+    # stacks: the new cycle starts when the current one ends.
+    if plan in ("student", "pro", "business", "enterprise"):
+        from server.config import get_settings
+        duration = get_settings().PLAN_DURATION_DAYS
+        base = user.plan_expires_at if (user.plan_expires_at and user.plan_expires_at > datetime.utcnow()) else datetime.utcnow()
+        user.plan_expires_at = base + timedelta(days=duration)
+    else:
+        user.plan_expires_at = None  # free / owner never expire
+    await db.flush()
+    return user
+
+
+async def add_user_credits(db: AsyncSession, user_id: str, coins: int) -> User:
+    """Credit a user's S.T.E.W Coins balance after a successful top-up payment."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    user.credits_balance = (user.credits_balance or 0) + coins
     await db.flush()
     return user

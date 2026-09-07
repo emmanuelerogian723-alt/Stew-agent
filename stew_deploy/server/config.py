@@ -83,7 +83,30 @@ class Settings(BaseSettings):
 
     @property
     def PLAN_PRICES(self) -> dict:
-        return {"free": 0, "student": 2000, "pro": 9900, "business": 29000, "enterprise": 49000}
+        # Premium positioning (2026 repricing): Stew is the flagship MUTYINT product.
+        # One-time payments buy exactly one 30-day cycle — see plan_expires_at.
+        return {"free": 0, "student": 5000, "pro": 15000, "business": 50000, "enterprise": 150000}
+
+    @property
+    def CREDIT_PACKS(self) -> dict:
+        """S.T.E.W Coins — one-time top-up packs (Lovable-style credits).
+        Coins are consumed only after the monthly plan allowance runs out."""
+        return {
+            "spark": {"coins": 2000, "price": 2000},
+            "boost": {"coins": 10000, "price": 8000},
+            "mega": {"coins": 50000, "price": 30000},
+        }
+
+    @property
+    def FEATURE_COIN_COSTS(self) -> dict:
+        """Weighted coin cost per feature type — protects margins: expensive
+        features (video, research) burn more coins than plain chat."""
+        return {
+            "chat": 1, "search": 2, "code": 2, "finance": 2, "ocr": 2,
+            "voice": 3, "document": 5, "image": 5, "research": 8, "video": 25,
+        }
+
+    PLAN_DURATION_DAYS: int = 30
 
     @property
     def PLAN_CALL_LIMITS(self) -> dict:

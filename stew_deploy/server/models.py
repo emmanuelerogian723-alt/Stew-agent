@@ -8,7 +8,7 @@ from typing import Optional
 
 from sqlalchemy import (
     String, Text, Integer, DateTime, Boolean, JSON,
-    ForeignKey, func
+    ForeignKey, func, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +43,9 @@ class User(Base):
     preferred_model: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Mistral API key (user can bring their own)
     mistral_api_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # ── Monetization v2 (2026): S.T.E.W Coins + plan expiry ──
+    credits_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=text("0"))
+    plan_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

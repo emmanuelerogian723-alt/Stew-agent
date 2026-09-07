@@ -30,7 +30,7 @@
   "description": "S.T.E.W Agent is an AI agent API built for African developers. OpenAI-compatible endpoint, 6 AI providers with auto-failover, 59 skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, and Naira billing via Paystack. The best AI API for Africa.",
   "offers": [
     {"@type": "Offer", "price": "0", "priceCurrency": "NGN", "description": "Free tier: 1,500 API calls/month"},
-    {"@type": "Offer", "price": "15000", "priceCurrency": "NGN", "description": "Pro: 15,000 API calls/month"},
+    {"@type": "Offer", "price": "15000", "priceCurrency": "NGN", "description": "Pro: 10,000 API calls/month"},
     {"@type": "Offer", "price": "50000", "priceCurrency": "NGN", "description": "Business: 100,000 API calls/month"}
   ],
   "provider": {"@type": "Organization", "name": "MUTYINT Nigeria", "url": "https://stew-agent.onrender.com"},
@@ -56,7 +56,7 @@
     {"@type": "Question", "name": "What is S.T.E.W Agent?", "acceptedAnswer": {"@type": "Answer", "text": "S.T.E.W Agent is an AI agent API built for African developers by MUTYINT Nigeria. It provides multi-model LLM access, 59 built-in skills, a 100-agent swarm, document generation, OCR, vision, and Naira billing. It is OpenAI-compatible."}},
     {"@type": "Question", "name": "Is S.T.E.W Agent an OpenAI alternative?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. S.T.E.W Agent has an OpenAI-compatible endpoint at /v1/chat/completions. Any tool built for OpenAI can switch to Stew by changing the base URL to https://stew-agent.onrender.com/v1. It offers Naira billing, making it cheaper than OpenAI for African developers."}},
     {"@type": "Question", "name": "What is the best AI API for Africa?", "acceptedAnswer": {"@type": "Answer", "text": "S.T.E.W Agent is the best AI API for Africa because it offers Naira billing via Paystack, multi-provider failover across 6 AI providers, 59 built-in skills, 100-agent swarm, and a Telegram bot for the WhatsApp-first African market."}},
-    {"@type": "Question", "name": "How much does S.T.E.W Agent cost?", "acceptedAnswer": {"@type": "Answer", "text": "S.T.E.W Agent has three plans: Free (0 Naira/month, 1,500 API calls), Pro (15,000 Naira/month, 15,000 API calls), and Business (50,000 Naira/month, 100,000 API calls). Payment via Paystack, bank transfer, or USSD."}}
+    {"@type": "Question", "name": "How much does S.T.E.W Agent cost?", "acceptedAnswer": {"@type": "Answer", "text": "S.T.E.W Agent has four plans: Free (0 Naira/month, 1,000 API calls), Student (5,000 Naira/month), Pro (15,000 Naira/month, 10,000 API calls), and Business (50,000 Naira/month, 100,000 API calls). One-time S.T.E.W Coins top-ups are also available. Payment via Paystack, bank transfer, or USSD."}}
   ]
 }
 </script>
@@ -615,7 +615,7 @@ const fbAuth = firebase.auth();
         <div class="pc-price">₦0</div>
         <div class="pc-per">forever</div>
         <ul class="pc-feats">
-          <li>3,000 API calls/month</li><li>All 60+ skills</li><li>Web research</li>
+          <li>1,000 API calls/month</li><li>All 60+ skills</li><li>Web research</li>
           <li>Document generation</li><li>Fine-tune personas</li>
           <li class="no">Custom Mistral key</li><li class="no">100-agent swarm</li>
         </ul>
@@ -624,8 +624,8 @@ const fbAuth = firebase.auth();
       <div class="pc pop">
         <div class="pop-badge">Most Popular</div>
         <div class="pc-plan">Pro</div>
-        <div class="pc-price">₦9,900</div>
-        <div class="pc-per">per month · ~$6 USD</div>
+        <div class="pc-price">₦15,000</div>
+        <div class="pc-per">per month · premium tier</div>
         <ul class="pc-feats">
           <li>10,000 API calls/month</li><li>All skills + priority routing</li>
           <li>Custom Mistral AI key ✓</li><li>Fine-tune personas</li>
@@ -636,8 +636,8 @@ const fbAuth = firebase.auth();
       </div>
       <div class="pc">
         <div class="pc-plan">Business</div>
-        <div class="pc-price">₦29,000</div>
-        <div class="pc-per">per month · ~$18 USD</div>
+        <div class="pc-price">₦50,000</div>
+        <div class="pc-per">per month · scale tier</div>
         <ul class="pc-feats">
           <li>100,000 API calls/month</li><li>100-agent swarm ✓</li>
           <li>Custom Mistral key ✓</li><li>Telegram bot setup</li>
@@ -647,8 +647,8 @@ const fbAuth = firebase.auth();
       </div>
       <div class="pc">
         <div class="pc-plan">Enterprise</div>
-        <div class="pc-price">₦49k+</div>
-        <div class="pc-per">per month · custom</div>
+        <div class="pc-price">₦150k</div>
+        <div class="pc-per">per month · bespoke</div>
         <ul class="pc-feats">
           <li>Unlimited API calls</li><li>Dedicated AI instances</li>
           <li>White-label option</li><li>SLA guarantee</li>
