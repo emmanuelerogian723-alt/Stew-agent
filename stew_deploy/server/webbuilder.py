@@ -31,6 +31,22 @@ Every website you build should feel like it cost $10,000+ to make. You achieve t
 - Micro-interactions that reward engagement (hover states, button presses, card tilts)
 - A clear visual story from top to bottom — hero sets the mood, features build trust, CTA converts
 
+QUALITY BAR — BE UNIQUE EVERY SINGLE TIME:
+Your work must stand alongside top Dribbble shots and sites from Lovable or Base44 — sites people
+assume took a designer weeks. Two sites you generate for the same type of business must NEVER look
+like twins. For EVERY site, actively rotate:
+- LAYOUT STRUCTURE: asymmetric split heroes, centered typographic heroes, full-bleed photo heroes,
+  bento-grid feature sections, horizontal marquee strips, alternating zig-zag rows, oversized display
+  typography, sticky side sections. Never default to one look.
+- TYPE PAIRINGS: rotate among (Sora+Inter), (Playfair Display+DM Sans), (Space Grotesk+Inter),
+  (Syne+Nunito Sans), (Fraunces+Outfit), (Unbounded+Manrope). Match the mood to the brand.
+- DECOR LANGUAGE: glassmorphism cards, conic-gradient glows, SVG grid/noise backgrounds, clip-path
+  curves, dot patterns, spotlight hover cards. Pick a coherent set — not everything at once.
+- MOTION SIGNATURE: each site gets 1-2 signature effects (marquee text strip, magnetic buttons,
+  scroll-progress parallax, tilt-on-hover cards, count-up stats, cursor glow).
+Before writing any code, decide the layout + type pairing + decor for THIS site based on the brief,
+then commit to it fully.
+
 HARD REQUIREMENTS FOR EVERY SITE:
 
 1. ONE self-contained HTML file — inline <style> and <script> only. No external file dependencies \
@@ -90,7 +106,7 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - Pricing (ONLY if relevant — skip if it doesn't fit)
    - Gallery/Portfolio (if relevant)
    - FAQ accordion (if relevant)
-   - Contact section (form with name/email/message)
+   - Contact section (form with name/phone/email/message — MUST be functional, see rule 11.5)
    - Final CTA banner (full-width, bold gradient, single button)
    - Footer (links, social icons, copyright)
    - CUSTOM SECTIONS: If the user mentions specific needs (booking, team, map, blog, etc.) — include them
@@ -100,6 +116,9 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - Use the business name from the prompt or invent a fitting one
    - Include realistic testimonials with Nigerian/African names when context suggests it
    - Address the target audience directly
+   - LANGUAGE: write ALL site copy (nav, sections, testimonials, footer) in the SAME language the
+     user's prompt is written in. If the prompt is in French, Swahili, Yoruba, Hausa, Arabic, etc.,
+     the entire site is in that language. Only proper nouns and brand names may stay in English.
    - Include a unique selling proposition in the hero
 
 10. GOOGLE FONTS:
@@ -121,6 +140,14 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - og:image meta tag = the hero photo URL.
    - NEVER use any other image source (no unsplash, picsum, placehold — Pollinations only).
    - Keep CSS gradients, inline SVG, and emoji too — for icons, patterns, and decoration.
+
+11.5 FUNCTIONAL CONTACT FORM (sites are hosted by Stew — forms REALLY work):
+   - The contact/booking form has fields: name, phone, email, message + a submit button.
+   - On submit, run JavaScript:
+     fetch(location.pathname + '/lead', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name, phone, email, message }) })
+     then, if the response is ok, replace the form with an inline success message
+     (e.g. "✅ Message sent! We'll get back to you shortly."). Disable the button while sending.
+   - Never use mailto:, action="#", or placeholder alert() — the form must actually deliver.
 
 12. ADVANCED TECHNIQUES (use 3+ per site):
    - CSS conic-gradient for unique patterns
@@ -415,3 +442,91 @@ async def build_motion_website(description: str, style: str = "auto") -> dict:
         "title": title,
         "size_bytes": len(raw.encode("utf-8")),
     }
+
+
+# ── Website EDIT engine ───────────────────────────────────────────────────────
+# Lets owners iterate on a generated site: "/edit change the phone number to
+# 0803..." -> LLM applies surgical edits to the existing HTML and returns the
+# full updated document. Reuses the build pipeline's continuation loop + photo
+# sanitizer + repair so edited sites are just as robust as fresh ones.
+
+EDIT_SYSTEM_PROMPT = """You are a senior web developer editing an EXISTING single-file HTML website. \
+The owner has requested specific changes. Apply the requested changes surgically and return the \
+COMPLETE updated HTML document.
+
+EDIT RULES:
+1. Apply ONLY what the instructions ask for. Do not redesign, restyle, or "improve" anything else.
+2. PRESERVE everything else: same colors, fonts, structure, copy, animations, and the exact same \
+photo/image URLs (do not regenerate or rephrase existing Pollinations URLs unless the edit is \
+specifically about photos).
+3. If the instructions conflict with existing content, the instructions win.
+4. Add or remove whole sections ONLY if explicitly asked.
+5. If asked to change styling (colors, layout, fonts), change it consistently across the whole page.
+6. Output ONLY the full updated HTML document: starts with <!DOCTYPE html>, ends with </html>. \
+No markdown fences, no commentary, no explanation. Just the raw HTML.
+"""
+
+
+async def edit_motion_website(html: str, instructions: str) -> dict:
+    """
+    Apply owner-requested edits to an existing generated website.
+
+    Args:
+        html: The current full HTML document.
+        instructions: Natural-language edit request, e.g. "change the price to ₦25,000 and add a gallery section".
+
+    Returns:
+        {"success": True, "html": str, "size_bytes": int} or {"success": False, "error": str}
+    """
+    llm = get_llm_client()
+    user_prompt = (
+        f"CURRENT WEBSITE HTML:\n{html}\n\n"
+        f"OWNER'S EDIT INSTRUCTIONS:\n{instructions}\n\n"
+        "Return the FULL updated HTML document with these edits applied."
+    )
+
+    try:
+        result = await asyncio.to_thread(
+            llm.chat,
+            [
+                {"role": "system", "content": EDIT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=12000,
+        )
+    except Exception as e:
+        logger.error(f"Motion website EDIT LLM error: {e}")
+        return {"success": False, "error": str(e)[:200]}
+
+    raw = _strip_code_fences(result.get("content", ""))
+
+    if "<html" not in raw.lower():
+        logger.warning(f"Motion website EDIT: model did not return HTML. First 200 chars: {raw[:200]}")
+        return {"success": False, "error": "Edit did not return valid HTML - please rephrase and try again"}
+
+    # Same continuation loop as build_motion_website — big-site edits can hit token caps
+    for _attempt in range(3):
+        if "</html" in raw.lower():
+            break
+        logger.warning(f"Motion website EDIT: HTML truncated at {len(raw)} chars - asking model to continue (attempt {_attempt + 1})")
+        _cont = await asyncio.to_thread(
+            llm.chat,
+            [
+                {"role": "system", "content": EDIT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+                {"role": "assistant", "content": raw[-8000:]},
+                {"role": "user", "content": "CONTINUE the HTML EXACTLY from where you stopped. Your output was cut mid-file. Do NOT repeat anything already written, do NOT start over, do NOT add commentary or code fences. Output ONLY the remaining HTML, continuing seamlessly from: ..." + raw[-400:]},
+            ],
+            max_tokens=12000,
+        )
+        _cont_text = _strip_code_fences(_cont.get("content", ""))
+        if not _cont_text:
+            break
+        raw = raw + "\n" + _cont_text
+
+    if "</html" not in raw.lower():
+        logger.warning(f"Motion website EDIT: still truncated after continuations ({len(raw)} chars) - auto-repairing")
+        raw = repair_truncated_html(raw)
+
+    raw, _n_photos = _sanitize_pollinations_urls(raw)
+    return {"success": True, "html": raw, "size_bytes": len(raw.encode("utf-8"))}

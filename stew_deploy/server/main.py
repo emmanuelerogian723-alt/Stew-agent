@@ -30,7 +30,7 @@ from server.auth import (
 from server.config import get_settings
 from server.database import get_db, init_db
 from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration, generate_ai_video_multi_provider
-from server.webbuilder import build_motion_website, repair_truncated_html
+from server.webbuilder import build_motion_website, edit_motion_website, repair_truncated_html
 from server.persistent_memory import (
     is_configured as supabase_configured,
     save_memory as supa_save_memory,
@@ -53,7 +53,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite, AccessPass
+from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite, AccessPass, WebsiteVersion, WebsiteLead
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -142,6 +142,9 @@ async def lifespan(app: FastAPI):
             {"command": "aivideo", "description": "REAL AI video from text (LTX-Video)"},
             {"command": "aivideos", "description": "Multi-scene AI video with narration"},
             {"command": "webbuild", "description": "Build a motion-design website (Kimi style)"},
+            {"command": "edit", "description": "Edit your latest website"},
+            {"command": "versions", "description": "Website version history"},
+            {"command": "rollback", "description": "Undo your last website edit"},
             {"command": "meme", "description": "Generate an AI meme image"},
             {"command": "caption", "description": "Generate viral social media captions"},
             {"command": "schedule", "description": "Create and manage scheduled tasks"},
@@ -860,6 +863,68 @@ async def serve_generated_website(site_id: str, db: AsyncSession = Depends(get_d
     except Exception:
         pass
     return HTMLResponse(content=html)
+
+
+@app.post("/site/{site_id}/lead")
+async def site_lead_capture(site_id: str, body: dict, db: AsyncSession = Depends(get_db)):
+    """Receive contact-form submissions from /webbuild sites.
+    The generated pages POST here via fetch(location.pathname + '/lead'), so
+    business owners get real leads delivered straight to their Telegram chat."""
+    result = await db.execute(select(GeneratedWebsite).where(GeneratedWebsite.id == site_id))
+    site = result.scalars().first()
+    if not site:
+        return {"success": False, "error": "Site not found"}
+
+    name = str(body.get("name", ""))[:200].strip()
+    phone = str(body.get("phone", ""))[:50].strip()
+    email = str(body.get("email", ""))[:200].strip()
+    message = str(body.get("message", ""))[:2000].strip()
+    if not (name or phone or email or message):
+        return {"success": False, "error": "Empty submission"}
+
+    lead = WebsiteLead(
+        website_id=site_id,
+        name=name or None, phone=phone or None, email=email or None,
+        message=message or None,
+    )
+    db.add(lead)
+    await db.commit()
+
+    # Forward to the site owner's Telegram chat (best-effort, never blocks the form)
+    async def _deliver_lead_notification():
+        try:
+            from server.telegram_bot import TelegramBot as _TBot
+            _bot = _TBot(settings.TELEGRAM_BOT_TOKEN)
+            _site_url = f"https://stew-agent.onrender.com/site/{site_id}"
+            _text = (
+                f"📩 New lead from your website!\n\n"
+                f"Site: {site.title[:60]}\n"
+                f"Name: {name or '-'}\n"
+                f"Phone: {phone or '-'}\n"
+                f"Email: {email or '-'}\n"
+                f"Message: {message[:400] or '-'}\n\n"
+                f"Reply to them directly to close the deal."
+            )
+            await _bot.send_message(int(site.telegram_user_id), _text)
+        except Exception as _e:
+            logger.warning(f"Lead notification failed for site {site_id}: {_e}")
+
+    asyncio.create_task(_deliver_lead_notification())
+    asyncio.create_task(_bump_lead_delivered(db, lead.id))
+    return {"success": True}
+
+
+async def _bump_lead_delivered(db: AsyncSession, lead_id: str):
+    """Mark a lead as delivered once the Telegram notification has had a chance to fire."""
+    try:
+        await asyncio.sleep(3)
+        _r = await db.execute(select(WebsiteLead).where(WebsiteLead.id == lead_id))
+        _lead = _r.scalars().first()
+        if _lead:
+            _lead.delivered = 1
+            await db.commit()
+    except Exception:
+        pass
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -4774,7 +4839,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                           "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news",
                           "/credits", "/topup", "/coins")
 
-    _premium_cmd_prefixes = ("/song", "/book", "/meme", "/caption", "/webbuild",
+    _premium_cmd_prefixes = ("/song", "/book", "/meme", "/caption", "/webbuild", "/edit", "/versions", "/rollback",
                              "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ",
                              "/code", "/research", "/invoice",
                              "/smartclip", "/createvideo", "/aivideo", "/aivideos",
@@ -5176,6 +5241,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "🤣 /meme — AI meme generator\n"
                 "✍️ /caption — Viral social media captions\n"
                 "🌐 /webbuild — Motion-design websites\n"
+"✏️ /edit — Fix or change anything on your site\n"
                 "📄 /pdf /docx /xlsx /pptx — Document generation\n"
                 "💻 /code — Code execution\n"
                 "🔬 /research — Deep research\n"
@@ -5813,8 +5879,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "48. /aivideos <prompt> - Multi-scene AI video with narration\n\n"
             "Creative:\n"
             "49. /webbuild <desc> - Build a motion-design website (live link)\n"
-            "50. /meme <text> - Generate an AI meme image\n"
-            "51. /caption <context> - Viral social media captions\n\n"
+            "50. /edit <change> - Edit your latest website (AI applies the fix)\n"
+            "51. /versions - See your site edit history\n"
+            "52. /rollback - Undo the last edit\n"
+            "53. /meme <text> - Generate an AI meme image\n"
+            "54. /caption <context> - Viral social media captions\n\n"
             "Account:\n"
             "52. /usage - Check your usage quota\n"
             "53. /plan - View pricing plans\n"
@@ -8140,12 +8209,152 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 f"Size: {_wb_size_kb}KB\n"
                 f"Style: {('Auto-matched' if _wb_style == 'auto' else _wb_style)}\n\n"
                 f"Link: {_wb_url}\n\n"
-                f"Share it with anyone. Open it on your phone to see the animations and scroll effects.",
+                f"Share it with anyone. Open it on your phone to see the animations and scroll effects.\n\n"
+                f"Want changes? /edit <what to fix> — e.g. /edit change the phone number to 0803 555 0199",
             )
             asyncio.create_task(_log_call(db, tg_user.id, "/telegram/webbuild", "POST", 0, 200))
         except Exception as e:
             logger.error(f"Webbuild error: {e}")
             await bot.send_message(chat_id, f"Build error: {str(e)[:200]}")
+        return
+
+    # /edit — surgical edits on the user's most recent website
+    # ── WEBSITE EDIT / VERSIONS / ROLLBACK ────────────────────────────────────
+    if user_text.startswith("/edit"):
+        _ed_instructions = user_text.strip()[5:].strip()
+        if not _ed_instructions:
+            await bot.send_message(
+                chat_id,
+                "✏️ *Website Editor*\n\n"
+                "Found something wrong in your site? Tell me what to change and I'll fix it.\n\n"
+                "*Examples:*\n"
+                "1. /edit change the phone number to 0803 555 0199\n"
+                "2. /edit make the hero background brighter and add a gallery section\n"
+                "3. /edit remove the pricing section\n"
+                "4. /edit translate the whole site to French\n\n"
+                "Edits apply to your most recent website. Every edit is saved — /rollback undoes it.",
+            )
+            return
+
+        _ed_site = (await db.execute(
+            select(GeneratedWebsite).where(GeneratedWebsite.telegram_user_id == str(tg_user.id))
+            .order_by(GeneratedWebsite.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _ed_site:
+            await bot.send_message(chat_id, "You have no website yet. Build one first with /webbuild <description>.")
+            return
+
+        await bot.send_message(
+            chat_id,
+            f"✏️ Editing \"{_ed_site.title[:50]}\"...\n"
+            f"Change: {_ed_instructions[:100]}\n"
+            f"This takes ~15-30 seconds.",
+        )
+        await bot.send_chat_action(chat_id, "typing")
+
+        # Snapshot current state as a version BEFORE editing (rollback safety)
+        _v_count = (await db.execute(
+            select(func.count(WebsiteVersion.id)).where(WebsiteVersion.website_id == _ed_site.id)
+        )).scalar() or 0
+        _snapshot = WebsiteVersion(
+            website_id=_ed_site.id,
+            version_number=_v_count + 1,
+            html=_ed_site.html,
+            edit_notes="Before: " + _ed_instructions[:200],
+        )
+        db.add(_snapshot)
+
+        _ed_result = await edit_motion_website(_ed_site.html, _ed_instructions)
+        if not _ed_result.get("success"):
+            await db.rollback()
+            await bot.send_message(chat_id, f"Edit failed: {_ed_result.get('error', 'Unknown error')}. Try rephrasing.")
+            return
+
+        _ed_site.html = _ed_result["html"]
+        await db.commit()
+
+        _ed_url = f"https://stew-agent.onrender.com/site/{_ed_site.id}"
+        _ed_kb = _ed_result["size_bytes"] // 1024
+        _ed_safe_title = (_ed_site.title or "Your site").replace("*", "").replace("_", "").replace("`", "")[:60]
+        await bot.send_message(
+            chat_id,
+            f"✅ Edit applied to \"{_ed_safe_title}\"!\n\n"
+            f"Size: {_ed_kb}KB\n"
+            f"Link: {_ed_url}\n\n"
+            f"Not happy? /rollback undoes this edit.\n"
+            f"Keep going: /edit <next change>",
+        )
+        asyncio.create_task(_log_call(db, tg_user.id, "/telegram/webedit", "POST", 0, 200))
+        return
+
+    if user_text.startswith("/versions"):
+        _vs_site = (await db.execute(
+            select(GeneratedWebsite).where(GeneratedWebsite.telegram_user_id == str(tg_user.id))
+            .order_by(GeneratedWebsite.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _vs_site:
+            await bot.send_message(chat_id, "You have no website yet. Build one with /webbuild <description>.")
+            return
+        _vs_rows = (await db.execute(
+            select(WebsiteVersion).where(WebsiteVersion.website_id == _vs_site.id)
+            .order_by(WebsiteVersion.created_at.desc()).limit(10)
+        )).scalars().all()
+        if not _vs_rows:
+            await bot.send_message(
+                chat_id,
+                f"🕰 Version history for \"{_vs_site.title[:50]}\":\n\n"
+                f"1. Original — current live version\n\n"
+                f"Versions appear here after you make edits with /edit.",
+            )
+            return
+        _vs_lines = [f"🕰 Version history for \"{_vs_site.title[:50]}\":", ""]
+        _vs_lines.append("0. Current — live now")
+        for _i, _v in enumerate(_vs_rows):
+            _vs_lines.append(f"{_i + 1}. v{_v.version_number} — {_v.edit_notes or 'snapshot'} ({_v.created_at.strftime('%b %d %H:%M') if _v.created_at else 'recent'})")
+        _vs_lines.append("")
+        _vs_lines.append("Roll back with /rollback")
+        await bot.send_message(chat_id, "\n".join(_vs_lines))
+        return
+
+    if user_text.startswith("/rollback"):
+        _rb_site = (await db.execute(
+            select(GeneratedWebsite).where(GeneratedWebsite.telegram_user_id == str(tg_user.id))
+            .order_by(GeneratedWebsite.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _rb_site:
+            await bot.send_message(chat_id, "You have no website yet. Build one with /webbuild <description>.")
+            return
+        _rb_latest = (await db.execute(
+            select(WebsiteVersion).where(WebsiteVersion.website_id == _rb_site.id)
+            .order_by(WebsiteVersion.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _rb_latest:
+            await bot.send_message(chat_id, "Nothing to roll back — no edits have been made to this site yet.")
+            return
+
+        # Rollback is itself undoable: snapshot current before restoring
+        _rb_count = (await db.execute(
+            select(func.count(WebsiteVersion.id)).where(WebsiteVersion.website_id == _rb_site.id)
+        )).scalar() or 0
+        db.add(WebsiteVersion(
+            website_id=_rb_site.id,
+            version_number=_rb_count + 1,
+            html=_rb_site.html,
+            edit_notes="Before rollback",
+        ))
+        _rb_site.html = _rb_latest.html
+        # consumed snapshot gets removed so rollback doesn't loop forever
+        await db.delete(_rb_latest)
+        await db.commit()
+
+        _rb_url = f"https://stew-agent.onrender.com/site/{_rb_site.id}"
+        await bot.send_message(
+            chat_id,
+            f"⏪ Rolled back! \"{(_rb_site.title or 'Your site')[:50]}\" is back to its previous state.\n\n"
+            f"Link: {_rb_url}\n\n"
+            f"Roll back again with /rollback to go further back.",
+        )
+        asyncio.create_task(_log_call(db, tg_user.id, "/telegram/webrollback", "POST", 0, 200))
         return
 
     # /voice — Toggle voice note replies

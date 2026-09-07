@@ -292,3 +292,33 @@ class ScheduledTask(Base):
 
     user: Mapped["User"] = relationship()
 
+
+
+class WebsiteVersion(Base):
+    """Version snapshot of a /webbuild site — created before every /edit,
+    enabling /versions listing and /rollback to any previous state."""
+    __tablename__ = "website_versions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    website_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    html: Mapped[str] = mapped_column(Text, nullable=False)
+    edit_notes: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class WebsiteLead(Base):
+    """A lead submitted through the contact form of a /webbuild site.
+    The site is hosted by Stew, so forms POST to /site/{id}/lead and the
+    owner instantly gets the message in their Telegram chat — real lead
+    capture for business sites with zero external backend."""
+    __tablename__ = "website_leads"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    website_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=True)
+    phone: Mapped[str] = mapped_column(String(50), nullable=True)
+    email: Mapped[str] = mapped_column(String(200), nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=True)
+    delivered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
