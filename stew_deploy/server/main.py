@@ -2163,10 +2163,8 @@ async def vision_endpoint(body: VisionRequest):
     import os
 
     img = body.image.strip()
-    if img.startswith("data:image"):
+    if img.startswith("data:image") or img.startswith("http"):
         data_url = img
-    elif img.startswith("http"):
-        data_url = img  # pass URLs straight through
     else:
         data_url = "data:image/jpeg;base64," + img
 
@@ -3424,7 +3422,6 @@ async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
         else:
             query = url
         
-<<<<<<< HEAD
         # Use the autonomous WebCrawler — scrapes real search engines, no API key
         try:
             search_results = await crawler.search(query, 8)
@@ -3449,41 +3446,27 @@ async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
             logger.warning(f"WebCrawler search in browse failed: {e}")
 
         # Fallback: old search system
-=======
-        if not query:
-            return {"success": False, "error": "No search query provided", "question": body.question}
-        
-        # Try 1: Serper API (real Google results)
->>>>>>> 59e866c (Add /api/vision endpoint — free vision models via OpenRouter (minimax-m3, gemma-4) with fallback)
         searcher = get_searcher()
         try:
             search_results = await asyncio.to_thread(searcher.search, query, 8)
-            organic = search_results.get("organic", [])
-            if organic and len(organic) > 0:
+            if search_results.get("grounded"):
+                organic = search_results.get("organic", [])
                 return {
                     "success": True,
                     "question": body.question,
                     "title": f"Search: {query}",
                     "url": url if url.startswith("http") else f"https://google.com/search?q={query}",
-                    "content": "\n".join([f"{r.get('title','')}\n{r.get('link','')}\n{r.get('snippet','')}\n" for r in organic]),
-                    "links": [{"text": r.get("title","")[:80], "url": r.get("link","")} for r in organic[:10]],
-                    "search_results": organic,
+                    "content": "\n".join([f"{r['title']}\n{r['link']}\n{r['snippet']}\n" for r in organic]),
+                    "links": [{"text": r["title"][:80], "url": r["link"]} for r in organic[:10]],
                     "word_count": sum(len(r.get("snippet", "").split()) for r in organic),
                     "rendered": True,
-<<<<<<< HEAD
                     "source": "fallback_search",
                     "search_results": organic,
-=======
-                    "source": "serper_google_search",
-                    "answer_box": search_results.get("answer_box", {}),
-                    "knowledge_graph": search_results.get("knowledge_graph", {}),
->>>>>>> 59e866c (Add /api/vision endpoint — free vision models via OpenRouter (minimax-m3, gemma-4) with fallback)
                     "grounded": True,
                 }
         except Exception as e:
             logger.warning(f"Fallback search failed: {e}")
         
-<<<<<<< HEAD
         from server.browser import StewBrowser
         browser = StewBrowser()
         result = await browser.search_web_fallback(query)
@@ -3491,52 +3474,6 @@ async def browse_url(body: BrowseRequest, db: AsyncSession = Depends(get_db)):
         result["question"] = body.question
         result["source"] = "duckduckgo_fallback"
         return result
-=======
-        # Try 2: Browser's DuckDuckGo/Bing fallback (uses httpx)
-        try:
-            result = await browser.search_web_fallback(query)
-            ddg_results = result.get("results", [])
-            if ddg_results and len(ddg_results) > 0:
-                # Format results consistently
-                links = [{"text": r.get("title","")[:80], "url": r.get("url","")} for r in ddg_results[:10]]
-                content = "\n".join([f"{r.get('title','')}\n{r.get('url','')}\n{r.get('snippet','')}\n" for r in ddg_results])
-                return {
-                    "success": True,
-                    "question": body.question,
-                    "title": f"Search: {query}",
-                    "url": url if url.startswith("http") else f"https://duckduckgo.com/?q={query}",
-                    "content": content,
-                    "links": links,
-                    "search_results": ddg_results,
-                    "word_count": sum(len(r.get("snippet", "").split()) for r in ddg_results),
-                    "rendered": False,
-                    "source": result.get("source", "duckduckgo_fallback"),
-                    "grounded": True,
-                }
-        except Exception as e:
-            logger.warning(f"Browse DuckDuckGo fallback failed: {e}")
-        
-        # Try 3: Internal search (SearXNG + Bing)
-        try:
-            internal = await asyncio.to_thread(searcher.stew_extension_search, query, 5)
-            if internal.get("grounded") and internal.get("organic"):
-                organic = internal["organic"]
-                return {
-                    "success": True,
-                    "question": body.question,
-                    "title": f"Search: {query}",
-                    "content": "\n".join([f"{r.get('title','')}\n{r.get('link','')}\n{r.get('snippet','')}\n" for r in organic]),
-                    "links": [{"text": r.get("title","")[:80], "url": r.get("link","")} for r in organic[:10]],
-                    "search_results": organic,
-                    "word_count": sum(len(r.get("snippet", "").split()) for r in organic),
-                    "source": "stew_internal_search",
-                    "grounded": True,
-                }
-        except Exception as e:
-            logger.warning(f"Browse internal search failed: {e}")
-        
-        return {"success": False, "error": "All search methods failed", "question": body.question, "query": query}
->>>>>>> 59e866c (Add /api/vision endpoint — free vision models via OpenRouter (minimax-m3, gemma-4) with fallback)
     else:
         # Direct URL fetch — use WebCrawler (multi-strategy: direct + Jina + proxy)
         result = await crawler.fetch_page(url)
