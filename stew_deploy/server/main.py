@@ -2145,6 +2145,56 @@ async def orchestrate_text_endpoint(body: OrchestrateTextRequest, background_tas
         raise HTTPException(status_code=503, detail=str(e))
 
 
+# ── Speech-to-Text (mic input for browsers without SpeechRecognition, e.g. iOS Safari) ───
+
+@app.post("/api/stt")
+async def stt_endpoint(file: UploadFile = File(...)):
+    """
+    Transcribe an audio clip (voice recording) to text.
+    Accepts webm/ogg/mp4/m4a/wav from MediaRecorder. Uses Groq Whisper with OpenAI/HF fallback.
+    No API key required from caller.
+    """
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Audio file too large (max 20MB)")
+
+    name = file.filename or "audio.webm"
+    # MediaRecorder commonly produces webm/mp4 — map to an extension Whisper accepts
+    ext_map = {"webm": "webm", "mp4": "mp4", "m4a": "m4a", "wav": "wav", "ogg": "ogg", "oga": "ogg", "mp3": "mp3"}
+    lower = name.lower()
+    ext = next((e for e in ext_map if lower.endswith("." + e)), "webm")
+
+    transcript, err = await _transcribe_audio_bytes(data, f"audio.{ext}")
+    if err and not transcript:
+        raise HTTPException(status_code=503, detail=f"Transcription failed: {err}")
+    return {"success": True, "text": transcript}
+
+
+# ── Text-to-Speech (real voice audio — more reliable than browser speechSynthesis on iOS) ─
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "en-US-AriaNeural"
+
+
+@app.post("/api/tts")
+async def tts_endpoint(body: TTSRequest):
+    """
+    Synthesize text into a real MP3 voice clip via edge-tts (free, no API key).
+    Returns base64 audio — works reliably on iOS Safari where speechSynthesis often stays silent.
+    """
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
+    audio_bytes, err = await _synthesize_voice(text, body.voice or "en-US-AriaNeural")
+    if not audio_bytes:
+        raise HTTPException(status_code=503, detail=f"TTS failed: {err}")
+    import base64
+    return {"success": True, "audio_base64": base64.b64encode(audio_bytes).decode(), "audio_format": "mp3"}
+
+
 # ── Vision (image understanding) ─────────────────────────────────────────────
 
 class VisionRequest(BaseModel):
