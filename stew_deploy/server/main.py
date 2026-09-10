@@ -1255,6 +1255,51 @@ async def api_docs_page():
     raise HTTPException(404, "Docs not found")
 
 
+@app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+async def privacy_policy_page():
+    """Public Privacy Policy — required by Meta (WhatsApp), Telegram, and app stores."""
+    for path in ["/app/privacy.html", "/app/stew_deploy/privacy.html", "privacy.html", "../privacy.html"]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(f.read())
+    raise HTTPException(404, "Privacy policy not found")
+
+
+@app.get("/terms", response_class=HTMLResponse, include_in_schema=False)
+async def terms_of_service_page():
+    """Public Terms of Service."""
+    for path in ["/app/terms.html", "/app/stew_deploy/terms.html", "terms.html", "../terms.html"]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(f.read())
+    raise HTTPException(404, "Terms of service not found")
+
+
+@app.get("/data-deletion", response_class=HTMLResponse, include_in_schema=False)
+async def data_deletion_instructions_page():
+    """Meta requires a standalone data-deletion-instructions URL for WhatsApp/FB app review."""
+    return HTMLResponse("""
+    <!DOCTYPE html><html><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Deletion — S.T.E.W AI Agent</title>
+    <style>
+      body{background:#050d07;color:#e8f5ea;font-family:Inter,-apple-system,sans-serif;
+           max-width:680px;margin:0 auto;padding:56px 24px;line-height:1.7;}
+      h1{color:#fff;} a{color:#22c55e;} code{background:#16321c;padding:2px 6px;border-radius:4px;}
+    </style></head><body>
+    <h1>How to delete your S.T.E.W data</h1>
+    <p>To permanently delete your account and all associated data from S.T.E.W:</p>
+    <ol>
+      <li>Message <code>/deleteme</code> to the S.T.E.W bot on Telegram or WhatsApp, or</li>
+      <li>Email <a href="mailto:multipurposetalentedyounginven@gmail.com">multipurposetalentedyounginven@gmail.com</a>
+      with the subject "Data Deletion Request", including the phone number or Telegram ID linked to your account.</li>
+    </ol>
+    <p>We process deletion requests within 14 days. See our
+    <a href="/privacy">Privacy Policy</a> for details on what data we hold.</p>
+    </body></html>
+    """)
+
+
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 async def admin_dashboard_page():
     with open("admin.html", "r", encoding="utf-8") as f:
