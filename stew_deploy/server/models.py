@@ -322,3 +322,15 @@ class WebsiteLead(Base):
     message: Mapped[str] = mapped_column(Text, nullable=True)
     delivered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SystemSetting(Base):
+    """Runtime key-value configuration (admin-managed, survives restarts).
+    Used as a bootstrap path for channel credentials (e.g. WhatsApp) when
+    the hosting provider's env dashboard isn't available. Values carry the
+    same protection level as environment variables — they live in the app's
+    own production database behind the admin's authenticated flows."""
+    __tablename__ = "system_settings"
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

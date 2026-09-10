@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,6 +65,40 @@ _seen_max = 5000
 
 # ── Meta plumbing ────────────────────────────────────────────────────────────
 
+# ── Runtime credentials: env vars first, DB bootstrap as fallback ────────────
+# Lets the operator activate WhatsApp without touching the hosting dashboard:
+# POST /whatsapp/admin/config (token validated live against Meta) stores the
+# credentials; all send/receive paths resolve through this helper.
+_WA_CREDS_CACHE = {"ts": 0.0, "token": None, "phone_id": None, "verify": None}
+
+
+async def _wa_creds() -> tuple[str | None, str | None, str | None]:
+    """Resolve (token, phone_number_id, verify_token). Env vars win; else DB."""
+    if settings.WHATSAPP_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID:
+        return settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID, settings.WHATSAPP_VERIFY_TOKEN
+    import time as _time
+    now = _time.time()
+    if _WA_CREDS_CACHE["ts"] and now - _WA_CREDS_CACHE["ts"] < 30 and _WA_CREDS_CACHE["token"]:
+        return _WA_CREDS_CACHE["token"], _WA_CREDS_CACHE["phone_id"], _WA_CREDS_CACHE["verify"]
+    try:
+        from server.database import AsyncSessionLocal
+        from server.models import SystemSetting
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(
+                select(SystemSetting).where(SystemSetting.key.in_(
+                    ("whatsapp_token", "whatsapp_phone_id", "whatsapp_verify_token")))
+            )).scalars().all()
+            d = {r.key: r.value for r in rows}
+        if d.get("whatsapp_token") and d.get("whatsapp_phone_id"):
+            _WA_CREDS_CACHE.update(ts=now, token=d["whatsapp_token"],
+                                   phone_id=d["whatsapp_phone_id"],
+                                   verify=d.get("whatsapp_verify_token") or "")
+            return _WA_CREDS_CACHE["token"], _WA_CREDS_CACHE["phone_id"], _WA_CREDS_CACHE["verify"]
+    except Exception as e:
+        logger.warning(f"WA creds DB lookup failed: {e}")
+    return None, None, None
+
+
 def _verify_signature(raw_body: bytes, signature: str) -> bool:
     """X-Hub-Signature-256 check. Skipped when WHATSAPP_APP_SECRET isn't set
     (test numbers in the Meta dashboard often run without it)."""
@@ -79,8 +114,7 @@ def _verify_signature(raw_body: bytes, signature: str) -> bool:
 async def _wa_send(wa_id: str, text: str) -> bool:
     """Send a text message via the Cloud API. Long replies are chunked —
     WhatsApp hard-caps a message at 4096 characters."""
-    token = settings.WHATSAPP_TOKEN
-    phone_id = settings.WHATSAPP_PHONE_NUMBER_ID
+    token, phone_id, _ = await _wa_creds()
     if not token or not phone_id:
         logger.warning("WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID not set — message not delivered")
         return False
@@ -111,7 +145,7 @@ async def _wa_send(wa_id: str, text: str) -> bool:
 
 async def _wa_read_receipt(mid: str):
     """Mark the user's message as read (blue ticks) — fire and forget."""
-    token, phone_id = settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+    token, phone_id, _ = await _wa_creds()
     if not (token and phone_id) or not mid:
         return
     try:
@@ -128,7 +162,7 @@ async def _wa_read_receipt(mid: str):
 async def _wa_typing(wa_id: str):
     """Show the 'typing…' indicator while we think — fire and forget.
     (Older Graph API versions reject this silently; errors are ignored.)"""
-    token, phone_id = settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+    token, phone_id, _ = await _wa_creds()
     if not (token and phone_id):
         return
     try:
@@ -144,7 +178,7 @@ async def _wa_typing(wa_id: str):
 
 async def _wa_download_media(media_id: str) -> tuple[bytes, str] | None:
     """Download media from Meta (voice notes, photos). Returns (bytes, mime)."""
-    token = settings.WHATSAPP_TOKEN
+    token, _, _ = await _wa_creds()
     if not token or not media_id:
         return None
     try:
@@ -163,7 +197,7 @@ async def _wa_download_media(media_id: str) -> tuple[bytes, str] | None:
 
 async def _wa_upload_media(file_path: str, mime: str) -> str | None:
     """Upload a local file to Meta → reusable media id (valid ~5 min)."""
-    token, phone_id = settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+    token, phone_id, _ = await _wa_creds()
     if not (token and phone_id):
         return None
     try:
@@ -185,7 +219,7 @@ async def _wa_upload_media(file_path: str, mime: str) -> str | None:
 async def _wa_send_media_msg(wa_id: str, mtype: str, media_id: str | None = None,
                             link: str | None = None, caption: str = "") -> bool:
     """Send image/video/audio/document by uploaded id or public link."""
-    token, phone_id = settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+    token, phone_id, _ = await _wa_creds()
     if not (token and phone_id) or not (media_id or link):
         return False
     payload = {"messaging_product": "whatsapp", "to": wa_id, "type": mtype}
@@ -210,11 +244,76 @@ async def _wa_send_media_msg(wa_id: str, mtype: str, media_id: str | None = None
         return False
 
 
+class WAConfigRequest(BaseModel):
+    token: str
+    phone_number_id: str
+    verify_token: str = "stew2026verify"
+
+
+@router.post("/whatsapp/admin/config")
+async def wa_admin_config(body: WAConfigRequest):
+    """Bootstrap WhatsApp credentials WITHOUT a hosting-dashboard env change.
+    Security: the submitted token is validated live against Meta's Graph API
+    for the submitted phone-number ID — only the true operator of this app can
+    configure it. Refuses to run when env vars are already set (env wins)."""
+    from server.database import AsyncSessionLocal
+    from server.models import SystemSetting
+
+    if settings.WHATSAPP_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID:
+        return {"success": False, "detail": "Already configured via environment variables — nothing to do."}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(
+                f"{GRAPH_API}/{body.phone_number_id}",
+                params={"fields": "id,display_phone_number"},
+                headers={"Authorization": f"Bearer {body.token}"},
+            )
+        info = r.json() if r.status_code != 200 else r.json()
+    except Exception as e:
+        return {"success": False, "detail": f"Could not reach Meta to validate the token: {e}"}
+
+    if r.status_code != 200 or info.get("id") != body.phone_number_id:
+        return {"success": False, "detail": f"Token/phone-number validation failed (Meta said: {info.get('error', {}).get('message', r.status_code)})"}
+
+    async with AsyncSessionLocal() as db:
+        for k, v in (("whatsapp_token", body.token.strip()),
+                     ("whatsapp_phone_id", body.phone_number_id.strip()),
+                     ("whatsapp_verify_token", body.verify_token.strip())):
+            row = (await db.execute(select(SystemSetting).where(SystemSetting.key == k))).scalar_one_or_none()
+            if row:
+                row.value = v
+            else:
+                db.add(SystemSetting(key=k, value=v))
+        await db.commit()
+    _WA_CREDS_CACHE.update(ts=0.0)  # force fresh resolve on next use
+
+    return {
+        "success": True,
+        "status": "configured",
+        "phone_number": info.get("display_phone_number"),
+        "next_step": "Meta → Configuration → callback https://stew-agent.onrender.com/whatsapp/webhook + verify token + subscribe to 'messages'",
+    }
+
+
+@router.get("/whatsapp/admin/config")
+async def wa_admin_config_status():
+    """Status-only view — never returns the stored secrets."""
+    token, phone_id, verify = await _wa_creds()
+    return {
+        "configured": bool(token and phone_id),
+        "source": "environment" if (settings.WHATSAPP_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID) else ("database" if token else "none"),
+        "phone_number_id": phone_id,
+        "verify_token": verify if verify else None,
+    }
+
+
 @router.get("/whatsapp/webhook")
 async def whatsapp_verify(request: Request):
     """Meta webhook subscription handshake (hub.challenge echo)."""
     qp = request.query_params
-    if qp.get("hub.mode") == "subscribe" and qp.get("hub.verify_token") == settings.WHATSAPP_VERIFY_TOKEN:
+    _, _, expected_verify = await _wa_creds()
+    if qp.get("hub.mode") == "subscribe" and expected_verify and qp.get("hub.verify_token") == expected_verify:
         return Response(content=qp.get("hub.challenge", ""), media_type="text/plain")
     return Response(content="verification failed", status_code=403, media_type="text/plain")
 
