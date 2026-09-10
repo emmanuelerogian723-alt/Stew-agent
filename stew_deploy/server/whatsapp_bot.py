@@ -19,7 +19,9 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import os
 import re
+import subprocess
 from datetime import datetime, timedelta
 
 import httpx
@@ -159,6 +161,55 @@ async def _wa_download_media(media_id: str) -> tuple[bytes, str] | None:
         return None
 
 
+async def _wa_upload_media(file_path: str, mime: str) -> str | None:
+    """Upload a local file to Meta → reusable media id (valid ~5 min)."""
+    token, phone_id = settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+    if not (token and phone_id):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            with open(file_path, "rb") as f:
+                r = await client.post(
+                    f"{GRAPH_API}/{phone_id}/media",
+                    headers={"Authorization": f"Bearer {token}"},
+                    data={"messaging_product": "whatsapp", "type": mime},
+                    files={"file": (os.path.basename(file_path), f, mime)},
+                )
+            mid = (r.json() or {}).get("id")
+            return mid if r.status_code == 200 and mid else None
+    except Exception as e:
+        logger.error(f"WA media upload failed: {e}")
+        return None
+
+
+async def _wa_send_media_msg(wa_id: str, mtype: str, media_id: str | None = None,
+                            link: str | None = None, caption: str = "") -> bool:
+    """Send image/video/audio/document by uploaded id or public link."""
+    token, phone_id = settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+    if not (token and phone_id) or not (media_id or link):
+        return False
+    payload = {"messaging_product": "whatsapp", "to": wa_id, "type": mtype}
+    body = {}
+    if media_id:
+        body["id"] = media_id
+    else:
+        body["link"] = link
+    if caption and mtype in ("image", "video", "document"):
+        body["caption"] = caption[:1000]
+    payload[mtype] = body
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(
+                f"{GRAPH_API}/{phone_id}/messages",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+            return r.status_code == 200
+    except Exception as e:
+        logger.error(f"WA media send failed: {e}")
+        return False
+
+
 @router.get("/whatsapp/webhook")
 async def whatsapp_verify(request: Request):
     """Meta webhook subscription handshake (hub.challenge echo)."""
@@ -209,6 +260,10 @@ async def whatsapp_webhook(request: Request, db: AsyncSession = Depends(get_db))
                         await _wa_read_receipt(mid)
                         img = msg.get("image", {})
                         await _handle_image(db, wa_id, profile, img.get("id", ""), (img.get("caption") or "").strip(), mid)
+                    elif mtype == "document":
+                        await _wa_read_receipt(mid)
+                        doc = msg.get("document", {})
+                        await _handle_document(db, wa_id, profile, doc.get("id", ""), (doc.get("filename") or "file.pdf"), (doc.get("caption") or "").strip(), mid)
                 except Exception:
                     logger.exception("WA handler crashed")
     return {"ok": True}
@@ -385,14 +440,15 @@ async def _handle_message(db: AsyncSession, wa_id: str, text: str, profile_name:
     if lower in ("start", "menu", "help", "?"):
         await _wa_send(
             wa_id,
-            "🤖 *S.T.E.W on WhatsApp*\n\n"
-            "Just chat — I handle the rest:\n"
-            "📚 Schoolwork, essays, summaries\n"
-            "💼 Business plans, pitches, emails\n"
-            "🎙 Send a *voice note* — I'll hear and answer it\n"
-            "📷 Send a *photo* — I'll read any text in it (documents, receipts, notes)\n"
-            "🔬 Deep research (premium)\n"
-            "📊 Crypto/stock/forex answers (premium)\n\n"
+            "🤖 *S.T.E.W on WhatsApp* — your full AI workspace:\n\n"
+            "💬 Chat: schoolwork, essays, business plans, emails\n"
+            "🎨 *Generate images* — 'draw a logo for my shoe brand', 'image of Lagos at night'\n"
+            "🎙 Send a *voice note* — I hear it and answer\n"
+            "📷 Send a *photo or PDF* — I read and analyze it (receipts, notes, assignments, reports)\n"
+            "🎬 Send a *YouTube/TikTok link* — I download the video and send it back\n"
+            "🗣 Type *'say [anything]'* — I reply with a real voice note\n"
+            "🔬 Deep research — 'research the Nigerian fintech market'\n"
+            "📊 Crypto/stock/forex — 'what's BTC trading at'\n\n"
             f"💎 Plan: {settings.WHATSAPP_PLAN_MESSAGES} messages/30 days for ₦{settings.PLAN_PRICES['whatsapp']:,}\n"
             "🪙 Or top up Coins: reply BUY COINS\n"
             "📊 Your usage: reply USAGE\n"
@@ -444,6 +500,25 @@ async def _handle_message(db: AsyncSession, wa_id: str, text: str, profile_name:
             f"Mega {settings.CREDIT_PACKS['mega']['coins']:,} for ₦{settings.CREDIT_PACKS['mega']['price']:,}\n\n"
             "Reply BUY to pay & activate instantly.",
         )
+        return
+
+    # ── super-feature routing (natural language, no commands needed) ──
+    if re.search(r"\b(draw|generate|create|make|design)\b.{0,25}\b(image|picture|photo|logo|art|illustration|flyer|poster|banner|thumbnail)\b|^image\s|^draw\s|^imagine\s", lower):
+        if not await _wa_charge_super(db, user, wa_id, "image"):
+            return
+        await _handle_imagegen(wa_id, text)
+        return
+    m_voice = re.match(r"^(say|speak|read out|read aloud|tts)\b\s+(.+)", text, re.I)
+    if m_voice:
+        if not await _wa_charge_super(db, user, wa_id, "voice"):
+            return
+        await _handle_tts_out(wa_id, m_voice.group(2))
+        return
+    if re.search(r"(youtube\.com|youtu\.be|tiktok\.com|vm\.tiktok|instagram\.com/reel|twitter\.com/.*video|x\.com/.*video|vimeo\.com)", lower):
+        if not await _wa_charge_super(db, user, wa_id, "video"):
+            return
+        await _wa_send(wa_id, "🎬 Fetching that video — usually takes under a minute…")
+        asyncio.create_task(_handle_video_dl(db, wa_id, text))
         return
 
     # ── feature detection (weighted coin pricing) ──
@@ -549,6 +624,187 @@ async def _handle_audio(db: AsyncSession, wa_id: str, profile_name: str, media_i
     await _wa_send(wa_id, f"🎙 I heard: _{transcript[:200]}_\n\nThinking…")
     await _wa_typing(wa_id)
     await _wa_chat_reply(db, user, wa_id, transcript, _detect_feature(transcript), used, limit)
+
+
+async def _wa_charge_super(db: AsyncSession, user: User, wa_id: str, feature: str):
+    """Charge a super-feature (image/voice/video) — heavier than chat, and
+    we charge up-front because these burn real generation compute."""
+    allowed, used, limit, _ = await _wa_charge(db, user, feature)
+    if not allowed:
+        await _send_paywall(wa_id, user, used, limit)
+        return False
+    return True
+
+
+def _image_prompt_from(text: str) -> str:
+    """Extract the visual description from 'draw me a logo of X' style input."""
+    lower = text.lower()
+    cleaned = text
+    for prefix in ("generate an image of", "generate a image of", "generate image of",
+                  "generate an image", "draw me", "draw a", "draw an", "draw",
+                  "make me a", "make me an", "make a", "make an",
+                  "create a", "create an", "design a", "design an",
+                  "image of", "picture of", "photo of", "imagine"):
+        if lower.startswith(prefix):
+            cleaned = text[len(prefix):]
+            break
+    return cleaned.strip(" ,.:") or text
+
+
+async def _handle_document(db: AsyncSession, wa_id: str, profile_name: str, media_id: str,
+                          filename: str, caption: str, mid: str):
+    """Document in (PDF or image-file) → Tesseract OCR → analysis.
+    Charged at the 'document' weight (includes OCR + premium analysis)."""
+    user, created = await _get_or_create_wa_user(db, wa_id, profile_name)
+    if created:
+        await _wa_send(
+            wa_id,
+            "👋 Hi! I'm *S.T.E.W* — your AI agent on WhatsApp.\n\n"
+            "Send that document again and I'll read and analyze it — PDFs, notes, assignments, reports.\n\n"
+            f"🎁 You get {settings.WHATSAPP_FREE_TRIAL_MESSAGES} free messages to start.",
+        )
+        return
+    await _wa_typing(wa_id)
+
+    media = await _wa_download_media(media_id)
+    if not media:
+        await _wa_send(wa_id, "I couldn't download that file — try sending it again.")
+        return
+
+    allowed, used, limit, _ = await _wa_charge(db, user, "document")
+    if not allowed:
+        await _send_paywall(wa_id, user, used, limit)
+        return
+
+    doc_bytes, mime = media
+    await _wa_send(wa_id, f"📄 Reading *{filename}* — one moment…")
+    await _wa_typing(wa_id)
+    try:
+        from server.ocr_engine import ocr_file
+        ocr_result = await asyncio.to_thread(ocr_file, doc_bytes, filename, "eng", False, False)
+        extracted = (ocr_result.get("text") or "").strip()
+    except Exception as e:
+        logger.error(f"WA document OCR failed: {e}")
+        extracted = ""
+
+    if not extracted:
+        await _wa_send(wa_id, "I couldn't extract readable text from that file. If it's a scanned PDF, try a clearer scan — or paste the text here and I'll analyze it.")
+        return
+
+    ask = caption or "Summarize this document for me."
+    prompt = f"[User sent the document '{filename}' — OCR extracted its full text]\nUser asks: {ask}\n\nDOCUMENT TEXT:\n{extracted[:4000]}"
+    await _wa_chat_reply(db, user, wa_id, prompt, "document", used, limit)
+
+
+async def _handle_imagegen(wa_id: str, text: str):
+    """Generate an image (free Pollinations FLUX engine — same as the API) and
+    deliver it as a native WhatsApp image."""
+    prompt = _image_prompt_from(text)
+    await _wa_typing(wa_id)
+    import random as _random
+    from urllib.parse import quote as _quote
+    encoded = _quote(prompt[:400], safe="")
+    image_bytes = b""
+    try:
+        async with httpx.AsyncClient(timeout=90, follow_redirects=True) as http:
+            for attempt in range(3):
+                seed = _random.randint(1, 999999)
+                url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
+                resp = await http.get(url)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    image_bytes = resp.content
+                    break
+                await asyncio.sleep(2)
+    except Exception as e:
+        logger.warning(f"WA imagegen failed: {e}")
+    if not image_bytes:
+        await _wa_send(wa_id, "🎨 The art engine is busy right now — try again in a moment.")
+        return
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
+    direct_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
+    sent_ok = await _wa_send_media_msg(wa_id, "image", link=direct_url)
+    if not sent_ok:
+        media_id = await _wa_upload_media(tmp_path, "image/jpeg")
+        sent_ok = await _wa_send_media_msg(wa_id, "image", media_id=media_id, caption="🎨 by S.T.E.W")
+    if sent_ok:
+        await _wa_send(wa_id, "🎨 There you go — made with the FLUX engine. Want a different style? Just say it.")
+    else:
+        await _wa_send(wa_id, f"🎨 Painted it! WhatsApp wouldn't take the upload, so here's your image directly:\n{direct_url}")
+    os.unlink(tmp_path)
+
+
+async def _handle_tts_out(wa_id: str, text: str):
+    """Turn any text into a WhatsApp voice note (edge-tts, Nigerian voice by default)."""
+    from server.main import _synthesize_voice
+    await _wa_typing(wa_id)
+    audio_bytes, err = await _synthesize_voice(text[:1500], "en-NG-EzinneNeural")
+    if not audio_bytes:
+        await _wa_send(wa_id, "🎙 Voice engine hiccuped — try again in a moment.")
+        return
+    import tempfile, subprocess
+    # WhatsApp renders voice notes only as audio/ogg (opus) — convert the mp3
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        tmp.write(audio_bytes)
+        mp3_path = tmp.name
+    ogg_path = mp3_path.replace(".mp3", ".ogg")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", mp3_path, "-c:a", "libopus", "-b:a", "32k",
+             "-ar", "48000", "-ac", "1", ogg_path],
+            capture_output=True, timeout=60,
+        )
+        final_path = ogg_path if os.path.exists(ogg_path) and os.path.getsize(ogg_path) > 500 else mp3_path
+        mime = "audio/ogg" if final_path == ogg_path else "audio/mpeg"
+        media_id = await _wa_upload_media(final_path, mime)
+        ok = await _wa_send_media_msg(wa_id, "audio", media_id=media_id) if media_id else False
+        if not ok:
+            await _wa_send(wa_id, "I made the voice note but couldn't deliver it — try again.")
+    finally:
+        for p in (mp3_path, ogg_path):
+            if os.path.exists(p):
+                os.unlink(p)
+
+
+async def _handle_video_dl(db: AsyncSession, wa_id: str, url: str):
+    """Download a YouTube/TikTok/Reels video and send it back (runs in background).
+    WhatsApp caps media at 16MB — oversize videos get compressed."""
+    import tempfile, glob as _glob
+    from server.video_tools import _run_ytdlp, _is_youtube_url, _is_tiktok_url
+    tmp_dir = tempfile.mkdtemp(prefix="wa_vid_")
+    out_template = os.path.join(tmp_dir, "video.%(ext)s")
+    try:
+        ok, err = await asyncio.to_thread(_run_ytdlp, url, out_template, 180)
+        files = [f for f in _glob.glob(os.path.join(tmp_dir, "video.*")) if not f.endswith(".part")]
+        if not ok or not files:
+            await _wa_send(wa_id, f"❌ Couldn't grab that video ({err[:80] if err else 'try another link'}).")
+            return
+        vid_path = max(files, key=os.path.getsize)
+        if os.path.getsize(vid_path) > 15 * 1024 * 1024:
+            compressed = os.path.join(tmp_dir, "compressed.mp4")
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                ["ffmpeg", "-y", "-i", vid_path, "-c:v", "libx264", "-b:v", "350k",
+                 "-vf", "scale=480:-2", "-c:a", "aac", "-b:a", "64k", compressed],
+                capture_output=True, timeout=600,
+            )
+            if os.path.exists(compressed) and os.path.getsize(compressed) < 15 * 1024 * 1024:
+                vid_path = compressed
+            else:
+                await _wa_send(wa_id, "⚠️ That video is too large for WhatsApp even after compression — try a shorter clip.")
+                return
+        media_id = await _wa_upload_media(vid_path, "video/mp4")
+        ok = await _wa_send_media_msg(wa_id, "video", media_id=media_id, caption="🎬 via S.T.E.W")
+        if not ok:
+            await _wa_send(wa_id, "Downloaded it, but WhatsApp rejected the upload — try again.")
+    except Exception as e:
+        logger.error(f"WA video dl failed: {e}")
+        await _wa_send(wa_id, "❌ Something went wrong fetching that video — try another link.")
+    finally:
+        import shutil
+        await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
 
 
 async def _handle_image(db: AsyncSession, wa_id: str, profile_name: str, media_id: str,
