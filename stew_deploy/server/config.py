@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
 
+    # ── Stew on WhatsApp (Meta Cloud API) — consumer channel ──
+    WHATSAPP_TOKEN: str = ""            # access token from Meta (test or permanent)
+    WHATSAPP_PHONE_NUMBER_ID: str = ""  # Phone number ID from Meta -> WhatsApp API Setup
+    WHATSAPP_VERIFY_TOKEN: str = ""     # your chosen verify string; same value in Meta webhook config
+    WHATSAPP_APP_SECRET: str = ""       # App secret → verifies X-Hub-Signature-256 on webhooks
+
+
     # App URL
     APP_BASE_URL: str = ""
 
@@ -85,7 +92,7 @@ class Settings(BaseSettings):
     def PLAN_PRICES(self) -> dict:
         # Premium positioning (2026 repricing): Stew is the flagship MUTYINT product.
         # One-time payments buy exactly one 30-day cycle — see plan_expires_at.
-        return {"free": 0, "student": 5000, "pro": 15000, "business": 50000, "enterprise": 150000}
+        return {"free": 0, "whatsapp": 3500, "student": 5000, "pro": 15000, "business": 50000, "enterprise": 150000}
 
     @property
     def CREDIT_PACKS(self) -> dict:
@@ -112,12 +119,18 @@ class Settings(BaseSettings):
     def PLAN_CALL_LIMITS(self) -> dict:
         # "owner" = admin-unlocked Telegram accounts (see /admin <code>) — unmetered.
         # "student" = budget tier for students — fewer messages than Pro but way cheaper.
-        return {"free": 1500, "student": 500, "pro": 10000, "business": 100000, "enterprise": 1000000, "owner": 999999999}
+        # "whatsapp" = Stew on WhatsApp consumer plan — its own channel allowance
+        # (Meta bills per delivered message, so the channel limit is smaller than API plans)
+        return {"free": 1500, "whatsapp": 300, "student": 500, "pro": 10000, "business": 100000, "enterprise": 1000000, "owner": 999999999}
 
     @property
     def PLAN_TIER_ORDER(self) -> dict:
         """Numeric tier rank per plan — used to gate premium features (video, webbuild, etc)."""
-        return {"free": 0, "student": 1, "pro": 2, "business": 3, "enterprise": 4, "owner": 5}
+        return {"free": 0, "whatsapp": 1, "student": 1, "pro": 2, "business": 3, "enterprise": 4, "owner": 5}
+
+    WHATSAPP_FREE_TRIAL_MESSAGES: int = 30   # free trial before paywall (Meta cost protection)
+    WHATSAPP_PLAN_MESSAGES: int = 300        # monthly messages on any paid plan / WhatsApp plan
+    WHATSAPP_COIN_MULTIPLIER: int = 10      # coins burn 10x faster on WhatsApp — covers Meta per-message fees
 
     # Fine-tune preset system prompts per persona
     @property

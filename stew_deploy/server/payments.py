@@ -124,7 +124,7 @@ async def upgrade_user_plan(db: AsyncSession, user_id: str, plan: str) -> User:
     user.plan = plan
     # Paid plans run for exactly one 30-day cycle. Renewing while active
     # stacks: the new cycle starts when the current one ends.
-    if plan in ("student", "pro", "business", "enterprise"):
+    if plan in ("student", "pro", "business", "enterprise", "whatsapp"):
         from server.config import get_settings
         duration = get_settings().PLAN_DURATION_DAYS
         base = user.plan_expires_at if (user.plan_expires_at and user.plan_expires_at > datetime.utcnow()) else datetime.utcnow()
