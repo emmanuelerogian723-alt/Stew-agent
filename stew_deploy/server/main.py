@@ -9,7 +9,7 @@ import re
 import requests as http_requests
 import httpx
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import (
@@ -492,8 +492,42 @@ async def _check_quota(user: User, db: AsyncSession, feature: str = "chat") -> t
         except Exception:
             await db.rollback()
             return (False, calls_used, plan_limit)
+
         return (True, calls_used, plan_limit)
     return (False, calls_used, plan_limit)
+
+
+def _quota_exceeded(user: User, used: int, limit: int, feature: str = "chat"):
+    """Canonical, developer-friendly 429. Every surface that meters usage
+    raises this so limits read identically across the whole API."""
+    now = datetime.utcnow()
+    resets = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) + timedelta(days=32)).replace(day=1)
+    coins = getattr(user, "credits_balance", 0) or 0
+    need = _coin_cost(feature)
+    exp = getattr(user, "plan_expires_at", None)
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "message": (
+                f"Monthly limit reached: {used:,}/{limit:,} calls used. "
+                f"Your allowance resets on {resets.strftime('%d %B %Y')}. "
+                + (f"You have {coins:,} S.T.E.W Coins but this feature needs {need} — top up more coins or upgrade your plan. "
+                   if coins < need else "Top up with Coins for instant access or upgrade your plan. ")
+                + f"Check your limits any time at /usage?api_key=<key>."
+            ),
+            "plan": user.plan,
+            "used": used,
+            "limit": limit,
+            "remaining": 0,
+            "resets_at": resets.isoformat() + "Z",
+            "plan_expires_at": exp.isoformat() + "Z" if exp else None,
+            "coins_balance": coins,
+            "coins_needed_for_feature": need,
+            "top_up": {"endpoint": "POST /payments/coins", "packs": settings.CREDIT_PACKS},
+            "upgrade_url": "https://stew-agent.onrender.com/dashboard.html",
+            "usage_endpoint": "GET /usage?api_key=<your-key>",
+        },
+    )
 
 
 def _plan_tier(plan: str) -> int:
@@ -1929,10 +1963,7 @@ async def chat(
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue."
-            )
+            raise _quota_exceeded(user, used, limit)
 
     # Web search grounding
     search_results = None
@@ -2133,7 +2164,7 @@ async def orchestrate_text_endpoint(body: OrchestrateTextRequest, background_tas
         if user:
             allowed, used, limit = await _check_quota(user, db)
             if not allowed:
-                raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
+                raise _quota_exceeded(user, used, limit)
     try:
         result = await orchestrate_text(
             body.prompt, system=body.system, workers=body.workers, temperature=body.temperature
@@ -2282,7 +2313,7 @@ async def orchestrate_image_endpoint(body: OrchestrateImageRequest, background_t
         if user:
             allowed, used, limit = await _check_quota(user, db)
             if not allowed:
-                raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
+                raise _quota_exceeded(user, used, limit)
     try:
         result = await orchestrate_image(body.prompt, mode=body.mode)
         if user:
@@ -2319,7 +2350,7 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+            raise _quota_exceeded(user, used, limit)
 
     model_map = {"flux": "flux", "turbo": "turbo", "flux-realism": "flux-realism"}
     model_name = model_map.get(body.model, "flux")
@@ -2398,7 +2429,7 @@ async def agents_run(body: AgentRunRequest, db: AsyncSession = Depends(get_db)):
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+            raise _quota_exceeded(user, used, limit)
 
     pool = AgentPool()
 
@@ -2463,7 +2494,7 @@ async def task(
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+            raise _quota_exceeded(user, used, limit)
 
     llm = get_llm_client()
     searcher = get_searcher()
@@ -2585,7 +2616,7 @@ async def gen_pdf(
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     result = generate_pdf(body.content, body.title)
     background_tasks.add_task(_log_call, db, user.id, "/generate/pdf", "POST", 0, 200)
     return result
@@ -2602,7 +2633,7 @@ async def gen_term_paper(
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     result = generate_term_paper_pdf(
         body.content, title=body.title, university=body.university,
         department=body.department, author=body.author,
@@ -2626,7 +2657,7 @@ async def gen_docx(
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     result = generate_docx(body.content, body.title)
     background_tasks.add_task(_log_call, db, user.id, "/generate/docx", "POST", 0, 200)
     return result
@@ -2643,7 +2674,7 @@ async def gen_xlsx(
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     result = generate_xlsx(body.data, body.sheet_name, body.title)
     background_tasks.add_task(_log_call, db, user.id, "/generate/xlsx", "POST", 0, 200)
     return result
@@ -2678,7 +2709,7 @@ async def gen_pptx(
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     result = generate_pptx(body.slides, body.title, body.theme if body.theme else None)
     background_tasks.add_task(_log_call, db, user.id, "/generate/pptx", "POST", 0, 200)
     return result
@@ -2695,7 +2726,7 @@ async def gen_html(
         raise HTTPException(401, "Valid API key required. Register at /auth/register to get a free key.")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit}). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     result = generate_html(body.content, body.title)
     background_tasks.add_task(_log_call, db, user.id, "/generate/html", "POST", 0, 200)
     return result
@@ -2775,7 +2806,7 @@ async def ocr_endpoint(
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+            raise _quota_exceeded(user, used, limit)
 
     content_bytes = await file.read()
 
@@ -2846,7 +2877,7 @@ async def ocr_analyze_endpoint(
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month). Upgrade your plan to continue.")
+            raise _quota_exceeded(user, used, limit)
 
     valid_tasks = {"answer", "summarize", "extract", "analyze"}
     if task not in valid_tasks:
@@ -2937,7 +2968,7 @@ async def code_exec_endpoint(
     if user:
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(status_code=429, detail=f"API call limit reached ({used}/{limit} this month).")
+            raise _quota_exceeded(user, used, limit)
 
     code = body.get("code", "")
     if not code:
@@ -3173,6 +3204,67 @@ async def paystack_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 logger.info(f"Webhook: upgraded user {user_id} to {plan}")
 
     return {"status": "ok"}
+
+
+@app.exception_handler(HTTPException)
+async def _stew_http_exception_handler(request, exc: HTTPException):
+    """Single, consistent error surface. For 429s, emits the industry-standard
+    X-RateLimit-* headers so any SDK or monitoring tool can read limits natively."""
+    headers = dict(exc.headers or {}) if getattr(exc, "headers", None) else {}
+    detail = exc.detail
+    if exc.status_code == 429 and isinstance(detail, dict):
+        headers.update({
+            "X-RateLimit-Limit": str(detail.get("limit", "")),
+            "X-RateLimit-Used": str(detail.get("used", "")),
+            "X-RateLimit-Remaining": str(detail.get("remaining", 0)),
+            "X-RateLimit-Reset": str(detail.get("resets_at", "")),
+            "X-Plan": str(detail.get("plan", "")),
+        })
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail}, headers=headers or None)
+
+
+@app.get("/usage")
+async def get_usage(api_key: str, db: AsyncSession = Depends(get_db)):
+    """Canonical usage & limits readout. Never consumes quota or Coins.
+    One call shows a developer everything: plan, cycle, remaining, reset date,
+    coin balance, what features cost in Coins, and how to top up."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(401, "Invalid API key")
+    await _ensure_plan_valid(user, db)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(func.count(APICall.id)).where(
+            APICall.user_id == user.id,
+            APICall.timestamp >= month_start,
+        )
+    )
+    used = result.scalar() or 0
+    limit = settings.PLAN_CALL_LIMITS.get(user.plan, 1500)
+    resets = (datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0) + timedelta(days=32)).replace(day=1)
+    exp = getattr(user, "plan_expires_at", None)
+    return {
+        "plan": user.plan,
+        "plan_expires_at": exp.isoformat() + "Z" if exp else None,
+        "cycle": {
+            "used": used,
+            "limit": limit,
+            "remaining": max(limit - used, 0),
+            "resets_at": resets.isoformat() + "Z",
+            "period": "monthly",
+        },
+        "coins": {
+            "balance": user.credits_balance or 0,
+            "feature_costs": settings.FEATURE_COIN_COSTS,
+            "packs": settings.CREDIT_PACKS,
+            "buy_endpoint": "POST /payments/coins",
+            "note": "Coins are consumed automatically only after the monthly allowance is exhausted.",
+        },
+        "upgrade": {
+            "plans": {k: v for k, v in settings.PLAN_PRICES.items() if k not in ("free",)},
+            "url": "https://stew-agent.onrender.com/dashboard.html",
+        },
+    }
 
 
 @app.get("/payments/callback")
@@ -3615,7 +3707,7 @@ async def deep_research(
         # Check API quota
         allowed, used, limit = await _check_quota(user, db)
         if not allowed:
-            raise HTTPException(429, "Daily free-tier limit reached (500 calls)")
+            raise _quota_exceeded(user, used, limit)
 
     searcher = get_searcher()
     llm = get_llm_client()
@@ -10163,7 +10255,7 @@ async def _require_key_and_quota(api_key: str, db, endpoint: str = "", min_tier:
         raise HTTPException(403, f"This feature requires {needed} plan or higher. Upgrade at /upgrade or https://stew-agent.onrender.com/dashboard")
     allowed, used, limit = await _check_quota(user, db)
     if not allowed:
-        raise HTTPException(429, f"API call limit reached ({used}/{limit} this month). Upgrade to continue.")
+        raise _quota_exceeded(user, used, limit)
     return user
 
 
