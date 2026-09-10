@@ -1238,6 +1238,21 @@ async def playground_page():
     return HTMLResponse(content="<h1>Playground not found</h1><p>stew_playground.html missing</p>")
 
 
+@app.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+async def api_docs_page():
+    """Public API documentation — Africa's AI inference platform."""
+    for path in [
+        "/app/docs.html",
+        "/app/stew_deploy/docs.html",
+        "docs.html",
+        "../docs.html",
+    ]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(f.read())
+    raise HTTPException(404, "Docs not found")
+
+
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 async def admin_dashboard_page():
     with open("admin.html", "r", encoding="utf-8") as f:

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S.T.E.W API Docs — Africa's AI Inference Platform | Stew Agent</title>
+<meta name="description" content="Official S.T.E.W Agent API documentation. OpenAI-compatible endpoint, 60+ skills, vision, OCR, document generation, web research, Naira billing via Paystack. Free tier: 1,500 calls/month.">
+<meta name="keywords" content="S.T.E.W API, Stew Agent API, AI API Africa, OpenAI alternative Nigeria, AI inference platform, StewAgent API docs">
+<link rel="canonical" href="https://stew-agent.onrender.com/docs">
+<meta property="og:type" content="website">
+<meta property="og:title" content="S.T.E.W API — Africa's AI Inference Platform">
+<meta property="og:description" content="One API key. 60+ skills. Naira billing. Official documentation for the Stew Agent API.">
+<meta property="og:url" content="https://stew-agent.onrender.com/docs">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "S.T.E.W Agent API Documentation",
+  "description": "Official API documentation for S.T.E.W Agent — Africa's AI inference platform with OpenAI-compatible endpoints, 60+ skills, vision, OCR and Naira billing.",
+  "url": "https://stew-agent.onrender.com/docs",
+  "about": {"@type": "SoftwareApplication", "name": "Stew Agent", "applicationCategory": "DeveloperApplication"}
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050d07;--surface:#0d1f14;--card:#0f2318;--border:rgba(52,211,99,.12);
+  --accent:#22c55e;--dim:#86efac;--text:#f0fdf4;--muted:#6b8f74;--dark:#020b04;
+  --mono:'JetBrains Mono',monospace;--font:'Inter',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:1.65;font-size:15px}
+a{color:var(--dim);text-decoration:none}
+a:hover{color:var(--accent)}
+.wrap{max-width:1150px;margin:0 auto;padding:0 22px;display:flex;gap:44px}
+.topbar{position:sticky;top:0;z-index:50;background:rgba(5,13,7,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.topbar-in{max-width:1150px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;gap:26px}
+.logo{font-weight:800;font-size:17px;color:var(--text);letter-spacing:.5px}
+.logo span{color:var(--accent)}
+.topbar nav{margin-left:auto;display:flex;gap:20px;font-size:13.5px;align-items:center}
+.topbar a.nl{color:var(--muted);font-weight:500}
+.topbar a.nl:hover{color:var(--accent)}
+.btn{display:inline-block;background:var(--accent);color:var(--dark);font-weight:700;font-size:13.5px;padding:8px 18px;border-radius:9px;transition:.2s}
+.btn:hover{filter:brightness(1.12)}
+.hero{padding:64px 0 44px;border-bottom:1px solid var(--border);position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-140px;right:-80px;width:430px;height:430px;border-radius:50%;
+  background:radial-gradient(circle,rgba(34,197,94,.14),transparent 70%)}
+.hero-in{max-width:1150px;margin:0 auto;padding:0 22px;position:relative}
+.crumb{font-size:12.5px;color:var(--muted);font-family:var(--mono);margin-bottom:14px}
+h1{font-size:clamp(30px,4.6vw,46px);font-weight:800;letter-spacing:-1px;line-height:1.12}
+h1 .g{color:var(--accent)}
+.sub{color:var(--muted);font-size:16.5px;max-width:640px;margin-top:14px}
+.pills{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}
+.pill{border:1px solid var(--border);background:var(--surface);color:var(--dim);font-size:12px;font-weight:600;padding:5px 13px;border-radius:99px}
+.content{padding:44px 0 90px;flex:1;min-width:0}
+aside{width:242px;flex-shrink:0;position:sticky;top:78px;align-self:flex-start;padding:44px 0 60px;display:none}
+@media(min-width:900px){aside{display:block}}
+aside .nav-h{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.4px;margin:22px 0 9px}
+aside .nav-h:first-child{margin-top:0}
+aside a{display:block;font-size:13.5px;color:var(--muted);padding:5.5px 0 5.5px 14px;border-left:2px solid transparent}
+aside a:hover,aside a.on{color:var(--dim);border-left-color:var(--accent)}
+h2{font-size:24px;font-weight:800;letter-spacing:-.4px;margin:54px 0 8px;scroll-margin-top:80px}
+h2:first-of-type{margin-top:8px}
+h2 .n{color:var(--accent);font-family:var(--mono);font-size:16px;margin-right:9px;vertical-align:2px}
+h3{font-size:16.5px;font-weight:700;color:var(--dim);margin:28px 0 10px}
+p.lead{color:var(--muted);margin-bottom:18px;max-width:680px}
+section{padding-top:6px}
+pre{background:var(--dark);border:1px solid var(--border);border-radius:12px;padding:17px 19px;overflow-x:auto;
+  font-family:var(--mono);font-size:13px;line-height:1.7;color:#d7ffe3;margin:14px 0}
+pre .c{color:var(--muted)}
+code.inline{font-family:var(--mono);font-size:12.5px;background:var(--surface);border:1px solid var(--border);
+  padding:2px 8px;border-radius:6px;color:var(--dim)}
+.copy{float:right;font-size:11.5px;font-family:var(--mono);color:var(--muted);background:none;border:1px solid var(--border);
+  border-radius:7px;padding:3px 11px;cursor:pointer}
+.copy:hover{color:var(--accent);border-color:var(--accent)}
+.tbl{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+.tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+  font-weight:700;padding:9px 13px;border-bottom:1px solid var(--border)}
+.tbl td{padding:10px 13px;border-bottom:1px solid rgba(52,211,99,.06);vertical-align:top}
+.tbl tr:hover td{background:rgba(34,197,94,.03)}
+.m{font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+.mt{font-family:var(--mono);font-size:11px;font-weight:600;padding:2.5px 9px;border-radius:6px;display:inline-block}
+.get{background:rgba(56,189,248,.13);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.post{background:rgba(34,197,94,.13);color:var(--dim);border:1px solid rgba(34,197,94,.3)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:13px;margin:18px 0}
+.card{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:16px 17px}
+.card b{display:block;font-size:14px;margin-bottom:5px}
+.card p{font-size:12.5px;color:var(--muted)}
+.card .num{font-size:19px;font-weight:800;color:var(--accent)}
+.note{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-left:3px solid var(--accent);
+  border-radius:10px;padding:13px 16px;font-size:13.5px;color:var(--dim);margin:16px 0}
+footer{border-top:1px solid var(--border);padding:34px 0;color:var(--muted);font-size:13px}
+footer .fin{max-width:1150px;margin:0 auto;padding:0 22px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+footer a{color:var(--muted)}footer a:hover{color:var(--accent)}
+@media(max-width:640px){.tbl{font-size:12.5px}.tbl td,.tbl th{padding:8px 9px}}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="topbar-in">
+  <div class="logo">S.T.E.W <span>API</span> Docs</div>
+  <nav>
+    <a class="nl" href="https://stew-agent.onrender.com/">Home</a>
+    <a class="nl" href="https://stew-agent.onrender.com/dashboard">Dashboard</a>
+    <a class="btn" href="#quickstart">Get API Key</a>
+  </nav>
+</div></div>
+
+<header class="hero"><div class="hero-in">
+  <div class="crumb">stew-agent.onrender.com / docs</div>
+  <h1>The AI inference API<br>built for <span class="g">Africa.</span></h1>
+  <p class="sub">One API key. 60+ production skills. OpenAI-compatible endpoints. Pay in Naira — no dollar conversion, no foreign card. Free tier: 1,500 calls every month.</p>
+  <div class="pills">
+    <div class="pill">OpenAI-compatible</div>
+    <div class="pill">6 AI providers · auto-failover</div>
+    <div class="pill">Vision + OCR + STT + TTS</div>
+    <div class="pill">Paystack · Naira billing</div>
+    <div class="pill">Grounded web research</div>
+  </div>
+</div></header>
+
+<div class="wrap">
+<aside>
+  <div class="nav-h">Getting started</div>
+  <a href="#quickstart">Quickstart</a>
+  <a href="#authentication">Authentication</a>
+  <div class="nav-h">Core API</div>
+  <a href="#chat">Chat &amp; Agents</a>
+  <a href="#openai">OpenAI-Compatible</a>
+  <a href="#vision">Vision · OCR · Voice</a>
+  <a href="#documents">Documents</a>
+  <a href="#research">Research &amp; Search</a>
+  <div class="nav-h">Platform</div>
+  <a href="#limits">Rate Limits &amp; Quotas</a>
+  <a href="#coins">S.T.E.W Coins</a>
+  <a href="#errors">Errors</a>
+  <a href="#billing">Billing</a>
+</aside>
+
+<main class="content">
+
+<section id="quickstart">
+<h2><span class="n">01</span>Quickstart</h2>
+<p class="lead">Register once, get your key instantly, make your first call in under a minute. No card required.</p>
+<button class="copy" onclick="cp('q1',this)">copy</button>
+<pre id="q1"><span class="c"># 1. Get your free API key</span>
+curl -X POST https://stew-agent.onrender.com/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Your Name","email":"you@example.com","password":"secret123"}'
+
+<span class="c"># → {"api_key":"stew_xxxxx...", "plan":"free", "calls_limit":1500}</span></pre>
+<button class="copy" onclick="cp('q2',this)">copy</button>
+<pre id="q2"><span class="c"># 2. Make your first AI call</span>
+curl -X POST https://stew-agent.onrender.com/chat \
+  -H "Content-Type: application/json" \
+  -d '{"api_key":"stew_xxxxx","message":"Write a one-line pitch for a Lagos fintech app"}'</pre>
+<h3>Check your usage any time</h3>
+<button class="copy" onclick="cp('q3',this)">copy</button>
+<pre id="q3">curl "https://stew-agent.onrender.com/usage?api_key=stew_xxxxx"
+<span class="c">→ {"plan":"free","cycle":{"used":3,"limit":1500,"remaining":1497,
+     "resets_at":"2026-10-01T00:00:00Z","period":"monthly"}, ...}</span></pre>
+</section>
+
+<section id="authentication">
+<h2><span class="n">02</span>Authentication</h2>
+<p class="lead">Every request authenticates with your S.T.E.W API key. Pass it as <code class="inline">api_key</code> in the request body or query string. Keys start with <code class="inline">stew_</code>.</p>
+<div class="note">Your key is visible on the dashboard and via <code class="inline">GET /auth/me</code>. Rotate it any time with <code class="inline">POST /auth/regenerate-key</code>. Never commit it to source control.</div>
+</section>
+
+<section id="chat">
+<h2><span class="n">03</span>Chat &amp; Agents</h2>
+<table class="tbl">
+<tr><th>Method</th><th>Endpoint</th><th>What it does</th></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/chat</td><td>Core chat — 60+ skills auto-routed, web-grounded when needed</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/task</td><td>Full agent task execution with tool-calling</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/orchestrate/text</td><td>Mixture-of-Agents: parallel LLMs, synthesized best answer</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/orchestrate/image</td><td>Multi-model image generation</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/agents/run</td><td>100-agent parallel swarm for complex jobs</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/skills/run</td><td>Invoke one of 60+ skills directly (quiz, resume, lessonplan…)</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/skills</td><td>List every available skill</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/personas</td><td>List AI personas (business advisor, legal assistant…)</td></tr>
+</table>
+</section>
+
+<section id="openai">
+<h2><span class="n">04</span>OpenAI-Compatible Endpoint</h2>
+<p class="lead">Anything built for OpenAI works with S.T.E.W — just change the base URL and the key. Migrate an entire app in one line.</p>
+<button class="copy" onclick="cp('o1',this)">copy</button>
+<pre id="o1"><span class="c"># Instead of:</span>  OPENAI_BASE_URL=https://api.openai.com/v1
+<span class="c"># Use:</span>        OPENAI_BASE_URL=https://stew-agent.onrender.com/v1
+
+from openai import OpenAI
+client = OpenAI(api_key="stew_xxxxx",
+                base_url="https://stew-agent.onrender.com/v1")
+
+r = client.chat.completions.create(
+    model="gpt-oss-120b",
+    messages=[{"role":"user","content":"Translate to Yoruba: Good morning, boss"}])
+print(r.choices[0].message.content)</pre>
+<table class="tbl">
+<tr><th>Method</th><th>Endpoint</th><th>What it does</th></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/v1/chat/completions</td><td>OpenAI-compatible chat completions</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/v1/models</td><td>List available models</td></tr>
+</table>
+</section>
+
+<section id="vision">
+<h2><span class="n">05</span>Vision · OCR · Voice</h2>
+<table class="tbl">
+<tr><th>Method</th><th>Endpoint</th><th>What it does</th></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/api/vision</td><td>Image understanding (free vision models with fallback)</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/api/ocr</td><td>OCR — Tesseract engine, 100+ languages, zero paid-vision dependency</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/api/ocr/languages</td><td>Supported OCR languages</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/api/ocr/analyze</td><td>OCR + AI analysis of a document image in one call</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/api/stt</td><td>Speech-to-text — reliable mic capture on iOS Safari too</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/api/tts</td><td>Text-to-speech</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/voice</td><td>42 voices incl. Nigerian English (Ezinne), Russian, German, Italian</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/finance/voices</td><td>List every voice</td></tr>
+</table>
+</section>
+
+<section id="documents">
+<h2><span class="n">06</span>Document Generation</h2>
+<table class="tbl">
+<tr><th>Method</th><th>Endpoint</th><th>Output</th></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/pdf</td><td>PDF</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/docx</td><td>Word</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/xlsx</td><td>Excel</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/pptx</td><td>PowerPoint</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/invoice</td><td>Professional invoice</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/book</td><td>Full book with chapters</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/term-paper</td><td>Academic term paper</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/webbuild</td><td>Complete hosted website</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/generate/song · /meme · /caption · /smartclip</td><td>Creative suite</td></tr>
+</table>
+</section>
+
+<section id="research">
+<h2><span class="n">07</span>Research · Search · Finance</h2>
+<table class="tbl">
+<tr><th>Method</th><th>Endpoint</th><th>What it does</th></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/research</td><td>Grounded research with citations</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/search</td><td>Web search — 5-engine fallback, never goes down</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/crawl</td><td>Crawl up to N pages of any site</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/finance/crypto · /stock · /forex · /signals</td><td>Real-time market data</td></tr>
+</table>
+</section>
+
+<section id="limits">
+<h2><span class="n">08</span>Rate Limits &amp; Quotas</h2>
+<p class="lead">Limits are monthly, generous, and always visible — in the response body, in standard headers, and on demand via <code class="inline">GET /usage</code>. No surprises.</p>
+<table class="tbl">
+<tr><th>Plan</th><th>Monthly calls</th><th>Price (30 days)</th></tr>
+<tr><td><b>Free</b></td><td class="m">1,500</td><td class="m">₦0</td></tr>
+<tr><td><b>Student</b></td><td class="m">500 premium calls + all features</td><td class="m">₦5,000</td></tr>
+<tr><td><b>Pro</b></td><td class="m">10,000</td><td class="m">₦15,000</td></tr>
+<tr><td><b>Business</b></td><td class="m">100,000</td><td class="m">₦50,000</td></tr>
+<tr><td><b>Enterprise</b></td><td class="m">1,000,000</td><td class="m">₦150,000</td></tr>
+</table>
+<div class="note">Cycles reset on the 1st of each month. Plans run in 30-day cycles from purchase. When your allowance runs out, <b>S.T.E.W Coins</b> keep you running automatically — see below.</div>
+
+<h3>Standard rate-limit headers on every 429</h3>
+<table class="tbl">
+<tr><th>Header</th><th>Meaning</th></tr>
+<tr><td class="m">X-RateLimit-Limit</td><td>Your plan's monthly call limit</td></tr>
+<tr><td class="m">X-RateLimit-Used</td><td>Calls used this cycle</td></tr>
+<tr><td class="m">X-RateLimit-Remaining</td><td>Calls left this cycle</td></tr>
+<tr><td class="m">X-RateLimit-Reset</td><td>ISO timestamp of the next reset</td></tr>
+<tr><td class="m">X-Plan</td><td>Your current plan</td></tr>
+</table>
+<h3>Example 429 response</h3>
+<button class="copy" onclick="cp('e1',this)">copy</button>
+<pre id="e1">HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 1500
+X-RateLimit-Used: 1500
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 2026-10-01T00:00:00Z
+X-Plan: free
+
+{
+  "detail": {
+    "message": "Monthly limit reached: 1,500/1,500 calls used. Your allowance resets on 01 October 2026. ...",
+    "plan": "free",
+    "used": 1500,
+    "limit": 1500,
+    "remaining": 0,
+    "resets_at": "2026-10-01T00:00:00Z",
+    "plan_expires_at": null,
+    "coins_balance": 0,
+    "coins_needed_for_feature": 1,
+    "top_up": {"endpoint": "POST /payments/coins", "packs": {"spark": {}, "boost": {}, "mega": {}}},
+    "upgrade_url": "https://stew-agent.onrender.com/dashboard.html",
+    "usage_endpoint": "GET /usage?api_key=<your-key>"
+  }
+}</pre>
+<h3>GET /usage — your limits on demand</h3>
+<p class="lead">A single structured readout of plan, cycle, reset date, coin balance, feature costs and packs. Calling it never consumes quota or Coins.</p>
+</section>
+
+<section id="coins">
+<h2><span class="n">09</span>S.T.E.W Coins — never get cut off</h2>
+<p class="lead">Coins are one-time top-ups that kick in automatically the moment your monthly allowance finishes. No subscription. No waiting for reset. Lovable-style continuity.</p>
+<div class="grid">
+<div class="card"><div class="num">⚡ 2,000</div><b>Spark</b><p>₦2,000 one-time</p></div>
+<div class="card"><div class="num">🚀 10,000</div><b>Boost</b><p>₦8,000 one-time</p></div>
+<div class="card"><div class="num">🏆 50,000</div><b>Mega</b><p>₦30,000 one-time</p></div>
+</div>
+<h3>Feature costs in Coins</h3>
+<table class="tbl">
+<tr><th>Feature</th><th>Coins per call</th><th>Feature</th><th>Coins per call</th></tr>
+<tr><td>Chat</td><td class="m">1</td><td>Voice (TTS/STT)</td><td class="m">3</td></tr>
+<tr><td>Web search / Code / Finance / OCR</td><td class="m">2</td><td>Document / Image generation</td><td class="m">5</td></tr>
+<tr><td>Grounded research</td><td class="m">8</td><td>Video generation</td><td class="m">25</td></tr>
+</table>
+<button class="copy" onclick="cp('c1',this)">copy</button>
+<pre id="c1"><span class="c"># Buy coins via Paystack (card, transfer or USSD)</span>
+curl -X POST https://stew-agent.onrender.com/payments/coins \
+  -H "Content-Type: application/json" \
+  -d '{"api_key":"stew_xxxxx","pack":"boost"}'
+
+<span class="c"># → {"success":true,"authorization_url":"https://checkout.paystack.com/...",
+     "reference":"T315...","coins":10000,"price_naira":8000}</span></pre>
+</section>
+
+<section id="errors">
+<h2><span class="n">10</span>Errors</h2>
+<table class="tbl">
+<tr><th>Status</th><th>Meaning</th><th>What to do</th></tr>
+<tr><td class="m">400</td><td>Bad request / invalid parameters</td><td>Check the request body</td></tr>
+<tr><td class="m">401</td><td>Missing or invalid API key</td><td>Register at /auth/register</td></tr>
+<tr><td class="m">403</td><td>Feature requires a higher plan</td><td>Upgrade, or check /plan requirements</td></tr>
+<tr><td class="m">429</td><td>Monthly allowance exhausted</td><td>Top up Coins or upgrade — headers tell you exactly where you stand</td></tr>
+<tr><td class="m">500</td><td>Server error</td><td>Retry — providers auto-failover; check /heartbeat</td></tr>
+</table>
+</section>
+
+<section id="billing">
+<h2><span class="n">11</span>Billing &amp; Account</h2>
+<table class="tbl">
+<tr><th>Method</th><th>Endpoint</th><th>What it does</th></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/payments/initialize</td><td>Start a plan upgrade (Paystack checkout)</td></tr>
+<tr><td><span class="mt post">POST</span></td><td class="m">/payments/verify</td><td>Verify a payment by reference</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/payments/status/{reference}</td><td>Payment status lookup</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/usage</td><td>Full limits readout</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/credits/balance</td><td>Coins balance + packs</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/heartbeat</td><td>Platform health — all services</td></tr>
+<tr><td><span class="mt get">GET</span></td><td class="m">/auth/me</td><td>Your profile, plan and key</td></tr>
+</table>
+<div class="note">Payments are processed by Paystack — card, bank transfer, or USSD. Naira only, no dollar conversion. Stripe routing (USD/GBP/EUR) is on the roadmap for international customers.</div>
+</section>
+
+<footer><div class="fin">
+  <div class="logo" style="font-size:14px">S.T.E.W <span>API</span></div>
+  <span>·</span><span>Built by MUTYINT Nigeria</span>
+  <span style="margin-left:auto"><a href="https://stew-agent.onrender.com/">stew-agent.onrender.com</a></span>
+</div></footer>
+</main>
+</div>
+<script>
+function cp(id,btn){
+  const t=document.getElementById(id).innerText.replace(/^copy\n?/m,'');
+  navigator.clipboard.writeText(t).then(()=>{btn.textContent='copied ✓';setTimeout(()=>btn.textContent='copy',1600)});
+}
+const links=[...document.querySelectorAll('aside a[href^="#"]')];
+const secs=links.map(a=>document.querySelector(a.getAttribute('href')));
+window.addEventListener('scroll',()=>{
+  let cur=-1;
+  secs.forEach((s,i)=>{if(s&&s.getBoundingClientRect().top<130)cur=i});
+  links.forEach((a,i)=>a.classList.toggle('on',i===cur));
+},{passive:true});
+</script>
+</body>
+</html>
