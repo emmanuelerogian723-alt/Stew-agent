@@ -7941,6 +7941,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             _mp_is_sat = True
             _mp_query = " ".join(_mp_query.split()[:-1])
 
+        # Strip conversational filler like "from Enugu State to Abuja" or
+        # "the route from Lagos to Abuja" down to just "Enugu State to Abuja" —
+        # previously "from Enugu State" was geocoded as a literal phrase
+        # (including the word "from") and always failed.
+        _mp_query_lower = _mp_query.lower()
+        for _filler in ("the route from ", "route from ", "directions from ", "from "):
+            if _mp_query_lower.startswith(_filler):
+                _mp_query = _mp_query[len(_filler):]
+                _mp_query_lower = _mp_query.lower()
+                break
+
         await bot.send_chat_action(chat_id, "upload_photo")
 
         if " to " in _mp_query.lower():

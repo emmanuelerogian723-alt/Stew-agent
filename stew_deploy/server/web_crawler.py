@@ -80,15 +80,28 @@ class WebCrawler:
 
     def __init__(self):
         self._client = None
+        self._client_loop = None
         self._sync_client = None
         self._last_request = {}
         self._min_delay = 0.5
 
     async def _get_async_client(self):
-        if self._client is None or self._client.is_closed:
+        # This crawler is a process-wide singleton (get_crawler()), but
+        # search_sync() below spins up a FRESH event loop per call via
+        # asyncio.run(). httpx.AsyncClient binds its transport to whatever
+        # loop is running when it's created — reusing it from a NEW loop
+        # after the old one closed raises "RuntimeError: Event loop is
+        # closed" on every request. Previously this meant every search
+        # after the very first one in a running process silently broke for
+        # ddg/bing/searxng, falling through to the weaker google/jina
+        # fallbacks. Fix: recreate the client whenever the running loop
+        # differs from the one the client was built for.
+        current_loop = asyncio.get_event_loop()
+        if self._client is None or self._client.is_closed or self._client_loop is not current_loop:
             self._client = httpx.AsyncClient(
                 timeout=30, follow_redirects=True, headers=_search_headers(),
             )
+            self._client_loop = current_loop
         return self._client
 
     def _polite_delay(self, domain):
@@ -317,10 +330,15 @@ class WebCrawler:
             client = await self._get_async_client()
             await self._polite_delay_async("mectov.my.id")
 
+            # NOTE: search.mectov.my.id was REMOVED — verified 2026-09-11 that it
+            # returns fabricated/irrelevant JSON results for EVERY query (e.g. a
+            # query about "Nigeria AI news" returned unrelated weighbridge/spam
+            # articles). It looked "healthy" on uptime monitors because it always
+            # returns HTTP 200 with well-formed JSON, but the content is garbage.
+            # This is exactly why _looks_relevant() below is now a hard gate on
+            # every engine's results, not just SearXNG's.
             instances = [
-                "https://search.mectov.my.id/search",
-                "https://searx.be/search",
-                "https://search.bus-hit.me/search",
+                "https://sx.xo.st/search",
                 "https://searx.tiekoetter.com/search",
                 "https://baresearch.org/search",
             ]
@@ -431,18 +449,59 @@ class WebCrawler:
             logger.warning(f"Jina search error: {e}")
             return {"organic": [], "source": "jina_ddg", "grounded": False, "error": str(e)}
 
+    # ── RELEVANCE GUARD ────────────────────────────────────────────────
+    # A search engine returning HTTP 200 with well-formed JSON/HTML does NOT
+    # mean the results are real. Public proxies/instances can be compromised,
+    # cache-poisoned, or serve spam/ad content while still looking "healthy".
+    # This is a cheap, permanent safeguard against ANY current or future
+    # source doing that: if none of the top results share a single meaningful
+    # keyword with the query, we don't trust them and move to the next engine.
+    _STOPWORDS = {
+        "the", "a", "an", "of", "in", "on", "at", "to", "for", "and", "or",
+        "is", "are", "was", "were", "what", "who", "when", "where", "why",
+        "how", "this", "that", "with", "from", "by", "as", "it", "be", "do",
+        "does", "did", "will", "can", "could", "would", "should", "about",
+        "best", "top", "good", "great", "new", "latest", "today", "now",
+        "find", "get", "give", "me", "my", "i", "you", "your", "please",
+        "make", "list", "show", "tell", "recipe", "guide", "tips", "way",
+        "ways", "recent", "current", "check",
+    }
+
+    def _looks_relevant(self, query: str, organic: list) -> bool:
+        if not organic:
+            return False
+        query_words = {
+            w for w in re.findall(r"[a-z0-9]+", query.lower())
+            if len(w) > 2 and w not in self._STOPWORDS
+        }
+        if not query_words:
+            return True  # nothing meaningful left to check against — don't block
+        blob = " ".join(
+            (r.get("title", "") + " " + r.get("snippet", "") + " " + r.get("link", ""))
+            for r in organic[:5]
+        ).lower()
+        overlap = sum(1 for w in query_words if w in blob)
+        # Require the MOST distinctive (longest) query word to appear, or at
+        # least 2 keyword matches for multi-word queries — a single common
+        # word matching (e.g. "best") isn't strong enough evidence.
+        longest = max(query_words, key=len)
+        if longest in blob:
+            return True
+        return overlap >= 2 or (len(query_words) == 1 and overlap >= 1)
+
     # ── MASTER SEARCH — tries all engines ────────────────────────────
 
     async def search(self, query, num_results=10):
-        """Full autonomous search - SearXNG -> Bing -> DDG -> Google -> Jina.
-        No API keys needed. SearXNG is tried first (returns clean JSON).
-        Bing and DDG are next (HTML scraping works well).
-        Google is tried later (often blocks datacenter IPs).
-        Jina is the last resort proxy."""
+        """Full autonomous search - DDG -> Bing -> SearXNG -> Google -> Jina.
+        No API keys needed. DDG and Bing HTML scraping are tried first — both
+        verified live and reliable (2026-09-11). SearXNG public instances are
+        tried next but ONLY trusted if _looks_relevant() passes, since public
+        instances can silently serve garbage while returning HTTP 200. Google
+        is tried later (often blocks datacenter IPs). Jina is the last resort."""
         engines = [
-            ("searxng", self.searxng_search),
-            ("bing", self.bing_search),
             ("ddg", self.ddg_search),
+            ("bing", self.bing_search),
+            ("searxng", self.searxng_search),
             ("google", self.google_search),
             ("jina", self.jina_search),
         ]
@@ -450,7 +509,12 @@ class WebCrawler:
         for name, engine_fn in engines:
             try:
                 result = await engine_fn(query, num_results)
-                if result.get("organic"):
+                organic = result.get("organic")
+                if organic:
+                    if not self._looks_relevant(query, organic):
+                        logger.warning(f"Search engine '{name}' returned {len(organic)} results but they look IRRELEVANT to '{query}' — discarding and trying next engine.")
+                        errors.append(f"{name}: results failed relevance check")
+                        continue
                     return result
                 if result.get("error"):
                     errors.append(f"{name}: {result['error']}")

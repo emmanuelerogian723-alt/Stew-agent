@@ -63,44 +63,108 @@ def _haversine_km(lat1, lon1, lat2, lon2) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+OPEN_METEO_GEOCODE = "https://geocoding-api.open-meteo.com/v1/search"
+
+
+async def _geocode_nominatim(query: str) -> Optional[dict]:
+    async with httpx.AsyncClient(timeout=10, headers=_HEADERS) as client:
+        resp = await client.get(NOMINATIM_SEARCH, params={
+            "q": query, "format": "json", "limit": 1, "addressdetails": 0,
+        })
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            return None
+        hit = data[0]
+        return {
+            "lat": float(hit["lat"]),
+            "lon": float(hit["lon"]),
+            "display_name": hit.get("display_name", query),
+        }
+
+
+async def _geocode_open_meteo(query: str) -> Optional[dict]:
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(OPEN_METEO_GEOCODE, params={"name": query, "count": 1})
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results") or []
+        if not results:
+            return None
+        hit = results[0]
+        parts = [hit.get("name", query)]
+        if hit.get("admin1") and hit["admin1"] != hit.get("name"):
+            parts.append(hit["admin1"])
+        if hit.get("country"):
+            parts.append(hit["country"])
+        return {
+            "lat": float(hit["latitude"]),
+            "lon": float(hit["longitude"]),
+            "display_name": ", ".join(parts),
+        }
+
+
 async def geocode(query: str) -> Optional[dict]:
-    """Turn a place name / address into {lat, lon, display_name}. Free, no key."""
+    """
+    Turn a place name / address into {lat, lon, display_name}. Free, no key.
+
+    Two independent providers, tried in order, so a single provider having a
+    bad day (rate limiting, cloud-IP blocking, transient outage) doesn't take
+    the whole /map feature down:
+      1. Open-Meteo Geocoding — very reliable from datacenter/cloud IPs, great
+         city/town coverage worldwide, no usage-policy rate limiting.
+      2. Nominatim — better for precise/full addresses when Open-Meteo has no
+         match, but is more sensitive to shared-IP rate limiting.
+    """
     query = (query or "").strip()
     if not query:
         return None
-    try:
-        async with httpx.AsyncClient(timeout=12, headers=_HEADERS) as client:
-            resp = await client.get(NOMINATIM_SEARCH, params={
-                "q": query, "format": "json", "limit": 1, "addressdetails": 0,
-            })
-            resp.raise_for_status()
-            data = resp.json()
-            if not data:
-                return None
-            hit = data[0]
-            return {
-                "lat": float(hit["lat"]),
-                "lon": float(hit["lon"]),
-                "display_name": hit.get("display_name", query),
-            }
-    except Exception as e:
-        logger.warning(f"geocode failed for {query!r}: {e}")
-        return None
+
+    for provider in (_geocode_open_meteo, _geocode_nominatim):
+        try:
+            result = await provider(query)
+            if result:
+                return result
+        except Exception as e:
+            logger.warning(f"geocode provider {provider.__name__} failed for {query!r}: {e}")
+            continue
+    return None
+
+
+BIGDATACLOUD_REVERSE = "https://api.bigdatacloud.net/data/reverse-geocode-client"
 
 
 async def reverse_geocode(lat: float, lon: float) -> Optional[str]:
-    """Turn coordinates into a human-readable address. Free, no key."""
+    """
+    Turn coordinates into a human-readable address. Free, no key. Two
+    independent providers for the same resilience reason as geocode() above.
+    """
     try:
-        async with httpx.AsyncClient(timeout=12, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=10, headers=_HEADERS) as client:
             resp = await client.get(NOMINATIM_REVERSE, params={
                 "lat": lat, "lon": lon, "format": "json", "zoom": 16,
             })
             resp.raise_for_status()
             data = resp.json()
-            return data.get("display_name")
+            if data.get("display_name"):
+                return data["display_name"]
     except Exception as e:
-        logger.warning(f"reverse_geocode failed for {lat},{lon}: {e}")
-        return None
+        logger.warning(f"reverse_geocode/Nominatim failed for {lat},{lon}: {e}")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(BIGDATACLOUD_REVERSE, params={
+                "latitude": lat, "longitude": lon, "localityLanguage": "en",
+            })
+            resp.raise_for_status()
+            data = resp.json()
+            parts = [p for p in (data.get("locality"), data.get("city"), data.get("principalSubdivision"), data.get("countryName")) if p]
+            if parts:
+                return ", ".join(dict.fromkeys(parts))  # dedupe while preserving order
+    except Exception as e:
+        logger.warning(f"reverse_geocode/BigDataCloud failed for {lat},{lon}: {e}")
+
+    return None
 
 
 async def route(origin: dict, dest: dict) -> Optional[dict]:
