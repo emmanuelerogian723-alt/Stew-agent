@@ -178,6 +178,65 @@ def pending_registry():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def make_speechy_source(tmp, w=1280, h=720, dur=14.0):
+    """Video with 3 speech bursts separated by REAL silence (for Loom-cut test)."""
+    p = os.path.join(tmp, "speechy.mp4")
+    # 0-3s tone, 3-7.5s silence, 7.5-10.5s tone, 10.5-12s silence, 12-14s tone
+    expr = (
+        "aevalsrc=0.22*sin(440*2*PI*t)*"
+        "lt(t\,3)+0.22*sin(440*2*PI*t)*gte(t\,7.5)*lt(t\,10.5)+0.22*sin(440*2*PI*t)*gte(t\,12):"
+        f"s=44100:d={dur}"
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+         "-f", "lavfi", "-i", f"testsrc2=size={w}x{h}:rate=25:duration={dur}",
+         "-f", "lavfi", "-i", expr,
+         "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-pix_fmt", "yuv420p", p],
+        capture_output=True, timeout=120, check=True)
+    return p
+
+
+@test
+def loom_silence_removal():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_speechy_source(tmp)
+        r = asyncio.run(edit_video_file(src, "remove the silence", tmp, target_mb=50))
+        assert r["ok"], r
+        assert any("silence" in a.lower() for a in r["applied"]), r["applied"]
+        # speech = 3 + 3 + 2 = 8s + merge margins; original 14s -> must shrink by >3.5s
+        assert r["duration"] < 10.5, f"silence not cut: {r['duration']}s (orig 14s)"
+        assert r["duration"] > 6.0, f"over-cut (kept only {r['duration']}s)"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@test
+def higgsfield_camera_motion():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, dur=8)
+        for motion in ["zoom in", "ken burns", "pan right"]:
+            r = asyncio.run(edit_video_file(src, motion, tmp, target_mb=50))
+            assert r["ok"], f"{motion}: {r}"
+            assert any("camera" in a.lower() for a in r["applied"]), f"{motion}: {r['applied']}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@test
+def motion_plus_reel():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, dur=8)
+        r = asyncio.run(edit_video_file(src, "make it a reel with slow zoom in, remove silence", tmp, target_mb=50))
+        assert r["ok"], r
+        w, h = dims(r["output"])
+        assert (w, h) == (1080, 1920), f"{w}x{h}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     passed = failed = 0
     for t in TESTS:

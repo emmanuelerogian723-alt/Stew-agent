@@ -66,7 +66,9 @@ EDIT_MENU = (
     "8. *Rotate/Flip* — 'rotate left', 'flip horizontal'\n"
     "9. *Reverse* — 'reverse it'\n"
     "10. *Extras* — 'fade in', 'gif', 'thumbnail', 'compress'\n"
-    "11. *Read it* — 'summarize this video'\n\n"
+    "11. *Loom-style cuts* — 'remove the silence' (auto-cut dead air)\n"
+    "12. *Higgsfield-style motion* — 'zoom in', 'ken burns', 'pan right'\n"
+    "13. *Read it* — 'summarize this video'\n\n"
     "_Example:_ 'make it a reel, cut 0:05 to 0:35, add captions, cinematic'"
 )
 
@@ -144,6 +146,21 @@ def parse_edit_request(text: str) -> list[dict]:
     # ── reverse ──
     if re.search(r"\breverse\b", lower):
         ops.append({"op": "reverse"})
+
+    # ── Loom-style auto-cuts ──
+    if re.search(r"\b(remove|cut|delete|strip|trim) (the |all |any )?(silence|silents|dead air|pauses|gaps)\b|\bno silence\b|\btighten (it|the video|up)\b|\bauto ?cut\b", lower):
+        ops.append({"op": "remove_silence"})
+
+    # ── Higgsfield-style camera motion ──
+    if re.search(r"\bken burns\b|\bcinematic (move|motion|pan)\b", lower):
+        ops.append({"op": "motion", "name": "ken_burns"})
+    elif re.search(r"\bzoom (in|into)\b|\bslow zoom\b", lower):
+        ops.append({"op": "motion", "name": "zoom_in"})
+    elif re.search(r"\bzoom out\b", lower):
+        ops.append({"op": "motion", "name": "zoom_out"})
+    if re.search(r"\bpan (to the )?(left|right)\b|\bmove (the )?camera (to the )?(left|right)\b", lower):
+        _dir = "left" if re.search(r"\bleft\b", lower) else "right"
+        ops.append({"op": "motion", "name": f"pan_{_dir}"})
 
     # ── rotate / flip ──
     if re.search(r"\brotate\b", lower):
@@ -280,6 +297,67 @@ def _build_look(name: str) -> Optional[str]:
         return "unsharp=5:5:1.4:5:5:0.6"
     if name == "vignette":
         return "vignette=PI/4"
+    return None
+
+
+def _detect_speech_intervals(input_path: str, in_args: list[str], min_gap: float = 0.45, noise_db: float = -32) -> list[tuple[float, float]]:
+    """Run silencedetect on the (possibly trimmed) input; return speech (non-silent)
+    intervals [start, end]. Returns [] when detection fails (caller keeps whole video)."""
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-i", input_path] + in_args +
+            ["-af", f"silencedetect=noise={noise_db}dB:d={min_gap}", "-f", "null", "-"],
+            capture_output=True, timeout=180,
+        )
+        log = proc.stderr.decode(errors="ignore")
+        sils: list[tuple[float, float]] = []
+        starts = [float(m) for m in re.findall(r"silence_start: ([0-9.]+)", log)]
+        ends = [float(m) for m in re.findall(r"silence_end: ([0-9.]+)", log)]
+        for i, st in enumerate(starts):
+            en = ends[i] if i < len(ends) else None
+            sils.append((st, en))
+        if not sils:
+            return [(0.0, 1e9)]  # no silence detected -> keep everything
+        # build speech intervals between silences
+        speech, cursor = [], 0.0
+        for st, en in sils:
+            if st - cursor >= 0.15:
+                speech.append((cursor, st))
+            cursor = en if en else st + min_gap
+        speech.append((cursor, 1e9))
+        # merge tiny gaps back (< 0.25s of speech is a blip)
+        merged = []
+        for a, b in speech:
+            if merged and a - merged[-1][1] < 0.25:
+                merged[-1] = (merged[-1][0], b)
+            else:
+                merged.append((a, b))
+        return merged or [(0.0, 1e9)]
+    except Exception as e:
+        logger.warning(f"silencedetect failed: {e}")
+        return []
+
+
+def _motion_filter(name: str, w: int, h: int, dur: float) -> Optional[str]:
+    """Higgsfield-style camera motion via zoompan (applied at source resolution)."""
+    if not w or not h:
+        return None
+    total_frames = max(25, int((dur or 10) * 25))
+    if name == "zoom_in":
+        return (f"zoompan=z='min(1+0.0018*in,1.45)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"s={w}x{h}:fps=25")
+    if name == "zoom_out":
+        return (f"zoompan=z='max(1.45-0.0018*in,1.0)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"s={w}x{h}:fps=25")
+    if name == "pan_left":
+        return (f"zoompan=z=1.25:d=1:x='(iw-iw/zoom)*(1-min(in/{total_frames},1))':y='ih/2-(ih/zoom/2)':"
+                f"s={w}x{h}:fps=25")
+    if name == "pan_right":
+        return (f"zoompan=z=1.25:d=1:x='(iw-iw/zoom)*min(in/{total_frames},1)':y='ih/2-(ih/zoom/2)':"
+                f"s={w}x{h}:fps=25")
+    if name == "ken_burns":
+        return (f"zoompan=z='min(1+0.0012*in,1.3)':d=1:x='iw/2-(iw/zoom/2)':"
+                f"y='ih/2-(ih/zoom/2)+ih*0.05*min(in/{total_frames},1)':s={w}x{h}:fps=25")
     return None
 
 
@@ -451,6 +529,33 @@ async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb) -> d
         applied.append(f"{speed}x speed")
         out_dur = (out_dur / speed) if out_dur else out_dur
 
+    # Higgsfield-style camera motion — applied FIRST (at source resolution)
+    motion_op = next((o for o in ops if o["op"] == "motion"), None)
+    if motion_op and src["width"]:
+        mf = _motion_filter(motion_op["name"], src["width"], src["height"], out_dur or dur)
+        if mf:
+            filters.insert(0, mf)
+            applied.append(f"Camera move: {motion_op['name'].replace('_', ' ').title()}")
+
+    # audio chain init (needed by silence removal below)
+    mute = any(o["op"] == "mute" for o in ops)
+    vol = next((o for o in ops if o["op"] == "volume"), None)
+    has_audio = src["has_audio"]
+    af_chain: list[str] = []
+
+    # Loom-style silence removal — speech intervals -> select/aselect cuts
+    if any(o["op"] == "remove_silence" for o in ops):
+        intervals = _detect_speech_intervals(input_path, in_args)
+        if intervals and intervals != [(0.0, 1e9)]:
+            keep = "+".join(
+                f"between(t,{max(0.0, a):.2f},{b if b < 1e8 else 36000:.2f})" for a, b in intervals)
+            filters.insert(0, f"select='{keep}',setpts=N/FRAME_RATE/TB")
+            if not mute and has_audio:
+                af_chain.insert(0, f"aselect='{keep}',asetpts=N/SR/TB")
+            applied.append("Silence auto-removed (Loom-style cut)")
+        else:
+            applied.append("No dead air found — nothing to cut")
+
     # looks
     for o in ops:
         if o["op"] == "filter" and o["name"] not in ("blur_bg", "fade_in", "fade_out"):
@@ -530,12 +635,8 @@ async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb) -> d
         else:
             applied.append("Captions skipped — no speech detected")
 
-    # audio handling
-    mute = any(o["op"] == "mute" for o in ops)
-    vol = next((o for o in ops if o["op"] == "volume"), None)
-    has_audio = src["has_audio"]
+    # audio handling (speed/volume ride on top of any silence-cut chain)
     audio_out_args: list[str] = []
-    af_chain: list[str] = []
     if mute or not has_audio:
         audio_out_args = ["-an"]
         if mute:
