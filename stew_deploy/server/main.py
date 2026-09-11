@@ -5197,7 +5197,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # Everything else (song, book, meme, webbuild, documents, code, research,
     # finance tools, AI video, invoice) requires a paid plan (Student+).
     _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users",
-                          "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote", "/map", "/satmap", "/nearby", "/findme", "/track", "/trackmap", "/trackstatus", "/stoptrack",
+                          "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote", "/background", "/map", "/satmap", "/nearby", "/findme", "/track", "/trackmap", "/trackstatus", "/stoptrack",
                           "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news",
                           "/credits", "/topup", "/coins")
 
@@ -7462,11 +7462,67 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # ── /schedule COMMAND (Scheduler) ──────────────────────────────────────────
+    # ── /background — AUTONOMOUS BACKGROUND AGENT (fire-and-forget, Manus-style)
+    # Give Stew a goal; it runs the full tool loop (web search, Python,
+    # documents, charts) in the background and delivers the result + files
+    # here when done. Implemented as a 'once' scheduled task that fires on
+    # the next 30s scheduler tick, so it survives even if this webhook
+    # process restarts mid-run. /bg is the short alias.
+    if user_text.startswith("/background") or user_text.startswith("/bg "):
+        _ag_goal = user_text[len("/background") if user_text.startswith("/background") else 3:].strip()
+        if not _ag_goal:
+            await bot.send_message(
+                chat_id,
+                "🤖 *Background Agent — fire and forget*\n\n"
+                "Give me a goal. I'll work on it autonomously in the background (web search, running code, generating documents) and deliver the result + files right here when done.\n\n"
+                "*Examples:*\n"
+                "1. /agent Research the top 5 AI news stories this week and write me a PDF report\n"
+                "2. /agent Analyze my business idea for a laundry service in Enugu and create a Word business plan\n"
+                "3. /agent Check today's USD/NGN rate and tell me if it's a good day to convert savings\n"
+                "4. /agent Build a 30-day social media content calendar as an Excel sheet\n\n"
+                "*Recurring versions:* /schedule create daily 08:00 <goal> — the agent runs on autopilot every day.",
+            )
+            return {"ok": True}
+
+        try:
+            from server.scheduler import compute_next_run as _ag_cnr
+            _ag_now_iso = datetime.utcnow().isoformat()
+            _ag_next = _ag_cnr("once", _ag_now_iso, datetime.utcnow())
+            _ag_task = ScheduledTask(
+                user_id=tg_user.id,
+                name=_ag_goal[:60],
+                prompt=(
+                    f"Autonomous background task from user: {_ag_goal}\n\n"
+                    "You are running unattended as a background agent. Work step by step using your tools: "
+                    "search the web for current facts, run Python for calculations, and generate a real document file "
+                    "(pdf/docx/xlsx/pptx) when the user asked for a report, plan, or any file deliverable. "
+                    "Then give a concise final summary of what you did and found."
+                ),
+                schedule_type="once",
+                schedule_config=_ag_now_iso,
+                delivery_method="telegram",
+                delivery_target=str(chat_id),
+            )
+            db.add(_ag_task)
+            await db.commit()
+            await db.refresh(_ag_task)
+            await bot.send_message(
+                chat_id,
+                "🤖 Agent deployed! I'm on it in the background — researching, running code, building files.\n\n"
+                f"Goal: {_ag_goal[:200]}\n\n"
+                "You'll get the result and any files here the moment I'm done. Go do something else — I've got this.",
+            )
+        except Exception as _ag_err:
+            logger.error(f"/agent create failed: {_ag_err}", exc_info=True)
+            await bot.send_message(chat_id, "Couldn't launch the background agent. Please try again.")
+        return {"ok": True}
+
     if user_text.startswith("/schedule"):
         args = user_text[9:].strip()
         if not args:
             await bot.send_message(chat_id,
-                "Stew Scheduler — automate recurring tasks!\n\n"
+                "🤖 Stew Scheduler — autonomous agents on autopilot!\n\n"
+                "Every scheduled task runs as a FULL AGENT: it can search the web, run code, generate charts, and deliver real document files (PDF/Word/Excel/PowerPoint).\n\n"
                 "Usage:\n"
                 "1. Create: /schedule create daily 09:30 Send me a news summary about tech in Nigeria\n"
                 "2. Create interval: /schedule create interval 30m Check crypto prices and give me a summary\n"
@@ -7481,7 +7537,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             )
             return {"ok": True}
 
-        parts = args.split(maxsplit=4)
+        parts = args.split(maxsplit=3)
         subcmd = parts[0].lower() if parts else ""
 
         if subcmd == "create" and len(parts) >= 4:
@@ -7585,7 +7641,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 if task:
                     from server.scheduler import compute_next_run as _cnr
                     task.is_active = True
-                    task.next_run_at = _cnr(task.schedule_type, task.schedule_config, _dt.utcnow())
+                    task.next_run_at = _cnr(task.schedule_type, task.schedule_config, datetime.utcnow())
                     await db.commit()
                     await bot.send_message(chat_id, f"▶️ Task '{task.name}' resumed. Next run: {task.next_run_at}")
                 else:
