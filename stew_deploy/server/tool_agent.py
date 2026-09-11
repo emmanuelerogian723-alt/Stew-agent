@@ -649,6 +649,42 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         return {"error": f"Unknown tool: {tool}"}
 
 
+def _summarize_tool_history(tool_history: list) -> str:
+    """Build a user-facing summary from the executed tool calls — used when the
+    LLM's final message is empty (e.g. it ended on tool calls and its wrap-up
+    turn stripped to nothing) so the user always gets a meaningful answer."""
+    if not tool_history:
+        return ""
+    lines = []
+    seen = set()
+    for tc in tool_history:
+        call = tc.get("call", {})
+        res = tc.get("result", {})
+        tool = call.get("tool", "?")
+        if tool in seen:
+            continue
+        seen.add(tool)
+        args = call.get("args", {})
+        label = {
+            "build_website": "Website",
+            "generate_image": "Image",
+            "generate_document": "Document",
+            "generate_qr_code": "QR code",
+            "web_search": "Web research",
+            "wikipedia_search": "Research",
+        }.get(tool, tool.replace("_", " ").title())
+        subject = args.get("description") or args.get("topic") or args.get("prompt") or args.get("query") or args.get("text") or ""
+        subject = str(subject).split("\n")[0][:60]
+        if res.get("success") and res.get("output"):
+            out = str(res["output"]).split("\n")[0][:160]
+            lines.append(f"• {label}: {out}" if not subject or subject in out else f"• {label} ({subject}): {out}")
+        else:
+            lines.append(f"• {label} ({subject}): did not complete")
+    if not lines:
+        return ""
+    return "Done! Here's what I produced:\n" + "\n".join(lines)
+
+
 async def run_agent_loop(
     user_text: str,
     bot=None,
@@ -681,13 +717,24 @@ async def run_agent_loop(
     for iteration in range(max_iterations):
         # Get LLM response
         result = await asyncio.to_thread(llm.chat, messages)
-        assistant_text = clean_response(result["content"])
+        raw_content = result["content"]
 
-        # Check for tool calls
-        tool_calls = extract_tool_calls(assistant_text)
+        # CRITICAL: extract tool calls from the RAW content BEFORE any
+        # cleaning. clean_response() deliberately strips TOOL_CALL lines
+        # (it is meant for user-facing delivery only) — running it first
+        # destroyed every tool call before extraction, so the agent loop
+        # NEVER executed any tools and always fell straight through to a
+        # prose-only "final answer" (the NovaPay wall-of-text bug).
+        tool_calls = extract_tool_calls(raw_content)
+        assistant_text = clean_response(raw_content)
 
         if not tool_calls:
-            # No more tool calls — this is the final answer
+            # No more tool calls — this is the final answer.
+            # If the model's message cleaned to empty (it may have ended on
+            # tool calls alone), synthesize a real summary from what the
+            # tools actually did so the user is never left with a blank reply.
+            if not assistant_text and tool_history:
+                assistant_text = _summarize_tool_history(tool_history)
             return {
                 "response": assistant_text,
                 "files": files,
@@ -724,7 +771,7 @@ async def run_agent_loop(
 
         if not new_calls:
             # All tool calls were duplicates — force final answer
-            messages.append({"role": "assistant", "content": assistant_text})
+            messages.append({"role": "assistant", "content": raw_content})
             messages.append({
                 "role": "user",
                 "content": "You have already used all available tools. Please provide your final answer now based on the information you have. Do NOT make any more TOOL_CALL."
@@ -776,8 +823,10 @@ async def run_agent_loop(
                         pass
 
             # Add the tool call + result to conversation
+            # (append the RAW assistant content — with its TOOL_CALL blocks —
+            # so the model sees its own tool invocations in context)
             tool_output = tool_result.get("output", tool_result.get("error", "No output"))
-            messages.append({"role": "assistant", "content": assistant_text})
+            messages.append({"role": "assistant", "content": raw_content})
             messages.append({
                 "role": "user",
                 "content": f"TOOL_RESULT for {tool_name}:\n{tool_output[:5000]}\n\n"
@@ -792,6 +841,8 @@ async def run_agent_loop(
     })
     result = await asyncio.to_thread(llm.chat, messages)
     final_text = clean_response(result["content"])
+    if not final_text and tool_history:
+        final_text = _summarize_tool_history(tool_history)
 
     return {
         "response": final_text,
