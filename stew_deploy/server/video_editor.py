@@ -65,10 +65,13 @@ EDIT_MENU = (
     "7. *Audio* — 'mute', 'extract audio', 'volume 50%'\n"
     "8. *Rotate/Flip* — 'rotate left', 'flip horizontal'\n"
     "9. *Reverse* — 'reverse it'\n"
-    "10. *Extras* — 'fade in', 'gif', 'thumbnail', 'compress'\n"
-    "11. *Loom-style cuts* — 'remove the silence' (auto-cut dead air)\n"
-    "12. *Higgsfield-style motion* — 'zoom in', 'ken burns', 'pan right'\n"
-    "13. *Read it* — 'summarize this video'\n\n"
+    "10. *Pro cards* — 'add intro CARD TITLE', 'outro', 'make it launch ready'\n"
+    "11. *Effects* — 'glitch', 'camera shake', 'neon', 'dreamy', 'mirror', 'film grain'\n"
+    "12. *Sounds* — send an audio with caption 'music', then 'add background music'\n"
+    "13. *Extras* — 'fade in', 'gif', 'thumbnail', 'compress'\n"
+    "14. *Loom-style cuts* — 'remove the silence' (auto-cut dead air)\n"
+    "15. *Higgsfield-style motion* — 'zoom in', 'ken burns', 'pan right'\n"
+    "16. *Read it* — 'summarize this video'\n\n"
     "_Example:_ 'make it a reel, cut 0:05 to 0:35, add captions, cinematic'"
 )
 
