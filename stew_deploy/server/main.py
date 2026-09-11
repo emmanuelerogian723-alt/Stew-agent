@@ -6903,7 +6903,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     f"expert context — verify and execute using your tools."
                 )
 
-            agent_result = await run_agent_loop(agent_goal, bot=bot, chat_id=chat_id, max_iterations=8)
+            # A goal like "build a startup" has many independent deliverables
+            # (research, brand, website, docs, images, QR code...) — 8
+            # iterations was nowhere near enough headroom, so the agent gave
+            # up and just described things in prose instead of generating
+            # real artifacts. 20 gives it room to actually execute a big
+            # multi-part goal. tg_user_id lets build_website attribute the
+            # generated site to the real user instead of a placeholder.
+            agent_result = await run_agent_loop(
+                agent_goal, bot=bot, chat_id=chat_id, max_iterations=20,
+                tg_user_id=(tg_user.id if tg_user else None),
+            )
 
             if agent_result.get("files"):
                 import base64 as _b64_agent

@@ -19,6 +19,8 @@ Tools available:
   11. define_word(word)               — Dictionary definitions
   12. generate_qr_code(text)          — Generate a QR code image
   13. shorten_url(url)                — Shorten a long URL
+  14. generate_image(prompt)          — Generate a logo/graphic/image (pollinations.ai FLUX)
+  15. build_website(description)      — Build a real, live, shareable landing page/website
 """
 import json
 import re
@@ -60,6 +62,8 @@ TOOL_CALL: {"tool": "wikipedia_search", "args": {"query": "Nigeria"}}
 TOOL_CALL: {"tool": "define_word", "args": {"word": "serendipity"}}
 TOOL_CALL: {"tool": "generate_qr_code", "args": {"text": "https://t.me/StewAgent_bot"}}
 TOOL_CALL: {"tool": "shorten_url", "args": {"url": "https://example.com/very/long/link"}}
+TOOL_CALL: {"tool": "generate_image", "args": {"prompt": "a minimalist black-and-gold fintech logo, letter N monogram, luxury brand mark, vector style"}}
+TOOL_CALL: {"tool": "build_website", "args": {"description": "a premium black-and-gold fintech landing page for NovaPay, instant cross-border payments", "style": "premium-dark"}}
 
 Rules:
 1. You can call MULTIPLE tools in sequence — wait for each result before deciding the next step.
@@ -72,6 +76,9 @@ Rules:
 8. For genuinely unpredictable real-time info (news, sports scores, general facts) — use web_search.
 9. For reading a webpage — use browse_url.
 10. For documents (PDF, Word, Excel, PowerPoint) — ALWAYS use generate_document. When a user asks you to create, make, generate, or build ANY kind of document, file, report, presentation, spreadsheet, slide, deck, or pitch, you MUST emit a generate_document TOOL_CALL. NEVER just describe or talk about the document — actually generate it with the tool so the user gets a real downloadable file. NEVER write Python code for the user to run. NEVER tell the user to install libraries. Choose the format: pdf for PDFs, docx for Word, xlsx for Excel/spreadsheets, pptx for PowerPoint/slides/presentations/decks.
+15. For a LOGO, brand mark, marketing graphic, social media image, app icon, or any visual asset — ALWAYS use generate_image. Write a specific, detailed visual prompt (colors, style, subject) — never just describe what the image should look like in prose.
+16. For a LANDING PAGE, WEBSITE, or MOBILE APP UI mockup — ALWAYS use build_website with a rich description (business type, brand colors, key sections). This produces a real live HTML page with a shareable URL, not a description of one.
+17. CRITICAL — MULTI-PART GOALS: if the user's goal has several distinct deliverables (e.g. "research + logo + website + pitch deck + QR code"), you MUST emit ONE TOOL_CALL for EVERY deliverable, and you SHOULD emit MULTIPLE TOOL_CALL blocks in the SAME response whenever they don't depend on each other's output — this lets you make maximum real progress per turn instead of burning turns one deliverable at a time. Never summarize a deliverable in prose instead of generating it. Treat every numbered requirement in the user's goal as something you must produce a real artifact for, not just discuss.
 11. Never say you can't do something — try the tool first.
 11b. NEVER output Python code as your response. NEVER tell the user to "pip install" anything. NEVER tell the user to "run this script" or "decode base64". YOU are the agent — YOU run the code, YOU generate the file, and the user gets a downloadable file. If you find yourself writing code as instructions, STOP and use generate_document instead.
 12. Be concise in explanations. Show your work when using tools.
@@ -168,7 +175,7 @@ def extract_tool_calls(text: str) -> list:
     return calls
 
 
-async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
+async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> dict:
     """Execute a single tool call and return the result."""
     tool = call.get("tool", "")
     args = call.get("args", {})
@@ -502,6 +509,80 @@ async def execute_tool(call: dict, bot=None, chat_id=None) -> dict:
         except Exception as e:
             return {"tool": tool, "success": False, "error": str(e)}
 
+    elif tool == "generate_image":
+        # Logos, brand marks, marketing graphics, mobile UI mockups, social
+        # media images — free, no API key (pollinations.ai FLUX). Previously
+        # this tool did not exist at all: the agent had no way to actually
+        # produce a logo or graphic, only to talk about one.
+        prompt = args.get("prompt", "") or args.get("description", "")
+        if not prompt:
+            return {"error": "No prompt provided"}
+        try:
+            import httpx as _httpx_img
+            import urllib.parse as _urlparse_img
+            import random as _random_img
+            import base64 as _b64_img
+            encoded = _urlparse_img.quote(prompt, safe="")
+            async with _httpx_img.AsyncClient(timeout=45, follow_redirects=True) as client:
+                content = None
+                for _ in range(2):
+                    seed = _random_img.randint(1, 999999)
+                    img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
+                    r = await client.get(img_url)
+                    if r.status_code == 200 and len(r.content) > 2000:
+                        content = r.content
+                        break
+                if not content:
+                    return {"tool": tool, "success": False, "output": "Image generation failed after retries."}
+                return {
+                    "tool": tool,
+                    "success": True,
+                    "output": f"Image generated for: {prompt[:100]}",
+                    "figures": [{"base64": _b64_img.b64encode(content).decode()}],
+                }
+        except Exception as e:
+            return {"tool": tool, "success": False, "error": str(e)}
+
+    elif tool == "build_website":
+        # Real landing page / mobile-UI-style page generation, reusing the
+        # SAME engine as /webbuild — persisted so it gets a real, permanent,
+        # shareable URL, not just an HTML blob described in text. Previously
+        # this tool did not exist: the agent had no way to actually build a
+        # site, only to describe what one might look like.
+        description = args.get("description", "") or args.get("business", "")
+        style = args.get("style", "auto")
+        if not description:
+            return {"error": "No description provided"}
+        try:
+            from server.webbuilder import build_motion_website
+            wb_result = await build_motion_website(description, style)
+            if not wb_result.get("success"):
+                return {"tool": tool, "success": False, "output": f"Website build failed: {wb_result.get('error', 'unknown error')}"}
+
+            from server.database import AsyncSessionLocal
+            from server.models import GeneratedWebsite
+            owner_id = str(tg_user_id or "agent")
+            async with AsyncSessionLocal() as db2:
+                site = GeneratedWebsite(
+                    telegram_user_id=owner_id,
+                    title=wb_result["title"][:255],
+                    description=description[:500],
+                    html=wb_result["html"],
+                    style=style if style and style != "auto" else "premium-dark",
+                )
+                db2.add(site)
+                await db2.commit()
+                await db2.refresh(site)
+
+            url = f"https://stew-agent.onrender.com/site/{site.id}"
+            return {
+                "tool": tool,
+                "success": True,
+                "output": f"Website built and is now LIVE at: {url}\nTitle: {wb_result['title']}\nSize: {wb_result['size_bytes'] // 1024}KB\nTell the user this exact URL so they can open it.",
+            }
+        except Exception as e:
+            return {"tool": tool, "success": False, "error": str(e)}
+
     # ── TERMINAL SANDBOX TOOLS (owner/admin only) ──────────────────────────────
     elif tool == "run_shell":
         command = args.get("command", "")
@@ -573,6 +654,7 @@ async def run_agent_loop(
     bot=None,
     chat_id: int = None,
     max_iterations: int = 5,
+    tg_user_id=None,
 ) -> dict:
     """
     Run the agentic tool-calling loop.
@@ -627,6 +709,16 @@ async def run_agent_loop(
             if tool_name == "run_python_code" and list(tools_used).count("run_python_code") >= 3:
                 skipped_calls.append(call)
                 continue
+            # generate_image can be called several times (logo + graphics +
+            # social posts), but cap it so a runaway loop can't burn the
+            # whole iteration budget on images alone.
+            if tool_name == "generate_image" and list(tools_used).count("generate_image") >= 6:
+                skipped_calls.append(call)
+                continue
+            # build_website: a goal realistically needs at most one site.
+            if tool_name == "build_website" and list(tools_used).count("build_website") >= 2:
+                skipped_calls.append(call)
+                continue
             new_calls.append(call)
             tools_used.add(tool_name)
 
@@ -648,7 +740,7 @@ async def run_agent_loop(
                 # Don't leak tool names to users — just show typing indicator
                 await bot.send_chat_action(chat_id, "typing")
 
-            tool_result = await execute_tool(call, bot, chat_id)
+            tool_result = await execute_tool(call, bot, chat_id, tg_user_id)
             tool_history.append({
                 "call": call,
                 "result": {k: v for k, v in tool_result.items() if k != "file_base64"},
@@ -670,7 +762,12 @@ async def run_agent_loop(
             # Send figures to chat
             if bot and chat_id and tool_result.get("figures"):
                 import base64 as _b64
-                fig_caption = "QR code generated by S.T.E.W" if tool_name == "generate_qr_code" else "Chart generated by S.T.E.W"
+                if tool_name == "generate_qr_code":
+                    fig_caption = "QR code generated by S.T.E.W"
+                elif tool_name == "generate_image":
+                    fig_caption = "Image generated by S.T.E.W"
+                else:
+                    fig_caption = "Chart generated by S.T.E.W"
                 for fig in tool_result["figures"]:
                     try:
                         fig_bytes = _b64.b64decode(fig["base64"])
