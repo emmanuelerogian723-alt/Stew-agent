@@ -237,6 +237,74 @@ def motion_plus_reel():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+@test
+def pro_effects():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, dur=6)
+        for fx in ["glitch effect", "camera shake", "mirror", "neon", "dreamy glow"]:
+            r = asyncio.run(edit_video_file(src, fx, tmp, target_mb=50))
+            assert r["ok"], f"{fx}: {r}"
+            assert r["kind"] == "video"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@test
+def intro_outro_cards():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, dur=6)
+        r = asyncio.run(edit_video_file(src, "add an intro \"BIG DROP\" and an outro", tmp, target_mb=50))
+        assert r["ok"], r
+        joined = any("intro card" in a.lower() for a in r["applied"])
+        outed = any("outro card" in a.lower() for a in r["applied"])
+        assert joined and outed, r["applied"]
+        assert r["duration"] > 10.5, f"cards not appended: {r['duration']}s (expected ~11.2s)"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@test
+def launch_mode():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, dur=8)
+        r = asyncio.run(edit_video_file(src, "make it launch ready", tmp,
+                                        transcriber=lambda b: {"text": "this is the big launch everyone has been waiting for"},
+                                        target_mb=50))
+        assert r["ok"], r
+        assert any("launch day" in a.lower() for a in r["applied"]), r["applied"]
+        assert any("intro" in a.lower() for a in r["applied"]), r["applied"]
+        assert any("captions" in a.lower() for a in r["applied"]), r["applied"]
+        assert any("cinematic" in a.lower() for a in r["applied"]), r["applied"]
+        assert r["duration"] > 12, f"launch cut missing cards: {r['duration']}s"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@test
+def music_mix():
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, dur=6)
+        music = os.path.join(tmp, "track.mp3")
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                       "-f", "lavfi", "-i", "sine=frequency=220:duration=3",
+                       "-c:a", "libmp3lame", music], capture_output=True, check=True, timeout=60)
+        r = asyncio.run(edit_video_file(src, "add background music", tmp, target_mb=50, audio_path=music))
+        assert r["ok"], r
+        assert any("music mixed" in a.lower() for a in r["applied"]), r["applied"]
+        w, h = dims(r["output"])
+        assert abs((w / h) - (1280 / 720)) < 0.05, f"music mix changed aspect: {w}x{h}"
+        import json as _json, subprocess as _sp
+        _streams = _json.loads(_sp.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", r["output"]],
+                                        capture_output=True, timeout=30).stdout)["streams"]
+        assert any(x.get("codec_type") == "audio" for x in _streams), "mixed music audio missing"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     passed = failed = 0
     for t in TESTS:

@@ -357,7 +357,7 @@ async def whatsapp_webhook(request: Request, db: AsyncSession = Depends(get_db))
                         await _handle_message(db, wa_id, text, profile)
                     elif mtype == "audio":
                         await _wa_read_receipt(mid)
-                        await _handle_audio(db, wa_id, profile, msg.get("audio", {}).get("id", ""), mid)
+                        await _handle_audio(db, wa_id, profile, msg.get("audio", {}).get("id", ""), mid, (msg.get("audio", {}).get("caption") or "").strip())
                     elif mtype == "image":
                         await _wa_read_receipt(mid)
                         img = msg.get("image", {})
@@ -704,9 +704,23 @@ async def _wa_chat_reply(db: AsyncSession, user: User, wa_id: str, text: str,
     await _wa_send(wa_id, reply)
 
 
-async def _handle_audio(db: AsyncSession, wa_id: str, profile_name: str, media_id: str, mid: str):
+async def _handle_audio(db: AsyncSession, wa_id: str, profile_name: str, media_id: str, mid: str, caption: str = ""):
     """Voice note in → Groq Whisper STT → same premium chat engine.
+    Audio with a 'music' caption → saved as the video-edit music bed.
     Charged at the 'voice' weight (premium feature)."""
+    if caption and re.search(r"\b(music|soundtrack|bgm|beat|song|track)\b", caption.lower()):
+        media = await _wa_download_media(media_id)
+        if media:
+            tmp_dir = tempfile.mkdtemp(prefix="stew_wamusic_")
+            mpath = os.path.join(tmp_dir, "track.mp3")
+            with open(mpath, "wb") as f:
+                f.write(media[0])
+            from server.video_editor import store_pending
+            store_pending(f"wa:{wa_id}:audio", mpath, label="music")
+            await _wa_send(wa_id, "🎵 Track saved. Now send a video and say 'add background music' — I'll mix it in, ducked under the speech.")
+            return
+        await _wa_send(wa_id, "Couldn't download that audio — try sending it again.")
+        return
     user, created = await _get_or_create_wa_user(db, wa_id, profile_name)
     if created:
         await _wa_send(
@@ -1046,7 +1060,10 @@ async def _handle_video_edit(db: AsyncSession, wa_id: str, vid_path: str, text: 
             from server.main import _transcribe_audio_bytes
             return await _transcribe_audio_bytes(audio_bytes, "voice.ogg")
 
-        res = await edit_video_file(vid_path, text, tmp_dir, transcriber=transcribe, target_mb=14.0)
+        from server.video_editor import get_pending as _get_pend
+        _music = _get_pend(f"wa:{wa_id}:audio")
+        res = await edit_video_file(vid_path, text, tmp_dir, transcriber=transcribe, target_mb=14.0,
+                                    audio_path=(_music or {}).get("path"))
         if not res.get("ok"):
             await _wa_send(wa_id, f"❌ {res.get('error', 'Editing failed — try again.')}")
             return

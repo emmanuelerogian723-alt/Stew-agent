@@ -4711,8 +4711,11 @@ async def _handle_tg_video_edit(chat_id: int, vid_path: str, text: str, user_id:
             async def _transcribe(audio_bytes: bytes):
                 return await _transcribe_audio_bytes(audio_bytes, "voice.ogg")
 
+            from server.video_editor import get_pending as _ve_gp
+            _music = _ve_gp(f"tg:{chat_id}:audio")
             res = await edit_video_file(vid_path, text, os.path.dirname(vid_path),
-                                        transcriber=_transcribe, target_mb=45.0)
+                                        transcriber=_transcribe, target_mb=45.0,
+                                        audio_path=(_music or {}).get("path"))
             if not res.get("ok"):
                 await bot.send_message(chat_id, f"❌ {res.get('error', 'Editing failed — try again.')}")
                 return
@@ -6269,6 +6272,26 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # ── VOICE MESSAGE HANDLING (voice notes, audio files, songs) ──────────────
     if msg.get("has_voice") or msg.get("has_audio"):
+        # S.T.E.W Video Editor: captioned music upload → save as edit bed
+        _ve_music_cap = (msg.get("caption") or "").strip()
+        if _ve_music_cap and re.search(r"\b(music|soundtrack|bgm|beat|song|track)\b", _ve_music_cap.lower()):
+            try:
+                _m_bytes = await bot.download_file(msg["file_id"])
+                if _m_bytes:
+                    import tempfile as _tfx
+                    _m_dir = _tfx.mkdtemp(prefix="stew_tgmusic_")
+                    _m_path = os.path.join(_m_dir, "track.mp3")
+                    with open(_m_path, "wb") as _mf:
+                        _mf.write(_m_bytes)
+                    from server.video_editor import store_pending as _ve_sm
+                    _ve_sm(f"tg:{chat_id}:audio", _m_path, label="music")
+                    await bot.send_message(chat_id, "🎵 Track saved. Send a video and say 'add background music' — I'll mix it in, ducked under the speech.")
+                else:
+                    await bot.send_message(chat_id, "Couldn't download that audio — try again.")
+            except Exception as _e:
+                logger.error(f"TG music save failed: {_e}")
+                await bot.send_message(chat_id, "Couldn't save that track — try again.")
+            return {"ok": True}
         await bot.send_chat_action(chat_id, "typing")
         file_size = msg.get("file_size") or 0
         if file_size and file_size > _TELEGRAM_MAX_DOWNLOAD_BYTES:

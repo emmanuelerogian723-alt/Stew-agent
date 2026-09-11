@@ -193,6 +193,12 @@ def parse_edit_request(text: str) -> list[dict]:
         "fade_in": r"\bfade ?in\b",
         "fade_out": r"\bfade ?out\b",
         "blur_bg": r"\bblur(red|ry)? background\b|\bblur ?pad\b",
+        "glitch": r"\bglitch(ed|y)?\b|\brgb split\b|\bcyber\b",
+        "shake": r"\b(camera )?shake\b|\bearthquake\b|\bshaky\b",
+        "dreamy": r"\bdreamy\b|\bsoft glow\b|\bglow effect\b|\bdream ?like\b",
+        "neon": r"\bneon\b|\bcyberpunk\b",
+        "grain": r"\bfilm ?grain\b|\bgrainy\b|\bgrain effect\b",
+        "mirror": r"\bmirror(ed| effect)?\b|\bkaleidoscope\b",
     }
     for name, pat in looks.items():
         if re.search(pat, lower):
@@ -215,6 +221,24 @@ def parse_edit_request(text: str) -> list[dict]:
                         "pos": "top" if re.search(r"\bon top\b", lower) else "bottom"})
     if re.search(r"\bwatermark\b", lower):
         ops.append({"op": "text", "content": "@S.T.E.W", "pos": "corner"})
+
+    # ── pro cards & sounds ──
+    m = re.search(r"[\"'“”]([^\"'“”]{1,40})[\"'“”]", text)
+    quoted = m.group(1).strip() if m else None
+    if re.search(r"\b(add|make|give|put|create|need|start with|open with) .{0,18}\bintro\b|\btitle card\b|\bopening (card|title)\b", lower):
+        ops.append({"op": "intro", "text": quoted or "S.T.E.W PRESENTS"})
+    if re.search(r"\boutro\b|\bend ?card\b|\bend ?screen\b|\bclosing (card|title)\b", lower):
+        ops.append({"op": "outro", "text": quoted or ("SUBSCRIBE FOR MORE" if "subscribe" in lower else "THANKS FOR WATCHING")})
+    if re.search(r"\b(add|put|use|include|mix) .{0,15}(background )?(music|soundtrack|audio|beat|song)\b|\bbgm\b|\badd (the )?beat\b", lower):
+        ops.append({"op": "music"})
+    if re.search(r"\blaunch (ready|edit|mode|video)\b|\bready for launch\b|\bmake (it|this) launch\b|\bpromo (mode|edit|ready)\b|\bmake (it|this) (go )?viral\b|\bcinematic trailer\b", lower):
+        ops.append({"op": "intro", "text": quoted or "LAUNCH DAY"})
+        ops.append({"op": "captions"})
+        ops.append({"op": "filter", "name": "cinematic"})
+        ops.append({"op": "filter", "name": "fade_in"})
+        ops.append({"op": "filter", "name": "fade_out"})
+        if not any(o["op"] == "outro" for o in ops):
+            ops.append({"op": "outro", "text": "FOLLOW FOR MORE"})
 
     # ── gif / thumbnail / compress ──
     if re.search(r"\bgif\b", lower):
@@ -297,6 +321,19 @@ def _build_look(name: str) -> Optional[str]:
         return "unsharp=5:5:1.4:5:5:0.6"
     if name == "vignette":
         return "vignette=PI/4"
+    if name == "glitch":
+        return "rgbashift=rh=6:bv=-6,noise=alls=6:allf=t+u,eq=contrast=1.05:saturation=1.1"
+    if name == "shake":
+        return ("pad=w=iw+48:h=ih+48:x=24:y=24:color=black,"
+                "crop=w=iw-48:h=ih-48:x='24+14*sin(26*t)':y='24+14*cos(31*t)'")
+    if name == "dreamy":
+        return "gblur=sigma=1.2,eq=saturation=1.25:brightness=0.02,unsharp=5:5:0.6,vignette=PI/3"
+    if name == "neon":
+        return "eq=saturation=1.9:contrast=1.12:gamma=1.05,unsharp=7:7:-1.2:7:7:0"
+    if name == "grain":
+        return "noise=alls=8:allf=t"
+    if name == "mirror":
+        return "split[ma][mb];[mb]hflip[mc];[ma][mc]hstack"
     return None
 
 
@@ -403,6 +440,84 @@ async def _transcribe_for_captions(input_path: str, tmp_dir: str, transcriber) -
         return None
 
 
+def _make_title_card(tmp_dir: str, w: int, h: int, text: str, dur: float = 2.6) -> Optional[str]:
+    """3D-extruded animated title card: gradient bg, layered depth text,
+    slow zoom (zoompan), fades, soft riser swell audio. Returns card path."""
+    out = os.path.join(tmp_dir, f"card_{int(time.time() * 1000)}.mp4")
+    w = min(w or 1280, MAX_OUT_W); h = min(h or 720, MAX_OUT_H)
+    fs = int(h * 0.11)
+    vf = []
+    for i in range(5, 0, -1):  # 3D extrude: stacked shadow layers
+        vf.append(f"drawtext=fontfile={FONT_BOLD}:text='{_esc_text(text)}':"
+                  f"fontcolor=0x013d26:fontsize={fs}:x=(w-text_w)/2+{i * 2}:y=(h-text_h)/2+{i * 2}")
+    vf.append(f"drawtext=fontfile={FONT_BOLD}:text='{_esc_text(text)}':fontcolor=white:"
+              f"fontsize={fs}:x=(w-text_w)/2:y=(h-text_h)/2")
+    vf.append(f"zoompan=z='min(1+0.0035*in,1.15)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps=25")
+    vf.append(f"fade=t=in:st=0:d=0.35,fade=t=out:st={max(0.0, dur - 0.35):.2f}:d=0.35")
+    base_args = ["-f", "lavfi", "-i", f"gradients=s={w}x{h}:d={dur}:r=25:speed=0.03:c0=0x021206:c1=0x0b3d2e:c2=0x14532d"]
+    noise = ["-f", "lavfi", "-i", f"anoisesrc=d={dur}:c=pink:a=0.16:r=44100"]
+    tail = ["-vf", ",".join(vf),
+            "-af", f"lowpass=f=800,afade=t=in:st=0:d=0.3,afade=t=out:st={max(0.0, dur - 0.5):.2f}:d=0.5",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2", "-r", "25",
+            "-t", f"{dur:.2f}", out]
+    ok, _ = _run_ffmpeg(base_args + noise + tail, timeout=180)
+    if not ok:  # gradients unavailable on this ffmpeg → plain color fallback
+        ok, _ = _run_ffmpeg(["-f", "lavfi", "-i", f"color=c=0x021206:s={w}x{h}:r=25:d={dur}"] + noise + tail, timeout=180)
+    return out if ok and os.path.exists(out) else None
+
+
+def _concat_card(video_path: str, card_path: str, order: str, timeout_note: str = "") -> Optional[str]:
+    """Join card+video (intro) or video+card (outro) with synced audio."""
+    v, c = _probe(video_path), _probe(card_path)
+    out = video_path.replace(".mp4", f"_{order}.mp4")
+    vf_scale = f"scale={v['width']}:{v['height']}:force_original_aspect_ratio=decrease,pad={v['width']}:{v['height']}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25"
+    if v.get("has_audio") and c.get("has_audio"):
+        fc = (f"[0:v]{vf_scale}[v0];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];"
+              f"[1:v]{vf_scale}[v1];[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a1];"
+              + ("[v0][a0][v1][a1]" if order == "intro" else "[v1][a1][v0][a0]")
+              + "concat=n=2:v=1:a=1[v][a]")
+        ok, err = _run_ffmpeg(["-i", video_path, "-i", card_path, "-filter_complex", fc,
+                               "-map", "[v]", "-map", "[a]",
+                               "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                               "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                               "-movflags", "+faststart", out])
+    else:  # main video silent → card sound dropped, visual still lands
+        fc = (f"[1:v]{vf_scale}[v1];[0:v]{vf_scale}[v0];"
+              + ("[v1][v0]" if order == "intro" else "[v0][v1]")
+              + "concat=n=2:v=1:a=0[v]")
+        ok, err = _run_ffmpeg(["-i", video_path, "-i", card_path, "-filter_complex", fc,
+                               "-map", "[v]", "-an",
+                               "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                               "-pix_fmt", "yuv420p", "-movflags", "+faststart", out])
+    return out if ok and os.path.exists(out) else None
+
+
+def _mix_music(video_path: str, music_path: str) -> Optional[str]:
+    """Duck the original audio and lay the uploaded track under it."""
+    v = _probe(video_path)
+    d = v.get("duration") or 10
+    out = video_path.replace(".mp4", "_music.mp4")
+    pre = (f"[1:a]volume=0.32,aloop=loop=-1:size=1323000,atrim=0:{d:.2f},"
+           f"aformat=sample_rates=44100:channel_layouts=stereo[m];")
+    if v.get("has_audio"):
+        fc = (pre + f"[0:a]aformat=sample_rates=44100:channel_layouts=stereo[v0];"
+               f"[v0][m]amix=inputs=2:duration=first:normalize=0,"
+               f"afade=t=out:st={max(0.0, d - 1.5):.2f}:d=1.5[a]")
+        ok, err = _run_ffmpeg(["-i", video_path, "-i", music_path, "-filter_complex", fc,
+                               "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
+                               "-b:a", "128k", "-movflags", "+faststart", out], timeout=600)
+    else:
+        fc = pre + f"afade=t=out:st={max(0.0, d - 1.5):.2f}:d=1.5[a];[m]anull[m2]"
+        fc = (f"[1:a]volume=0.9,aloop=loop=-1:size=1323000,atrim=0:{d:.2f},"
+              f"aformat=sample_rates=44100:channel_layouts=stereo,"
+              f"afade=t=out:st={max(0.0, d - 1.5):.2f}:d=1.5[a]")
+        ok, err = _run_ffmpeg(["-i", video_path, "-i", music_path, "-filter_complex", fc,
+                               "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
+                               "-b:a", "128k", "-movflags", "+faststart", out], timeout=600)
+    return out if ok and os.path.exists(out) else None
+
+
 def _build_srt(transcript: str, duration: float, srt_path: str) -> bool:
     """Spread transcript words across duration in 4-word chunks (reel style)."""
     words = transcript.split()
@@ -432,6 +547,7 @@ async def edit_video_file(
     tmp_dir: str,
     transcriber: Optional[Callable] = None,
     target_mb: float = 15.0,
+    audio_path: Optional[str] = None,
 ) -> dict:
     """Apply the requested edits to a local video file.
     Returns {"ok", "output", "kind": video|gif|image|audio, "applied", ...}"""
@@ -446,13 +562,13 @@ async def edit_video_file(
 
     async with _RENDER_SEMAPHORE:
         try:
-            return await _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb)
+            return await _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb, audio_path)
         except Exception as e:
             logger.error(f"video editor failed: {e}", exc_info=True)
             return {"ok": False, "error": f"Editor error: {str(e)[:160]}"}
 
 
-async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb) -> dict:
+async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb, audio_path=None) -> dict:
     dur = src["duration"]
     filters: list[str] = []
     in_args: list[str] = []
@@ -649,7 +765,7 @@ async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb) -> d
             applied.append(f"Volume {vol['pct']}%")
 
     if not applied:
-        if any(o["op"] == "compress" for o in ops):
+        if any(o["op"] in ("compress", "intro", "outro", "music") for o in ops):
             applied.append("Optimized for size")
         else:
             return {"ok": False, "error": "no_edit_intent"}
@@ -698,8 +814,48 @@ async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb) -> d
         if not ok:
             return {"ok": False, "error": f"Render failed: {err[:180]}"}
 
-    # ---------------- size guard: WhatsApp 16MB / Telegram 50MB ----------------
+    # ---------------- post-render: 3D intro/outro cards + music bed ------------
     final = out_path
+    fp = _probe(final)
+
+    intro_op = next((o for o in ops if o["op"] == "intro"), None)
+    if intro_op:
+        card = _make_title_card(tmp_dir, fp.get("width") or 1280, fp.get("height") or 720,
+                                intro_op.get("text") or "S.T.E.W PRESENTS")
+        if card:
+            joined = _concat_card(final, card, "intro")
+            if joined:
+                final = joined
+                applied.append(f"3D intro card: {intro_op.get('text')} + riser sound")
+            else:
+                applied.append("Intro card: join failed, skipped")
+        else:
+            applied.append("Intro card: render failed, skipped")
+
+    outro_op = next((o for o in ops if o["op"] == "outro"), None)
+    if outro_op:
+        card = _make_title_card(tmp_dir, fp.get("width") or 1280, fp.get("height") or 720,
+                                outro_op.get("text") or "THANKS FOR WATCHING")
+        if card:
+            joined = _concat_card(final, card, "outro")
+            if joined:
+                final = joined
+                applied.append(f"3D outro card: {outro_op.get('text')}")
+            else:
+                applied.append("Outro card: join failed, skipped")
+
+    if any(o["op"] == "music" for o in ops):
+        if audio_path and os.path.exists(audio_path):
+            mixed = _mix_music(final, audio_path)
+            if mixed:
+                final = mixed
+                applied.append("Background music mixed (ducked under speech)")
+            else:
+                applied.append("Music mix failed — kept original audio")
+        else:
+            applied.append("Music: send an audio file with caption 'music' first")
+
+    # ---------------- size guard: WhatsApp 16MB / Telegram 50MB ----------------
 
     def _compress(path: str) -> str:
         try:
@@ -723,7 +879,7 @@ async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb) -> d
             logger.warning(f"compress failed: {e}")
             return path
 
-    final = _compress(out_path)
+    final = _compress(final)
     if any(o["op"] == "compress" for o in ops):
         applied.append(f"Compressed ({os.path.getsize(final) // 1048576}MB)")
 
