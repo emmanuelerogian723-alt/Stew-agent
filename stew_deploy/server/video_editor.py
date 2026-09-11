@@ -104,7 +104,8 @@ def parse_edit_request(text: str) -> list[dict]:
     # ── format / preset ──
     preset_hit = re.search(r"\b9:16\b", lower) or re.search(r"\b16:9\b", lower) or re.search(r"\b1:1\b", lower)
     if preset_hit:
-        ops.append({"op": "preset", "name": preset_hit.group(0)})
+        _ratio_to_preset = {"9:16": "vertical", "16:9": "landscape", "1:1": "square"}
+        ops.append({"op": "preset", "name": _ratio_to_preset[preset_hit.group(0)]})
     else:
         for key in PRESETS:
             if re.search(rf"\b{re.escape(key)}\b", lower) and re.search(
@@ -711,7 +712,7 @@ async def _apply_ops(input_path, ops, src, tmp_dir, transcriber, target_mb, audi
     filter_complex = None
     preset_dims = None
     if preset_op:
-        w, h, label = PRESETS[preset_op["name"]]
+        w, h, label = PRESETS.get(preset_op["name"], PRESETS["landscape"])
         preset_dims = (w, h)
         sw, sh = src["width"], src["height"]
         applied.append(f"{label} ({w}×{h})")

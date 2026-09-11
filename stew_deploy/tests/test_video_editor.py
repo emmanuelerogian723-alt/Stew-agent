@@ -305,6 +305,22 @@ def music_mix():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+@test
+def raw_ratio_preset_no_crash():
+    """Regression: user replying with the literal ratio string (e.g. '16:9', as shown
+    in a generated video's caption) must map to a real preset, not KeyError."""
+    tmp = tempfile.mkdtemp(prefix="tst_ve_")
+    try:
+        src = make_source(tmp, w=1080, h=1920, dur=5)
+        for ratio, expect_w, expect_h in [("16:9", 1920, 1080), ("9:16", 1080, 1920), ("1:1", 1080, 1080)]:
+            r = asyncio.run(edit_video_file(src, ratio, tmp, target_mb=50))
+            assert r["ok"], f"{ratio}: {r}"
+            w, h = dims(r["output"])
+            assert (w, h) == (expect_w, expect_h), f"{ratio}: got {w}x{h}, expected {expect_w}x{expect_h}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     passed = failed = 0
     for t in TESTS:
