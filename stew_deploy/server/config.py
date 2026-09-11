@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     WHATSAPP_TOKEN: str = ""            # access token from Meta (test or permanent)
     WHATSAPP_PHONE_NUMBER_ID: str = ""  # Phone number ID from Meta -> WhatsApp API Setup
     WHATSAPP_VERIFY_TOKEN: str = ""     # your chosen verify string; same value in Meta webhook config
+    WHATSAPP_VERIFY_TOKEN_ALT: str = ""  # optional second accepted verify string (whitespace-safe)
     WHATSAPP_APP_SECRET: str = ""       # App secret → verifies X-Hub-Signature-256 on webhooks
 
 

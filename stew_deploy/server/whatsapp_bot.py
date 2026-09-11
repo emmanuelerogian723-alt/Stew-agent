@@ -313,7 +313,10 @@ async def whatsapp_verify(request: Request):
     """Meta webhook subscription handshake (hub.challenge echo)."""
     qp = request.query_params
     _, _, expected_verify = await _wa_creds()
-    if qp.get("hub.mode") == "subscribe" and expected_verify and qp.get("hub.verify_token") == expected_verify:
+    # Accept primary + alternate verify tokens; strip whitespace (mobile keyboards
+    # often inject a trailing space that silently fails Meta verification).
+    accepted = {t.strip() for t in (expected_verify, settings.WHATSAPP_VERIFY_TOKEN, getattr(settings, "WHATSAPP_VERIFY_TOKEN_ALT", "") or "") if t and t.strip()}
+    if qp.get("hub.mode") == "subscribe" and qp.get("hub.verify_token", "").strip() in accepted:
         return Response(content=qp.get("hub.challenge", ""), media_type="text/plain")
     return Response(content="verification failed", status_code=403, media_type="text/plain")
 
