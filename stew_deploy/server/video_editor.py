@@ -140,7 +140,7 @@ def parse_edit_request(text: str) -> list[dict]:
         ops.append({"op": "speed", "factor": 0.5})
     elif re.search(r"\bspeed (?:it )?up\b|\bmake it faster\b|\bfaster\b", lower):
         ops.append({"op": "speed", "factor": 1.5})
-    elif re.search(r"\bslow(er)? (it|this|down)?\b", lower) and "slow" in lower and not re.search(r"\bslow ?mo(tion)?\b", lower):
+    elif re.search(r"\bslow(er)? (it|this|down)?\b", lower) and "slow" in lower and not re.search(r"\bslow ?mo(tion)?\b", lower) and not re.search(r"\b(zoom|pan|ken burns|camera)\b", lower):
         ops.append({"op": "speed", "factor": 0.75})
 
     # ── reverse ──
