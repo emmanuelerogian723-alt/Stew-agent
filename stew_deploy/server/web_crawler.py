@@ -489,6 +489,40 @@ class WebCrawler:
             return True
         return overlap >= 2 or (len(query_words) == 1 and overlap >= 1)
 
+    def _filter_irrelevant_results(self, query: str, organic: list) -> list:
+        """
+        Drop individual results that share ZERO meaningful keywords with the
+        query, but ONLY when at least one other result DOES match. This scrubs
+        per-result noise that passes the engine-level gate: DuckDuckGo (and
+        Bing) inject paid ad results that are structurally identical to organic
+        ones — served mostly to datacenter IPs (Render etc.), e.g. a query
+        about "AI news Nigeria" came back interleaved with shopping-mall ads.
+        Zero-overlap results are dropped; if NOTHING overlaps, we return the
+        list unchanged (the query may simply be unmatchable by keywords).
+        """
+        if not organic or len(organic) <= 1:
+            return organic
+        query_words = {
+            w for w in re.findall(r"[a-z0-9]+", query.lower())
+            if len(w) > 2 and w not in self._STOPWORDS
+        }
+        if not query_words:
+            return organic
+
+        def _score(item):
+            blob = (item.get("title", "") + " " + item.get("snippet", "") + " " + item.get("link", "")).lower()
+            return sum(1 for w in query_words if w in blob)
+
+        scores = [_score(r) for r in organic]
+        if not any(s > 0 for s in scores):
+            return organic  # nothing matches — don't nuke everything
+        kept = [r for r, s in zip(organic, scores) if s > 0]
+        if len(kept) < len(organic):
+            logger.info(f"Dropped {len(organic) - len(kept)} zero-relevance result(s) (likely injected ads) for '{query}'")
+        for i, r in enumerate(kept):
+            r["position"] = i + 1
+        return kept
+
     # ── MASTER SEARCH — tries all engines ────────────────────────────
 
     async def search(self, query, num_results=10):
@@ -515,6 +549,7 @@ class WebCrawler:
                         logger.warning(f"Search engine '{name}' returned {len(organic)} results but they look IRRELEVANT to '{query}' — discarding and trying next engine.")
                         errors.append(f"{name}: results failed relevance check")
                         continue
+                    result["organic"] = self._filter_irrelevant_results(query, organic)
                     return result
                 if result.get("error"):
                     errors.append(f"{name}: {result['error']}")
