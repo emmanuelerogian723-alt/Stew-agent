@@ -89,11 +89,61 @@ def clean_response(text: str) -> str:
     if re.search(r'(?:[A-Za-z0-9+/]{60,}={0,2}\s*){3,}', text):
         return "Your document is ready! If it didn't appear above, please try again in a moment — I'll send it as a proper downloadable file."
 
-    # CRITICAL: Strip any TOOL_CALL or TOOL_RESULT artifacts that leaked
-    text = re.sub(r'TOOL_CALL:\s*\{.*?\}', '', text, flags=re.DOTALL).strip()
+    # CRITICAL: Strip any TOOL_CALL or TOOL_RESULT artifacts that leaked.
+    # NOTE: TOOL_CALL args are always a nested JSON object, e.g.
+    # {"tool": "x", "args": {"key": "val"}} — a naive non-greedy regex
+    # (.*?) stops at the FIRST "}" it meets (the inner args dict's close),
+    # leaving the true outer "}" dangling as visible text. Real symptom
+    # seen live: a message that was just a column of stray "}" characters,
+    # one per tool call that got only half-stripped. Balance braces properly
+    # instead of trusting a non-greedy regex.
+    def _strip_balanced_tool_call(s: str) -> str:
+        out = []
+        i = 0
+        n = len(s)
+        while i < n:
+            m = re.match(r'TOOL_CALL:\s*\{', s[i:])
+            if not m:
+                out.append(s[i])
+                i += 1
+                continue
+            # Found "TOOL_CALL: {" — walk forward counting brace depth to
+            # find the TRUE matching close, respecting quoted strings.
+            start = i + m.end() - 1  # index of the opening '{'
+            depth = 0
+            j = start
+            in_str = False
+            esc = False
+            while j < n:
+                ch = s[j]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == '\\':
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                else:
+                    if ch == '"':
+                        in_str = True
+                    elif ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            j += 1
+                            break
+                j += 1
+            i = j  # skip the whole balanced block, drop it entirely
+        return ''.join(out)
+
+    text = _strip_balanced_tool_call(text).strip()
     text = re.sub(r'TOOL_CALL_MARKER.*', '', text, flags=re.DOTALL).strip()
     text = re.sub(r'TOOL_RESULT[\s\S]*', '', text).strip()
-    # Strip JSON-like tool call remnants
+    # Strip any remaining lone-brace debris a partial/malformed tool call
+    # could leave behind (e.g. a line that is just "}" or "} }")
+    text = re.sub(r'^\s*\}+\s*$', '', text, flags=re.MULTILINE).strip()
+    # Strip JSON-like tool call remnants (fallback for anything unbalanced)
     text = re.sub(r'\{"tool"\s*:\s*"[^"]+".*?\}', '', text, flags=re.DOTALL).strip()
     # Strip "I should use" or "I need to call" internal reasoning leaks
     text = re.sub(r'^I (should|need to|will|must) (use|call|invoke|emit|generate) (a |the )?tool.*$', '', text, flags=re.MULTILINE|re.IGNORECASE).strip()
