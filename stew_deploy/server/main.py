@@ -144,6 +144,7 @@ async def lifespan(app: FastAPI):
             {"command": "aivideos", "description": "Multi-scene AI video with narration"},
             {"command": "webbuild", "description": "Build a motion-design website (Kimi style)"},
             {"command": "edit", "description": "Edit your latest website"},
+            {"command": "videoedit", "description": "Pro video editor — send a video, then edit like a pro"},
             {"command": "versions", "description": "Website version history"},
             {"command": "rollback", "description": "Undo your last website edit"},
             {"command": "meme", "description": "Generate an AI meme image"},
@@ -4680,6 +4681,73 @@ async def _read_video(video_bytes: bytes, filename: str, user_question: str = ""
             pass
 
 
+async def _handle_tg_video_edit(chat_id: int, vid_path: str, text: str, user_id: Optional[str]):
+    """S.T.E.W Video Editor worker (Telegram): runs the requested edits on a
+    previously uploaded video and sends the result. Runs detached with its own
+    DB session so the webhook ACK is never delayed."""
+    from server.telegram_bot import TelegramBot as _TGBot
+    from server.video_editor import edit_video_file, parse_edit_request, is_read_intent
+    from server.database import AsyncSessionLocal
+    bot = _TGBot(settings.TELEGRAM_BOT_TOKEN)
+    async with AsyncSessionLocal() as _db:
+        try:
+            if is_read_intent(text):
+                await bot.send_message(chat_id, "🎬 Watching your video — extracting frames and audio…")
+                with open(vid_path, "rb") as f:
+                    vbytes = f.read()
+                result = await _read_video(vbytes, "video.mp4", text)
+                reply = (result or {}).get("analysis") or "I couldn't extract enough from that video — try a clearer or longer clip."
+                for i in range(0, len(reply), 3800):
+                    await bot.send_message(chat_id, reply[i:i + 3800])
+                if user_id:
+                    await _log_call(_db, user_id, "/telegram/video_read", "POST", 0, 200)
+                return
+
+            ops = parse_edit_request(text)
+            summary = ", ".join(o["op"] for o in ops) or "edit"
+            await bot.send_chat_action(chat_id, "upload_video")
+            await bot.send_message(chat_id, f"🎬 Editing your video ({summary}) — rendering now…")
+
+            async def _transcribe(audio_bytes: bytes):
+                return await _transcribe_audio_bytes(audio_bytes, "voice.ogg")
+
+            res = await edit_video_file(vid_path, text, os.path.dirname(vid_path),
+                                        transcriber=_transcribe, target_mb=45.0)
+            if not res.get("ok"):
+                await bot.send_message(chat_id, f"❌ {res.get('error', 'Editing failed — try again.')}")
+                return
+
+            out, kind = res["output"], res.get("kind", "video")
+            done = "\n".join(f"✓ {a}" for a in res.get("applied", []))
+            size = res.get("size_mb")
+            extra = f"\n📦 {size}MB" if size else ""
+
+            with open(out, "rb") as f:
+                out_bytes = f.read()
+
+            if kind == "video":
+                send_res = await bot.send_video(chat_id, out_bytes, caption=f"🎬 S.T.E.W edit\n{done}{extra}")
+            elif kind == "image":
+                send_res = await bot.send_photo(chat_id, out_bytes, caption=f"🎬 {done}")
+            elif kind == "audio":
+                send_res = await bot.send_audio(chat_id, out_bytes, filename="stew_audio.mp3", caption=f"🎵 {done}")
+            else:
+                send_res = await bot.send_document(chat_id, out_bytes, filename="stew_edit.gif", caption=f"🎞️ {done}")
+
+            if not (send_res or {}).get("ok"):
+                await bot.send_message(chat_id, f"I rendered the edit ({done}) but couldn't send the file: {(send_res or {}).get('description', '')[:150]} Try 'compress' or a shorter trim.")
+            else:
+                await bot.send_message(chat_id, "Send another edit (it applies to your original video) — or send a new video. /videoedit for the menu.")
+                if user_id:
+                    await _log_call(_db, user_id, "/telegram/video_edit", "POST", 0, 200)
+        except Exception as e:
+            logger.error(f"TG video edit failed: {e}", exc_info=True)
+            try:
+                await bot.send_message(chat_id, "❌ Something went wrong editing that video — try a simpler edit.")
+            except Exception:
+                pass
+
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     """Receive Telegram messages. ACKs Telegram INSTANTLY, then processes the
@@ -4849,6 +4917,24 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     _raw_text_early = (msg.get("text") or "").strip()
     _is_callback_early = bool(msg.get("is_callback"))
+
+    # ── S.T.E.W VIDEO EDITOR (video uploads) ─────────────────────────────────
+    # /videoedit — menu; plain text + pending video + edit intent → editor
+    from server.video_editor import get_pending as _ve_pend, is_edit_intent as _ve_is_edit, is_read_intent as _ve_is_read, EDIT_MENU as _VE_MENU
+    if _raw_text_early.startswith("/videoedit"):
+        await bot.send_message(chat_id, _VE_MENU)
+        return {"ok": True}
+    if not _raw_text_early.startswith("/") and not _is_callback_early:
+        _ve_pending = _ve_pend(f"tg:{chat_id}")
+        if _ve_pending and (_ve_is_edit(_raw_text_early) or _ve_is_read(_raw_text_early)):
+            if tg_user_early is not None:
+                _ve_allowed, _ve_used, _ve_limit = await _check_quota(tg_user_early, db, "video")
+                if not _ve_allowed:
+                    await bot.send_message(chat_id, f"Monthly limit reached ({_ve_used}/{_ve_limit}). Use /upgrade to continue.")
+                    return {"ok": True}
+            asyncio.create_task(_handle_tg_video_edit(chat_id, _ve_pending["path"], _raw_text_early,
+                                                      tg_user_early.id if tg_user_early else None))
+            return {"ok": True}
 
     # Admin unlock: "/admin <SECRET>" grants this Telegram account permanent,
     # unmetered access. Never counted toward quota, never rate-limited.
@@ -5216,6 +5302,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             file_size_mb = len(file_bytes) / (1024 * 1024)
             if file_size_mb > 20:
                 await bot.send_message(chat_id, f"That video is {file_size_mb:.1f}MB — too large for me to process on the free tier. Please send a shorter clip (under 20MB).")
+                return {"ok": True}
+
+            # ── S.T.E.W VIDEO EDITOR: remember the video, route caption edits ──
+            import tempfile as _tempfile
+            _vid_tmp = _tempfile.mkdtemp(prefix="stew_tgvid_")
+            _vid_path = os.path.join(_vid_tmp, "source.mp4")
+            with open(_vid_path, "wb") as _vf:
+                _vf.write(file_bytes)
+            from server.video_editor import store_pending as _ve_store, is_edit_intent as _ve_intent
+            _ve_store(f"tg:{chat_id}", _vid_path)
+            if caption and _ve_intent(caption):
+                if tg_user_early is not None:
+                    _ve_allowed, _ve_used, _ve_limit = await _check_quota(tg_user_early, db, "video")
+                    if not _ve_allowed:
+                        await bot.send_message(chat_id, f"Monthly limit reached ({_ve_used}/{_ve_limit}). Use /upgrade to continue.")
+                        return {"ok": True}
+                asyncio.create_task(_handle_tg_video_edit(chat_id, _vid_path, caption, tg_user_early.id if tg_user_early else None))
                 return {"ok": True}
 
             await bot.send_message(chat_id, "Analyzing your video... extracting frames and audio...")

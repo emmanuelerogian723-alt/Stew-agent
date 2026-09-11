@@ -362,6 +362,9 @@ async def whatsapp_webhook(request: Request, db: AsyncSession = Depends(get_db))
                         await _wa_read_receipt(mid)
                         img = msg.get("image", {})
                         await _handle_image(db, wa_id, profile, img.get("id", ""), (img.get("caption") or "").strip(), mid)
+                    elif mtype == "video":
+                        vid = msg.get("video", {})
+                        await _handle_video_in(db, wa_id, profile, vid.get("id", ""), (vid.get("caption") or "").strip(), mid)
                     elif mtype == "document":
                         await _wa_read_receipt(mid)
                         doc = msg.get("document", {})
@@ -621,6 +624,18 @@ async def _handle_message(db: AsyncSession, wa_id: str, text: str, profile_name:
             return
         await _wa_send(wa_id, "🎬 Fetching that video — usually takes under a minute…")
         asyncio.create_task(_handle_video_dl(db, wa_id, text))
+        return
+
+    # ── pending video + edit/read intent → S.T.E.W Video Editor ──
+    from server.video_editor import get_pending, is_edit_intent, is_read_intent
+    pend = get_pending(f"wa:{wa_id}")
+    if pend and (is_edit_intent(text) or is_read_intent(text)):
+        allowed, used, limit, _ = await _wa_charge(db, user, "video")
+        if not allowed:
+            await _send_paywall(wa_id, user, used, limit)
+            return
+        await _wa_typing(wa_id)
+        asyncio.create_task(_handle_video_edit(db, wa_id, pend["path"], text))
         return
 
     # ── feature detection (weighted coin pricing) ──
@@ -955,3 +970,115 @@ async def _handle_image(db: AsyncSession, wa_id: str, profile_name: str, media_i
     await _wa_send(wa_id, f"📄 Got it — I read *{len(extracted.split())} words* from your photo. Analyzing…")
     await _wa_typing(wa_id)
     await _wa_chat_reply(db, user, wa_id, prompt, _detect_feature(caption or extracted[:500]), used, limit)
+
+# ── S.T.E.W VIDEO EDITOR (video-in) ─────────────────────────────────────────
+async def _handle_video_in(db: AsyncSession, wa_id: str, profile_name: str, media_id: str,
+                           caption: str, mid: str):
+    """Video in → saved for editing (or edited immediately if the caption
+    carries an edit instruction, or analyzed if they ask to read it).
+    Charged at the 'video' weight for edits/reads."""
+    user, created = await _get_or_create_wa_user(db, wa_id, profile_name)
+    if created:
+        await _wa_send(
+            wa_id,
+            "👋 Hi! I'm *S.T.E.W* — your AI agent on WhatsApp.\n\n"
+            "Send that video again — I can edit it like a pro: reels, captions, trims, filters and more.\n\n"
+            f"🎁 You get {settings.WHATSAPP_FREE_TRIAL_MESSAGES} free messages to start.",
+        )
+        return
+
+    await _wa_typing(wa_id)
+    media = await _wa_download_media(media_id)
+    if not media:
+        await _wa_send(wa_id, "I couldn't download that video — try sending it again (keep it under 16MB for WhatsApp).")
+        return
+    video_bytes, mime = media
+    if len(video_bytes) > 25 * 1024 * 1024:
+        await _wa_send(wa_id, "That video is too heavy for me to process — try one under 16MB (WhatsApp's own limit) or a shorter piece.")
+        return
+
+    tmp_dir = tempfile.mkdtemp(prefix="stew_wavid_")
+    vid_path = os.path.join(tmp_dir, "source.mp4")
+    with open(vid_path, "wb") as f:
+        f.write(video_bytes)
+
+    from server.video_editor import store_pending, is_edit_intent, is_read_intent, EDIT_MENU
+    store_pending(f"wa:{wa_id}", vid_path, label="video")
+
+    if caption and (is_edit_intent(caption) or is_read_intent(caption)):
+        allowed, used, limit, _ = await _wa_charge(db, user, "video")
+        if not allowed:
+            await _send_paywall(wa_id, user, used, limit)
+            return
+        await asyncio.create_task(_handle_video_edit(db, wa_id, vid_path, caption or "edit this video"))
+        return
+
+    await _wa_send(wa_id, EDIT_MENU)
+
+
+async def _handle_video_edit(db: AsyncSession, wa_id: str, vid_path: str, text: str):
+    """Run the requested edits and deliver the result. Runs as a background
+    task — never blocks the webhook ACK."""
+    try:
+        from server.video_editor import edit_video_file, is_read_intent
+        read = is_read_intent(text)
+
+        if read:
+            await _wa_typing(wa_id)
+            await _wa_send(wa_id, "🎬 *Watching your video* — extracting frames and audio…")
+            from server.main import _read_video
+            with open(vid_path, "rb") as f:
+                vbytes = f.read()
+            result = await _read_video(vbytes, "video.mp4", text)
+            reply = (result or {}).get("analysis") or "I couldn't extract enough from that video — try a clearer or longer clip."
+            await _wa_send(wa_id, reply)
+            return
+
+        from server.video_editor import parse_edit_request
+        ops = parse_edit_request(text)
+        summary = ", ".join(o["op"] for o in ops)
+        await _wa_typing(wa_id)
+        await _wa_send(wa_id, f"🎬 *Editing your video* ({summary}) — rendering now…")
+
+        tmp_dir = os.path.dirname(vid_path)
+
+        async def transcribe(audio_bytes: bytes):
+            from server.main import _transcribe_audio_bytes
+            return await _transcribe_audio_bytes(audio_bytes, "voice.ogg")
+
+        res = await edit_video_file(vid_path, text, tmp_dir, transcriber=transcribe, target_mb=14.0)
+        if not res.get("ok"):
+            await _wa_send(wa_id, f"❌ {res.get('error', 'Editing failed — try again.')}")
+            return
+
+        out, kind = res["output"], res.get("kind", "video")
+        done = "\n".join(f"✓ {a}" for a in res.get("applied", []))
+        size = res.get("size_mb")
+        extra = f"\n📦 {size}MB" if size else ""
+
+        if kind == "video":
+            media_id_out = await _wa_upload_media(out, "video/mp4")
+            ok = await _wa_send_media_msg(wa_id, "video", media_id=media_id_out,
+                                          caption=f"🎬 S.T.E.W edit\n{done}{extra}")
+        elif kind == "image":
+            media_id_out = await _wa_upload_media(out, "image/jpeg")
+            ok = await _wa_send_media_msg(wa_id, "image", media_id=media_id_out, caption=f"🎬 {done}")
+        elif kind == "audio":
+            media_id_out = await _wa_upload_media(out, "audio/mpeg")
+            ok = await _wa_send_media_msg(wa_id, "audio", media_id=media_id_out)
+            if not ok:
+                media_id_out = await _wa_upload_media(out, "audio/mpeg")
+                ok = await _wa_send_media_msg(wa_id, "document", media_id=media_id_out,
+                                              caption=f"🎵 {done}")
+        else:  # gif — Meta plays gifs best as video; send as document for quality
+            media_id_out = await _wa_upload_media(out, "image/gif")
+            ok = await _wa_send_media_msg(wa_id, "document", media_id=media_id_out, caption=f"🎞️ {done}")
+
+        if not ok:
+            await _wa_send(wa_id, f"I rendered the edit ({done}) but couldn't send the file — it may be too large. Try 'compress' or a shorter trim.")
+        else:
+            await _wa_send(wa_id, "Send another edit (it still applies to your original video) — or send a new video.")
+    except Exception as e:
+        logger.error(f"WA video edit failed: {e}", exc_info=True)
+        await _wa_send(wa_id, "❌ Something went wrong editing that video — try a simpler edit.")
+
