@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    String, Text, Integer, DateTime, Boolean, JSON,
+    String, Text, Integer, DateTime, Boolean, JSON, Float,
     ForeignKey, func, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -334,3 +334,21 @@ class SystemSetting(Base):
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class LocationPing(Base):
+    """A single location update from a user — either a one-off share (used by
+    /findme) or one ping of a live-location tracking session (used by /track).
+    session_id groups pings from the same live-location stream (Telegram keeps
+    the same message_id for all live updates of one share)."""
+    __tablename__ = "location_pings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    telegram_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    chat_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    is_live: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

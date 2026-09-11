@@ -294,6 +294,10 @@ class TelegramBot:
                 "is_callback": True,
                 "callback_data": callback.get("data", ""),
                 "callback_id": callback.get("id", ""),
+                "has_location": False,
+                "location_lat": None,
+                "location_lon": None,
+                "location_live_period": None,
             }
 
         msg = data.get("message") or data.get("edited_message")
@@ -309,6 +313,7 @@ class TelegramBot:
         has_video = "video" in msg and msg["video"]
         has_video_note = "video_note" in msg and msg["video_note"]
         has_animation = "animation" in msg and msg["animation"]
+        has_location = "location" in msg and msg["location"]
 
         # Determine file info
         file_id = None
@@ -359,6 +364,15 @@ class TelegramBot:
             file_type = "animation"
             file_size = anim.get("file_size", 0)
 
+        location_lat = None
+        location_lon = None
+        location_live_period = None
+        if has_location:
+            loc = msg["location"]
+            location_lat = loc.get("latitude")
+            location_lon = loc.get("longitude")
+            location_live_period = loc.get("live_period")
+
         return {
             "update_id": data.get("update_id"),
             "chat_id": msg["chat"]["id"],
@@ -383,4 +397,8 @@ class TelegramBot:
             "file_name": file_name,
             "file_type": file_type,
             "file_size": file_size,
+            "has_location": has_location,
+            "location_lat": location_lat,
+            "location_lon": location_lon,
+            "location_live_period": location_live_period,
         }

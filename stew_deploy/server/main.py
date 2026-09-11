@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTex
 from pydantic import BaseModel, EmailStr, field_validator
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from server.auth import (
     create_access_token, generate_api_key, get_current_user_jwt,
@@ -31,6 +31,7 @@ from server.config import get_settings
 from server.database import get_db, init_db
 from server.video_tools import clip_video, create_video, smart_clips, generate_ai_video, generate_ai_video_with_narration, generate_ai_video_multi_provider
 from server.webbuilder import build_motion_website, edit_motion_website, repair_truncated_html
+from server import mapengine
 from server.persistent_memory import (
     is_configured as supabase_configured,
     save_memory as supa_save_memory,
@@ -53,7 +54,7 @@ from server.memory import (
     store_user_memory, get_user_memories, search_user_memories, extract_and_store_memories,
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
-from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite, AccessPass, WebsiteVersion, WebsiteLead
+from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite, AccessPass, WebsiteVersion, WebsiteLead, LocationPing
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -5196,7 +5197,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # Everything else (song, book, meme, webbuild, documents, code, research,
     # finance tools, AI video, invoice) requires a paid plan (Student+).
     _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users",
-                          "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote",
+                          "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote", "/map", "/satmap", "/nearby", "/findme", "/track", "/trackmap", "/trackstatus", "/stoptrack",
                           "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news",
                           "/credits", "/topup", "/coins")
 
@@ -5524,7 +5525,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # (parse_update always sets text="" for those). Both are handled further
     # down; dropping them here silently ate every voice note before
     # transcription ever ran.
-    if not msg.get("text") and not msg.get("has_voice") and not msg.get("has_audio") and not msg.get("has_video") and not msg.get("has_video_note") and not msg.get("has_animation") and not msg.get("is_callback"):
+    if not msg.get("text") and not msg.get("has_voice") and not msg.get("has_audio") and not msg.get("has_video") and not msg.get("has_video_note") and not msg.get("has_animation") and not msg.get("has_location") and not msg.get("is_callback"):
         return {"ok": True}
 
     user_text = msg["text"]
@@ -5558,6 +5559,72 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "I'm experiencing high traffic. Please try again in a moment.")
                 return {"ok": True}
             await asyncio.sleep(0.5)
+
+    # ── REAL MAP ENGINE: incoming location share (one-off OR live tracking) ───
+    # Telegram sends message.location once when a user shares a single point,
+    # and re-sends the SAME message_id via edited_message repeatedly while a
+    # "Share Live Location" session is active. We use message_id as the
+    # session key so all pings of one live share group together.
+    if msg.get("has_location") and tg_user:
+        _loc_lat = msg["location_lat"]
+        _loc_lon = msg["location_lon"]
+        _loc_live = bool(msg.get("location_live_period"))
+        _loc_session = str(msg["message_id"])
+
+        _loc_prior = (await db.execute(
+            select(func.count(LocationPing.id)).where(LocationPing.session_id == _loc_session)
+        )).scalar() or 0
+
+        db.add(LocationPing(
+            telegram_user_id=str(tg_user.id), chat_id=str(chat_id),
+            session_id=_loc_session, lat=_loc_lat, lon=_loc_lon, is_live=_loc_live,
+        ))
+        await db.commit()
+
+        if _loc_live:
+            if _loc_prior == 0:
+                await bot.send_message(
+                    chat_id,
+                    "📍 Live tracking started! I'll log your position for as long as you keep sharing.\n\n"
+                    "/trackmap — see your path on a real map\n"
+                    "/trackstatus — your last known position + address\n"
+                    "/stoptrack — end this session",
+                )
+            # Subsequent live pings are logged silently — no message spam.
+            return {"ok": True}
+
+        # One-off share (paperclip -> Location -> Share My Current Location):
+        # treat it as a "I'm lost, help me" request — real address + real
+        # nearby help, rendered on a real map. No AI hallucination involved.
+        await bot.send_chat_action(chat_id, "upload_photo")
+        _loc_addr = await mapengine.reverse_geocode(_loc_lat, _loc_lon)
+        _loc_help = []
+        for _cat in ("hospital", "police", "fuel"):
+            _hits = await mapengine.nearby(_loc_lat, _loc_lon, _cat, limit=1)
+            if _hits:
+                _loc_help.append((_cat, _hits[0]))
+
+        _loc_caption_lines = ["📍 Here's exactly where you are:", ""]
+        _loc_caption_lines.append(_loc_addr or f"{_loc_lat:.5f}, {_loc_lon:.5f}")
+        if _loc_help:
+            _loc_caption_lines.append("")
+            _loc_caption_lines.append("Nearest help:")
+            _cat_labels = {"hospital": "Hospital", "police": "Police", "fuel": "Fuel station"}
+            for _cat, _hit in _loc_help:
+                _loc_caption_lines.append(f"{_cat_labels.get(_cat, _cat)}: {_hit['name']} ({_hit['distance_km']}km away)")
+        _loc_caption_lines.append("")
+        _loc_caption_lines.append("Need directions somewhere? /map <destination>\nWant me to keep tracking you? Share your Live Location instead.")
+
+        try:
+            _loc_markers = [(_loc_lat, _loc_lon, "#2563eb")]
+            for _cat, _hit in _loc_help:
+                _loc_markers.append((_hit["lat"], _hit["lon"], "#dc2626"))
+            _loc_img = mapengine.render_map(_loc_markers, zoom=15)
+            await bot.send_photo(chat_id, _loc_img, caption="\n".join(_loc_caption_lines)[:1024], filename="location.png")
+        except Exception as _loc_err:
+            logger.error(f"findme render error: {_loc_err}", exc_info=True)
+            await bot.send_message(chat_id, "\n".join(_loc_caption_lines))
+        return {"ok": True}
 
 
 
@@ -7787,6 +7854,255 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     await bot.send_message(chat_id, "Failed to generate QR code. Try again.")
         except Exception as e:
             await bot.send_message(chat_id, "Could not generate the QR code. Please try again.")
+        return {"ok": True}
+
+    # ── REAL MAP ENGINE — /map /satmap /nearby /findme /track /trackmap /trackstatus /stoptrack
+    # Free, open-source, no API keys: OpenStreetMap Nominatim (geocoding),
+    # OSRM (routing), Overpass (points of interest), real OSM/Esri satellite
+    # tiles for rendering. Replaces the old behavior where the chat LLM just
+    # hallucinated a fake generate_image tool-call when asked for a map.
+    if user_text.startswith("/map") or user_text.startswith("/satmap"):
+        _mp_is_sat = user_text.startswith("/satmap")
+        _mp_query = user_text.split(maxsplit=1)[1].strip() if len(user_text.split(maxsplit=1)) > 1 else ""
+        if not _mp_query:
+            await bot.send_message(
+                chat_id,
+                "🗺️ *Real Map Generator*\n\n"
+                "I draw REAL maps from OpenStreetMap — actual roads, actual distances, actual satellite imagery. Not AI-generated fakes.\n\n"
+                "*Usage:*\n"
+                "1. /map Enugu to Lagos — real driving route, distance + time\n"
+                "2. /map Eiffel Tower — a place, marked\n"
+                "3. /satmap Enugu — satellite view of anywhere\n"
+                "4. Add \"satellite\" to /map for satellite imagery: /map Lagos satellite\n\n"
+                "Also: /nearby hospital — find real help near your last shared location\n"
+                "/findme — instructions to share your exact location if you're lost\n"
+                "/track — start live location tracking",
+            )
+            return {"ok": True}
+
+        _mp_words = _mp_query.lower().split()
+        if _mp_words and _mp_words[-1] in ("satellite", "sat"):
+            _mp_is_sat = True
+            _mp_query = " ".join(_mp_query.split()[:-1])
+
+        await bot.send_chat_action(chat_id, "upload_photo")
+
+        if " to " in _mp_query.lower():
+            _mp_idx = _mp_query.lower().index(" to ")
+            _mp_origin_q = _mp_query[:_mp_idx].strip()
+            _mp_dest_q = _mp_query[_mp_idx + 4:].strip()
+            _mp_origin = await mapengine.geocode(_mp_origin_q)
+            _mp_dest = await mapengine.geocode(_mp_dest_q)
+            if not _mp_origin or not _mp_dest:
+                _mp_missing = _mp_origin_q if not _mp_origin else _mp_dest_q
+                await bot.send_message(chat_id, f"Couldn't find \"{_mp_missing}\" on the map. Try being more specific (add city/country).")
+                return {"ok": True}
+
+            _mp_route = await mapengine.route(_mp_origin, _mp_dest)
+            try:
+                if _mp_route:
+                    _mp_img = mapengine.render_map(
+                        markers=[(_mp_origin["lat"], _mp_origin["lon"], "#16a34a"), (_mp_dest["lat"], _mp_dest["lon"], "#dc2626")],
+                        route_geometry=_mp_route["geometry"], satellite=_mp_is_sat,
+                    )
+                    _mp_hrs = _mp_route["duration_min"] // 60
+                    _mp_mins = _mp_route["duration_min"] % 60
+                    _mp_dur_str = f"{_mp_hrs}h {_mp_mins}m" if _mp_hrs else f"{_mp_mins}m"
+                    _mp_caption = (
+                        f"🗺️ {_mp_origin_q.title()} → {_mp_dest_q.title()}\n\n"
+                        f"Distance: {_mp_route['distance_km']}km (real driving route)\n"
+                        f"Est. drive time: {_mp_dur_str}"
+                    )
+                else:
+                    _mp_straight_km = mapengine._haversine_km(_mp_origin["lat"], _mp_origin["lon"], _mp_dest["lat"], _mp_dest["lon"])
+                    _mp_img = mapengine.render_map(
+                        markers=[(_mp_origin["lat"], _mp_origin["lon"], "#16a34a"), (_mp_dest["lat"], _mp_dest["lon"], "#dc2626")],
+                        satellite=_mp_is_sat,
+                    )
+                    _mp_caption = (
+                        f"🗺️ {_mp_origin_q.title()} → {_mp_dest_q.title()}\n\n"
+                        f"No drivable road route found (may be overseas or unmapped).\n"
+                        f"Straight-line distance: {round(_mp_straight_km)}km"
+                    )
+                await bot.send_photo(chat_id, _mp_img, caption=_mp_caption[:1024], filename="map.png")
+            except Exception as _mp_err:
+                logger.error(f"/map route render error: {_mp_err}", exc_info=True)
+                await bot.send_message(chat_id, "Found the route but couldn't render the map image. Try again shortly.")
+        else:
+            _mp_place = await mapengine.geocode(_mp_query)
+            if not _mp_place:
+                await bot.send_message(chat_id, f"Couldn't find \"{_mp_query}\" on the map. Try adding a city or country.")
+                return {"ok": True}
+            try:
+                _mp_img = mapengine.render_map(markers=[(_mp_place["lat"], _mp_place["lon"], "#dc2626")], satellite=_mp_is_sat, zoom=14)
+                await bot.send_photo(chat_id, _mp_img, caption=f"🗺️ {_mp_place['display_name'][:200]}"[:1024], filename="map.png")
+            except Exception as _mp_err:
+                logger.error(f"/map place render error: {_mp_err}", exc_info=True)
+                await bot.send_message(chat_id, "Found the place but couldn't render the map image. Try again shortly.")
+        asyncio.create_task(_log_call(db, tg_user.id, "/telegram/map", "POST", 0, 200))
+        return {"ok": True}
+
+    if user_text.startswith("/nearby"):
+        _nb_arg = user_text[7:].strip()
+        if not _nb_arg:
+            await bot.send_message(
+                chat_id,
+                "📍 *Find What's Nearby*\n\n"
+                "1. /nearby hospital — near your last shared location\n"
+                "2. /nearby pharmacy in Enugu — near any place by name\n\n"
+                "Categories: hospital, pharmacy, police, fuel, atm, bank, restaurant, hotel, bus_station, toilet\n\n"
+                "Haven't shared your location yet? Tap the 📎 icon → Location → Share My Current Location, or use /findme.",
+            )
+            return {"ok": True}
+
+        _nb_place_q = None
+        _nb_cat_raw = _nb_arg
+        if " in " in _nb_arg.lower():
+            _nb_idx = _nb_arg.lower().index(" in ")
+            _nb_cat_raw = _nb_arg[:_nb_idx].strip()
+            _nb_place_q = _nb_arg[_nb_idx + 4:].strip()
+        elif " near " in _nb_arg.lower():
+            _nb_idx = _nb_arg.lower().index(" near ")
+            _nb_cat_raw = _nb_arg[:_nb_idx].strip()
+            _nb_place_q = _nb_arg[_nb_idx + 6:].strip()
+
+        _nb_synonyms = {
+            "hospitals": "hospital", "clinic": "hospital", "clinics": "hospital",
+            "pharmacies": "pharmacy", "chemist": "pharmacy", "drugstore": "pharmacy",
+            "police station": "police", "police stations": "police",
+            "gas": "fuel", "gas station": "fuel", "petrol": "fuel", "petrol station": "fuel",
+            "atms": "atm", "banks": "bank", "food": "restaurant", "restaurants": "restaurant",
+            "hotels": "hotel", "lodge": "hotel", "toilets": "toilet", "restroom": "toilet",
+            "bus stop": "bus_station", "bus": "bus_station",
+        }
+        _nb_cat = _nb_synonyms.get(_nb_cat_raw.lower(), _nb_cat_raw.lower())
+        if _nb_cat not in mapengine.NEARBY_CATEGORIES:
+            await bot.send_message(chat_id, f"I don't recognize \"{_nb_cat_raw}\". Try: hospital, pharmacy, police, fuel, atm, bank, restaurant, hotel, bus_station, toilet.")
+            return {"ok": True}
+
+        if _nb_place_q:
+            _nb_origin = await mapengine.geocode(_nb_place_q)
+            if not _nb_origin:
+                await bot.send_message(chat_id, f"Couldn't find \"{_nb_place_q}\".")
+                return {"ok": True}
+            _nb_lat, _nb_lon = _nb_origin["lat"], _nb_origin["lon"]
+        else:
+            _nb_last = (await db.execute(
+                select(LocationPing).where(LocationPing.telegram_user_id == str(tg_user.id))
+                .order_by(LocationPing.created_at.desc()).limit(1)
+            )).scalars().first()
+            if not _nb_last:
+                await bot.send_message(chat_id, "You haven't shared your location yet. Tap 📎 → Location → Share My Current Location, then try /nearby again — or use /nearby <category> in <place>.")
+                return {"ok": True}
+            _nb_lat, _nb_lon = _nb_last.lat, _nb_last.lon
+
+        await bot.send_chat_action(chat_id, "upload_photo")
+        _nb_results = await mapengine.nearby(_nb_lat, _nb_lon, _nb_cat)
+        if not _nb_results:
+            await bot.send_message(chat_id, f"Couldn't find any {_nb_cat} nearby in OpenStreetMap's data for that area. Try a wider search: /nearby {_nb_cat} in <bigger city>.")
+            return {"ok": True}
+
+        _nb_lines = [f"📍 Nearest {_nb_cat.replace('_', ' ')}:", ""]
+        for _i, _r in enumerate(_nb_results, 1):
+            _nb_lines.append(f"{_i}. {_r['name']} — {_r['distance_km']}km away")
+        try:
+            _nb_markers = [(_nb_lat, _nb_lon, "#2563eb")] + [(_r["lat"], _r["lon"], "#dc2626") for _r in _nb_results]
+            _nb_img = mapengine.render_map(_nb_markers, zoom=13)
+            await bot.send_photo(chat_id, _nb_img, caption="\n".join(_nb_lines)[:1024], filename="nearby.png")
+        except Exception as _nb_err:
+            logger.error(f"/nearby render error: {_nb_err}", exc_info=True)
+            await bot.send_message(chat_id, "\n".join(_nb_lines))
+        return {"ok": True}
+
+    if user_text.startswith("/findme"):
+        await bot.send_message(
+            chat_id,
+            "📍 *Share Your Location*\n\n"
+            "Tap the 📎 paperclip icon below → Location → Share My Current Location.\n\n"
+            "I'll instantly tell you your exact address, plus the nearest hospital, police station, and fuel station — real data, real map.\n\n"
+            "Lost and need to keep me updated as you move? Choose \"Share My Live Location\" instead, then use /trackmap anytime.",
+        )
+        return {"ok": True}
+
+    if user_text.startswith("/track") and not user_text.startswith("/trackmap") and not user_text.startswith("/trackstatus"):
+        await bot.send_message(
+            chat_id,
+            "📍 *Live Location Tracking*\n\n"
+            "Tap the 📎 paperclip icon → Location → Share My Live Location → pick a duration (15 min, 1 hour, or 8 hours).\n\n"
+            "I'll log your path in real time. Then:\n"
+            "/trackmap — see your path on a real map\n"
+            "/trackstatus — last known position + address\n"
+            "/stoptrack — end the session\n\n"
+            "Great for letting family know where you are on a trip, or if you're ever unsure of your surroundings.",
+        )
+        return {"ok": True}
+
+    if user_text.startswith("/trackmap"):
+        _tm_last = (await db.execute(
+            select(LocationPing).where(LocationPing.telegram_user_id == str(tg_user.id))
+            .order_by(LocationPing.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _tm_last:
+            await bot.send_message(chat_id, "No tracking data yet. Start with /track and share your Live Location.")
+            return {"ok": True}
+        _tm_pings = (await db.execute(
+            select(LocationPing).where(LocationPing.session_id == _tm_last.session_id)
+            .order_by(LocationPing.created_at.asc())
+        )).scalars().all()
+        _tm_geometry = [(p.lat, p.lon) for p in _tm_pings]
+        await bot.send_chat_action(chat_id, "upload_photo")
+        try:
+            _tm_markers = [(_tm_geometry[0][0], _tm_geometry[0][1], "#16a34a"), (_tm_geometry[-1][0], _tm_geometry[-1][1], "#dc2626")]
+            _tm_img = mapengine.render_map(_tm_markers, route_geometry=_tm_geometry if len(_tm_geometry) > 1 else None)
+            _tm_caption = f"📍 Tracked path — {len(_tm_pings)} point(s) logged" + (" (still live)" if _tm_last.is_live else "")
+            await bot.send_photo(chat_id, _tm_img, caption=_tm_caption[:1024], filename="track.png")
+        except Exception as _tm_err:
+            logger.error(f"/trackmap render error: {_tm_err}", exc_info=True)
+            await bot.send_message(chat_id, "Couldn't render the tracking map. Try again shortly.")
+        return {"ok": True}
+
+    if user_text.startswith("/trackstatus"):
+        _ts_last = (await db.execute(
+            select(LocationPing).where(LocationPing.telegram_user_id == str(tg_user.id))
+            .order_by(LocationPing.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _ts_last:
+            await bot.send_message(chat_id, "No tracking data yet. Start with /track and share your Live Location.")
+            return {"ok": True}
+        _ts_count = (await db.execute(
+            select(func.count(LocationPing.id)).where(LocationPing.session_id == _ts_last.session_id)
+        )).scalar() or 0
+        _ts_addr = await mapengine.reverse_geocode(_ts_last.lat, _ts_last.lon)
+        _ts_ago = datetime.utcnow() - _ts_last.created_at if _ts_last.created_at else None
+        _ts_ago_str = f"{int(_ts_ago.total_seconds() // 60)} min ago" if _ts_ago else "just now"
+        await bot.send_message(
+            chat_id,
+            f"📍 Last known position ({_ts_ago_str}):\n\n"
+            f"{_ts_addr or f'{_ts_last.lat:.5f}, {_ts_last.lon:.5f}'}\n\n"
+            f"Points logged this session: {_ts_count}\n"
+            f"Status: {'still live' if _ts_last.is_live else 'ended'}\n\n"
+            f"/trackmap to see the path on a map.",
+        )
+        return {"ok": True}
+
+    if user_text.startswith("/stoptrack"):
+        _st_last = (await db.execute(
+            select(LocationPing).where(LocationPing.telegram_user_id == str(tg_user.id))
+            .order_by(LocationPing.created_at.desc()).limit(1)
+        )).scalars().first()
+        if not _st_last:
+            await bot.send_message(chat_id, "You don't have an active tracking session.")
+            return {"ok": True}
+        await db.execute(
+            update(LocationPing).where(LocationPing.session_id == _st_last.session_id).values(active=False)
+        )
+        await db.commit()
+        await bot.send_message(
+            chat_id,
+            "📍 Tracking session ended on my side.\n\n"
+            "Note: if you're still sharing Live Location on Telegram, stop it from your phone too (tap the live location bar → Stop).\n\n"
+            "/trackmap still works to review where you went.",
+        )
         return {"ok": True}
 
     # ── /math COMMAND (Quick Math) ──────────────────────────────────────────────
