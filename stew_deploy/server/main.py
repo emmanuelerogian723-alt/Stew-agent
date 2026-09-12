@@ -1302,6 +1302,22 @@ async def ai_manifest():
     })
 
 
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def assetlinks():
+    """Digital Asset Links — verifies the StewAgent.apk TWA (com.mutyint.stewagent)
+    against this domain so Chrome opens it full-screen without the address bar."""
+    return [{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.mutyint.stewagent",
+            "sha256_cert_fingerprints": [
+                "1C:0A:F1:69:3F:2E:03:E1:52:DF:11:08:AD:9A:6A:6C:06:0F:1D:76:3A:B1:1E:E9:D5:DA:98:63:06:A5:04:70"
+            ],
+        },
+    }]
+
+
 @app.get("/.well-known/security.txt", include_in_schema=False)
 async def security_txt():
     """Security contact information."""
