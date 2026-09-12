@@ -361,6 +361,28 @@ header{
 const API = location.origin;
 const DEFAULT_KEY = "stew_O9X6d0rXTR3OGcQEJ1F3XXgFKLAuxEYNwytqo0mdmLFE2sXBQC0chbjP8b2";
 let KEY = localStorage.getItem("stew_key") || DEFAULT_KEY;
+async function ensureKey(){
+  if (KEY && KEY !== DEFAULT_KEY) return KEY;
+  try{
+    let email = localStorage.getItem("stew_device_email");
+    if (!email){
+      const rid = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "").slice(0, 14) : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+      email = "stewapp-" + rid + "@stewdevice.app";
+      localStorage.setItem("stew_device_email", email);
+    }
+    await fetch(API + "/auth/register", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: "Stew App User", email})}).catch(()=>{});
+    const kr = await fetch(API + "/auth/generate-key", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email})});
+    const kd = await kr.json().catch(()=>({}));
+    if (kr.ok && kd.api_key){
+      KEY = kd.api_key;
+      localStorage.setItem("stew_key", KEY);
+      return KEY;
+    }
+  }catch(_){}
+  return KEY;
+}
 let PERSONA = localStorage.getItem("stew_persona") || "General Assistant";
 let AUTO_SPEAK = localStorage.getItem("stew_autospeak") === "1";
 let TOOLS = {web:false, img:false, mission:false, research:false, webbuild:false, fusion:false};
@@ -656,11 +678,12 @@ async function runResearch(query){
   bubble.innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>&nbsp;🔎 Searching multiple sources & synthesizing a report…`;
   ABORT = new AbortController();
   try{
+    await ensureKey();
     const r = await fetch(API + "/research", {method:"POST",
       headers:{"Content-Type":"application/json", "X-API-Key": KEY},
       body: JSON.stringify({query, depth: 3}), signal: ABORT.signal});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || "Research failed");
+    if (!r.ok) throw new Error(String(d.detail || "Research failed").includes("API key") ? "Free key busy — add your own Stew key in Settings for full power" : d.detail || "Research failed");
     let html = md(d.report || "No report returned.");
     if (d.sources && d.sources.length){
       html += `<div class="mdh">📚 Sources</div><ol class="srcol">` +
@@ -690,6 +713,7 @@ async function runWebbuild(desc){
   bubble.innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>&nbsp;🏗️ Designing your website with motion, photos & SEO…`;
   ABORT = new AbortController();
   try{
+    await ensureKey();
     const r = await fetch(API + "/generate/webbuild", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({description: desc, api_key: KEY}), signal: ABORT.signal});
@@ -1091,6 +1115,7 @@ function copyMsg(btn){
 }
 async function showUsage(){
   const body = $("sh-body");
+  await ensureKey();
   body.innerHTML = `<div style="padding:30px 10px;text-align:center;color:var(--mut);font-size:13px">⏳ Loading usage…</div>`;
   try{
     const r = await fetch(API + "/usage?api_key=" + encodeURIComponent(KEY));
