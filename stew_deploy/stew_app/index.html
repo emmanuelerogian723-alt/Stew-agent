@@ -350,7 +350,8 @@ async function boot(){
       fetch(API + "/personas").then(r => r.json()),
       fetch(API + "/skills").then(r => r.json())
     ]);
-    PERSONAS = (Array.isArray(p) ? p : p.personas || []).map(x => typeof x === "string" ? {name:x, desc:""} : x);
+    PERSONAS = (Array.isArray(p) ? p : p.personas || []).map(x =>
+      typeof x === "string" ? {name:x, desc:"", icon:"🎭"} : {name: x.label || x.name || x.id || "Assistant", desc: x.desc || "", icon: x.icon || "🎭", id: x.id});
     SKILLS = Array.isArray(s) ? s : s.skills || [];
   }catch(e){}
   $("h-persona").textContent = "🤖 " + PERSONA;
@@ -585,11 +586,11 @@ async function runImage(prompt){
   const el = pushMsg("stew", [{type:"text", text:""}]);
   el.querySelector(".bubble").innerHTML = `🎨 Painting “${esc(prompt)}”…<span class="thinking"><i></i><i></i><i></i></span>`;
   try{
-    const r = await fetch(API + "/generate-image", {method:"POST", headers:{"Content-Type":"application/json"},
+    const r = await fetch(API + "/generate/image", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({prompt, width:1024, height:1024, api_key: KEY})});
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || "Generation failed");
-    const src = d.image_url || (d.base64 ? "data:image/png;base64," + d.base64 : null);
+    const src = d.image_data || d.image_url || (d.base64 ? "data:image/png;base64," + d.base64 : null);
     if (!src) throw new Error("No image returned");
     el.querySelector(".bubble").innerHTML = `<img src="${src}" alt="${esc(prompt)}"><b>✨ ${esc(prompt)}</b>`;
     CHAT.push({role:"assistant", parts:[{type:"text", text:"🎨 Image generated: " + prompt}]});
@@ -799,7 +800,7 @@ function openSheet(kind){
     $("sh-title").textContent = "Personas";
     body.innerHTML = (PERSONAS.length ? PERSONAS : [{name:"General Assistant", desc:"Brilliant all-round helper"}]).map(p => `
       <div class="p-row ${p.name === PERSONA ? "sel" : ""}" onclick="setPersona('${esc(p.name)}')">
-        <div class="ico">🎭</div>
+        <div class="ico">${esc(p.icon || "🎭")}</div>
         <div><b>${esc(p.name)}</b><small>${esc(p.desc || "")}</small></div>
         ${p.name === PERSONA ? "<span class='ck'>✓</span>" : ""}
       </div>`).join("");
