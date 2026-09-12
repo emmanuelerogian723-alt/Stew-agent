@@ -901,7 +901,14 @@ let tx = null;
 document.addEventListener("touchstart", e => { if (e.touches[0].clientX < 28) tx = e.touches[0].clientX; }, {passive:true});
 document.addEventListener("touchmove", e => { if (tx !== null && e.touches[0].clientX - tx > 60){ toggleDrawer(true); tx = null; } }, {passive:true});
 document.addEventListener("touchend", () => { tx = null; }, {passive:true});
-window.addEventListener("load", () => { if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {}); });
+window.addEventListener("load", () => {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "SW_UPDATED" && !reloaded) { reloaded = true; location.reload(); }
+  });
+});
 </script>
 </body>
 </html>
