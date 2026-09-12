@@ -1,0 +1,22 @@
+{
+  "name": "Stew Agent — AI Superpowers",
+  "short_name": "Stew",
+  "description": "S.T.E.W (Smart Thinking Executive Worker) — your personal AI superpowers app. 12 personas, 63 skills, image generation, web search, MCP integrations. Built for Africa.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0b1a",
+  "theme_color": "#6C3EF5",
+  "lang": "en",
+  "categories": ["productivity", "utilities", "education"],
+  "icons": [
+    { "src": "/app/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New Chat", "url": "/app/?tab=chat", "icons": [{"src": "/app/icons/icon-192.png", "sizes": "192x192"}] },
+    { "name": "Image Studio", "url": "/app/?tab=powers", "icons": [{"src": "/app/icons/icon-192.png", "sizes": "192x192"}] }
+  ]
+}

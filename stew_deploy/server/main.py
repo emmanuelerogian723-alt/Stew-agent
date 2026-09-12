@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, EmailStr, field_validator
 import asyncio
+import time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 
@@ -404,6 +405,89 @@ async def db_diagnostic(token: str):
 
 # Register admin API routes
 app.include_router(admin_router)
+# ── STEW MOBILE APP (PWA) — static files + async agent-mission engine ──────
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+import os as _os_app
+_APP_DIR = _os_app.path.join(_os_app.path.dirname(_os_app.path.dirname(_os_app.path.abspath(__file__))), "stew_app")
+if _os_app.path.isdir(_APP_DIR):
+    app.mount("/app", _StaticFiles(directory=_APP_DIR, html=True), name="stew_app")
+
+# Async agent-mission jobs (in-memory, single-worker) for the mobile app.
+_AGENT_JOBS: dict = {}
+_AGENT_JOBS_LOCK = asyncio.Lock()
+
+@app.post("/agent/run")
+async def agent_run_endpoint(body: dict, db: AsyncSession = Depends(get_db)):
+    """Launch an autonomous agent mission (multi-tool: web search, code, docs,
+    images, websites) — returns a job_id immediately; poll /agent/status.
+    The async version of the Telegram /agent command, built for the Stew app."""
+    goal = (body.get("goal") or "").strip()
+    api_key = (body.get("api_key") or "").strip()
+    if not goal:
+        raise HTTPException(status_code=400, detail="Provide a 'goal'")
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    job_id = str(__import__("uuid").uuid4())
+    job = {
+        "id": job_id, "status": "running", "stage": "starting",
+        "goal": goal[:500], "created": time.time(),
+        "response": "", "files": [], "tools_used": [], "error": None,
+    }
+    async with _AGENT_JOBS_LOCK:
+        _AGENT_JOBS[job_id] = job
+        # prune old jobs (keep newest 200)
+        if len(_AGENT_JOBS) > 200:
+            for k in sorted(_AGENT_JOBS, key=lambda j: _AGENT_JOBS[j]["created"])[:-200]:
+                _AGENT_JOBS.pop(k, None)
+
+    def _cb(evt: dict):
+        job["stage"] = evt.get("stage", "working")
+        job["tools_used"] = evt.get("tools_used", job["tools_used"])
+
+    async def _run_mission():
+        try:
+            from server.tool_agent import run_agent_loop
+            result = await run_agent_loop(
+                goal, max_iterations=12, tg_user_id=str(user.id) if hasattr(user, "id") else None,
+                progress_cb=_cb,
+            )
+            job["stage"] = "finishing"
+            job["response"] = result.get("response", "")
+            files = []
+            for f in result.get("files", []):
+                files.append({
+                    "filename": f.get("filename", "stew_file"),
+                    "doc_type": f.get("doc_type", "pdf"),
+                    "base64": f["base64"],
+                })
+            for fig in result.get("figures", []):
+                files.append({"filename": "stew_image.png", "doc_type": "image", "base64": fig["base64"]})
+            job["files"] = files
+            job["status"] = "done"
+            job["stage"] = "done"
+        except Exception as e:
+            logger.error(f"agent mission error: {e}", exc_info=True)
+            job["status"] = "error"
+            job["error"] = str(e)[:300]
+
+    asyncio.create_task(_run_mission())
+    return {"job_id": job_id, "status": "running"}
+
+@app.get("/agent/status/{job_id}")
+async def agent_status_endpoint(job_id: str, api_key: str = "", db: AsyncSession = Depends(get_db)):
+    """Poll a mission. Returns stage, response, tools used and deliverables."""
+    user = await _safe_get_user(api_key, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    job = _AGENT_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown or expired job")
+    slim = {k: v for k, v in job.items() if k != "goal"}
+    slim["elapsed_s"] = round(time.time() - job["created"], 1)
+    return slim
+
 app.include_router(openai_router)
 app.include_router(whatsapp_router)
 

@@ -691,6 +691,7 @@ async def run_agent_loop(
     chat_id: int = None,
     max_iterations: int = 5,
     tg_user_id=None,
+    progress_cb=None,
 ) -> dict:
     """
     Run the agentic tool-calling loop.
@@ -715,6 +716,12 @@ async def run_agent_loop(
     tools_used = set()  # Track tools already called to prevent loops
 
     for iteration in range(max_iterations):
+        if progress_cb:
+            try:
+                progress_cb({"stage": "thinking", "iteration": iteration + 1,
+                             "tools_used": sorted(tools_used)})
+            except Exception:
+                pass
         # Get LLM response
         result = await asyncio.to_thread(llm.chat, messages)
         raw_content = result["content"]
@@ -788,6 +795,13 @@ async def run_agent_loop(
                 await bot.send_chat_action(chat_id, "typing")
 
             tool_result = await execute_tool(call, bot, chat_id, tg_user_id)
+            if progress_cb:
+                try:
+                    progress_cb({"stage": "executing", "tool": call.get("tool", "?"),
+                                 "iteration": iteration + 1,
+                                 "tools_used": sorted(tools_used | {call.get("tool", "?")})})
+                except Exception:
+                    pass
             tool_history.append({
                 "call": call,
                 "result": {k: v for k, v in tool_result.items() if k != "file_base64"},
