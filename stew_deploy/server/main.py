@@ -410,7 +410,9 @@ from fastapi.staticfiles import StaticFiles as _StaticFiles
 import os as _os_app
 _APP_DIR = _os_app.path.join(_os_app.path.dirname(_os_app.path.dirname(_os_app.path.abspath(__file__))), "stew_app")
 if _os_app.path.isdir(_APP_DIR):
-    app.mount("/app", _StaticFiles(directory=_APP_DIR, html=True), name="stew_app")
+    import mimetypes as _mimetypes
+_mimetypes.add_type("application/vnd.android.package-archive", ".apk")
+app.mount("/app", _StaticFiles(directory=_APP_DIR, html=True), name="stew_app")
 
 # Async agent-mission jobs (in-memory, single-worker) for the mobile app.
 _AGENT_JOBS: dict = {}
