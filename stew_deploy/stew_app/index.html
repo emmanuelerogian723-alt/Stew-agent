@@ -3,526 +3,535 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#6C3EF5">
+<meta name="theme-color" content="#0d0b1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Stew">
-<link rel="manifest" href="/app/manifest.webmanifest">
-<link rel="icon" href="/app/icons/icon-192.png">
-<link rel="apple-touch-icon" href="/app/icons/icon-192.png">
-<title>Stew Agent — AI Superpowers</title>
+<title>Stew — AI Superpowers</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
 <style>
 :root{
-  --purple:#6C3EF5; --purple-d:#4b21c9; --orange:#FF8C42; --pink:#FF4E8E;
-  --bg:#0d0b1a; --bg2:#161230; --card:#1d1a3a; --card2:#252052;
-  --txt:#f2f0ff; --mut:#a49fd0; --grad:linear-gradient(135deg,#6C3EF5 0%,#FF8C42 100%);
-  --grad2:linear-gradient(135deg,#FF4E8E 0%,#FF8C42 100%);
-  --ok:#2fe08a; --err:#ff5c7a;
-  --safe-b: env(safe-area-inset-bottom,0px);
+  --bg:#0d0b1a; --bg2:#141126; --card:#1a1730; --card2:#211d3d;
+  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+  --text:#f2f0fb; --mut:#9b95b8;
+  --vio:#7c5cff; --org:#ff8c42; --grad:linear-gradient(135deg,#7c5cff,#ff8c42);
+  --ok:#34d399;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overscroll-behavior:none}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);overflow:hidden}
-button{font-family:inherit;cursor:pointer;border:none}
-input,textarea{font-family:inherit}
-::-webkit-scrollbar{width:0px}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,sans-serif;
+  background:var(--bg);color:var(--text);
+  display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(50% 30% at 15% 0%,rgba(124,92,255,.18),transparent 70%),
+             radial-gradient(50% 30% at 90% 100%,rgba(255,140,66,.12),transparent 70%);}
+input,textarea,button{font:inherit;color:inherit;border:none;background:none;outline:none}
+button{cursor:pointer}
+img{display:block}
+::-webkit-scrollbar{width:0;height:0}
 
-/* ── BOOT SPLASH ─────────────────────────── */
-#splash{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;transition:opacity .5s,visibility .5s}
-#splash.gone{opacity:0;visibility:hidden}
-#splash .logo{width:120px;height:120px;border-radius:30px;animation:splashPop 1s cubic-bezier(.34,1.56,.64,1) both, bob 2.4s ease-in-out 1s infinite}
-@keyframes splashPop{0%{transform:scale(0) rotate(-30deg)}100%{transform:scale(1) rotate(0)}}
-@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-#splash h1{margin-top:24px;font-size:28px;font-weight:800;letter-spacing:-.5px}
-#splash h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-#splash p{color:var(--mut);margin-top:8px;font-size:14px}
-.loadbar{width:180px;height:5px;border-radius:3px;background:var(--card);margin-top:28px;overflow:hidden}
-.loadbar i{display:block;height:100%;width:40%;border-radius:3px;background:var(--grad);animation:slide 1.1s ease-in-out infinite}
-@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(450%)}}
+/* ── animations ─────────────────────────── */
+@keyframes pop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes slideL{from{transform:translateX(-100%)}to{transform:none}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,86,86,.45)}50%{box-shadow:0 0 0 14px rgba(245,86,86,0)}}
+@keyframes blink{50%{opacity:.15}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes bar{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+@keyframes toastIn{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:none}}
 
-/* ── ONBOARDING ──────────────────────────── */
-#onboard{position:fixed;inset:0;background:var(--bg);z-index:90;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;transition:opacity .5s,visibility .5s}
-#onboard.gone{opacity:0;visibility:hidden}
-.onb-card{width:100%;max-width:380px;text-align:center}
-.onb-card .logo{width:88px;height:88px;border-radius:24px;margin-bottom:20px}
-.onb-card h2{font-size:24px;font-weight:800}
-.onb-card .sub{color:var(--mut);font-size:14px;margin:8px 0 28px;line-height:1.5}
-.field{width:100%;background:var(--card);border:1.5px solid #322b66;border-radius:16px;padding:15px 16px;color:var(--txt);font-size:15px;margin-bottom:14px;outline:none;transition:border .2s}
-.field:focus{border-color:var(--purple)}
-.field::placeholder{color:#6b64a3}
-.btn-grad{width:100%;background:var(--grad);color:#fff;font-size:16px;font-weight:700;padding:16px;border-radius:16px;box-shadow:0 8px 24px rgba(108,62,245,.4);transition:transform .15s}
-.btn-grad:active{transform:scale(.96)}
-.onb-note{color:var(--mut);font-size:12px;margin-top:16px;line-height:1.6}
-.onb-note a{color:var(--orange)}
-.chiprow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:24px}
-.chiprow .demo{background:var(--card2);color:var(--txt);border:1px dashed #4a3f9e;border-radius:99px;padding:8px 14px;font-size:12px}
+/* ── header ─────────────────────────────── */
+header{
+  position:sticky;top:0;z-index:30;padding:calc(var(--safe-t) + 10px) 14px 10px;
+  display:flex;align-items:center;gap:10px;
+  background:rgba(13,11,26,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.ico-btn{
+  width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:17px;color:var(--mut);transition:transform .15s,background .2s;flex:none;
+}
+.ico-btn:active{transform:scale(.86);background:rgba(255,255,255,.09)}
+.h-title{flex:1;min-width:0;text-align:center;cursor:pointer}
+.h-title b{font-size:15px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-title span{font-size:11px;color:var(--mut)}
+.h-title:active{opacity:.7}
+.speak-on{color:var(--org) !important}
 
-/* ── APP SHELL ────────────────────────────── */
-#app{display:none;height:100%;flex-direction:column}
-#app.on{display:flex}
-header{padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 10px;display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,#1a1440 0%,rgba(13,11,26,0) 100%);z-index:5}
-header .h-logo{width:38px;height:38px;border-radius:12px;box-shadow:0 4px 12px rgba(108,62,245,.35)}
-header .h-txt{flex:1;min-width:0}
-header .h-txt b{display:block;font-size:16px;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-header .h-txt span{font-size:11px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-.icon-btn{width:38px;height:38px;border-radius:12px;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:17px;position:relative;flex-shrink:0}
-.icon-btn.pulse::after{content:"";position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--ok);animation:blink 1.4s infinite}
-@keyframes blink{50%{opacity:.25}}
+/* ── drawer ──────────────────────────────── */
+#scrim{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .28s}
+#scrim.on{opacity:1;pointer-events:auto}
+#drawer{
+  position:fixed;top:0;left:0;bottom:0;z-index:50;width:82%;max-width:320px;
+  background:var(--bg2);border-right:1px solid var(--line);
+  transform:translateX(-100%);transition:transform .3s cubic-bezier(.32,.72,.28,1);
+  display:flex;flex-direction:column;padding:calc(var(--safe-t) + 14px) 14px 14px;
+}
+#drawer.on{transform:none}
+.d-brand{display:flex;align-items:center;gap:10px;padding:4px 4px 14px}
+.d-brand .logo{width:38px;height:38px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}
+.d-brand b{font-size:16px}
+.d-brand span{font-size:11px;color:var(--mut);display:block}
+.new-btn{
+  width:100%;padding:12px;border-radius:14px;background:var(--grad);font-weight:700;font-size:14px;
+  color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:transform .15s;box-shadow:0 6px 22px -8px rgba(124,92,255,.55);
+}
+.new-btn:active{transform:scale(.96)}
+.d-search{
+  margin:12px 0 8px;display:flex;align-items:center;gap:8px;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:9px 12px;color:var(--mut);font-size:13px;
+}
+.d-search input{flex:1;color:var(--text);font-size:13px}
+.d-label{font-size:10.5px;letter-spacing:.14em;color:var(--mut);font-weight:700;padding:10px 4px 6px}
+#chatlist{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.chat-item{
+  display:flex;align-items:center;gap:9px;padding:10px;border-radius:12px;margin-bottom:2px;
+  font-size:13.5px;color:var(--text);animation:pop .25s both;cursor:pointer;transition:background .15s;
+}
+.chat-item:active,.chat-item.sel{background:var(--card2)}
+.chat-item .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-item .x{color:var(--mut);font-size:13px;padding:4px 6px;border-radius:8px}
+.chat-item .x:active{color:#f87171}
+.d-foot{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:2px}
+.d-row{display:flex;align-items:center;gap:11px;padding:10px;border-radius:12px;font-size:13.5px;color:var(--text);text-decoration:none;transition:background .15s}
+.d-row:active{background:var(--card2)}
+.d-row i{font-style:normal;font-size:16px;width:22px;text-align:center}
+.d-row small{margin-left:auto;color:var(--mut);font-size:10.5px}
 
-main{flex:1;overflow:hidden;position:relative}
-.tab{position:absolute;inset:0;overflow-y:auto;padding:14px 16px calc(90px + var(--safe-b));display:none;-webkit-overflow-scrolling:touch}
-.tab.on{display:block;animation:fadeUp .25s ease}
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+/* ── chat area ──────────────────────────── */
+#chatwrap{flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column}
+#chat{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:14px 14px 4px;scroll-behavior:smooth}
+.welcome{margin:auto;text-align:center;padding:20px 10px;animation:pop .5s}
+.welcome .face{width:92px;height:92px;margin:0 auto 16px;border-radius:26px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:46px;box-shadow:0 18px 50px -12px rgba(124,92,255,.6);animation:pop .55s both}
+.welcome h2{font-size:21px;margin-bottom:7px}
+.welcome p{color:var(--mut);font-size:13px;line-height:1.5;max-width:300px;margin:0 auto}
+.sugg{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:22px;padding:0 6px}
+.sugg button{
+  background:var(--card);border:1px solid var(--line);border-radius:15px;padding:12px 10px;
+  font-size:12.5px;color:var(--text);text-align:left;line-height:1.35;
+  transition:transform .15s,border-color .2s;animation:pop .45s both;
+}
+.sugg button:nth-child(2){animation-delay:.06s}.sugg button:nth-child(3){animation-delay:.12s}.sugg button:nth-child(4){animation-delay:.18s}
+.sugg button:active{transform:scale(.95);border-color:var(--vio)}
 
-nav{position:absolute;bottom:0;left:0;right:0;display:flex;background:rgba(22,18,48,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid #2c2560;padding:8px 6px calc(8px + var(--safe-b));z-index:6}
-nav button{flex:1;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:#6f68a8;font-size:10px;font-weight:600;padding:6px 0;border-radius:14px;transition:color .2s,transform .15s}
-nav button i{font-style:normal;font-size:21px;line-height:1}
-nav button.on{color:var(--txt)}
-nav button.on i{transform:scale(1.18)}
-nav button:active{transform:scale(.92)}
-
-/* ── CHAT ─────────────────────────────────── */
-.persona-scroll{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
-.persona-pill{flex-shrink:0;background:var(--card);border:1.5px solid transparent;border-radius:99px;padding:8px 14px;font-size:12.5px;font-weight:600;color:var(--mut);display:flex;align-items:center;gap:6px;transition:all .2s}
-.persona-pill.on{background:linear-gradient(135deg,rgba(108,62,245,.25),rgba(255,140,66,.18));border-color:var(--purple);color:var(--txt)}
-#chatlog{display:flex;flex-direction:column;gap:14px}
-.msg{display:flex;gap:10px;max-width:100%;animation:fadeUp .3s ease}
-.msg .av{width:34px;height:34px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:17px;background:var(--card)}
-.msg.stew .av{background:var(--grad);overflow:hidden}
-.msg.stew .av img{width:100%;height:100%;object-fit:cover}
-.msg .bubble{background:var(--card);border-radius:18px 18px 18px 6px;padding:12px 15px;font-size:14.5px;line-height:1.55;min-width:0;overflow-wrap:break-word;white-space:pre-wrap}
+.msg{display:flex;gap:9px;margin-bottom:16px;animation:pop .3s both;max-width:100%}
 .msg.me{flex-direction:row-reverse}
-.msg.me .bubble{background:var(--purple-d);border-radius:18px 18px 6px 18px}
-.msg.stew .bubble{flex:1}
-.bubble b{color:#fff}.bubble code{background:#0e0b22;padding:1px 5px;border-radius:6px;font-family:ui-monospace,monospace;font-size:12.5px}
-.thinking{display:inline-flex;gap:4px;padding:6px 2px}
-.thinking i{width:7px;height:7px;border-radius:50%;background:var(--purple);animation:th 1.2s infinite}
-.thinking i:nth-child(2){animation-delay:.15s;background:var(--pink)}
-.thinking i:nth-child(3){animation-delay:.3s;background:var(--orange)}
-@keyframes th{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-6px);opacity:1}}
-.quickrow{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none}
-.quick{flex-shrink:0;background:var(--card2);border:1px solid #322b66;color:var(--mut);border-radius:14px;padding:10px 14px;font-size:12.5px;font-weight:600;white-space:nowrap}
-.quick:active{transform:scale(.95)}
-.typing-hint{display:none;align-items:center;gap:8px;color:var(--mut);font-size:12px;padding:6px 2px}
-.typing-hint.on{display:flex}
-.typing-hint .steam{font-size:15px;animation:bob 1.6s infinite}
+.av{width:30px;height:30px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;margin-top:2px}
+.msg.stew .av{background:var(--grad)}
+.msg.me .av{background:var(--card2);font-size:14px}
+.bubblewrap{max-width:82%;min-width:0}
+.msg.me .bubblewrap{display:flex;flex-direction:column;align-items:flex-end}
+.bubble{
+  padding:11px 14px;border-radius:20px;font-size:14.5px;line-height:1.55;white-space:pre-wrap;
+  word-wrap:break-word;overflow-wrap:break-word;
+}
+.msg.me .bubble{background:var(--grad);color:#fff;border-bottom-right-radius:6px}
+.msg.stew .bubble{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:6px}
+.bubble img{border-radius:14px;max-width:240px;margin-bottom:6px}
+.bubble a{color:#a78bfa;text-decoration:underline;word-break:break-all}
+.bubble code{background:rgba(255,255,255,.1);padding:1px 5px;border-radius:6px;font-family:ui-monospace,monospace;font-size:13px}
+.bubble pre{background:#0a0817;border:1px solid var(--line);border-radius:12px;padding:11px;overflow-x:auto;margin:7px 0;white-space:pre}
+.bubble pre code{background:none;padding:0}
+.caret{display:inline-block;width:8px;height:15px;background:var(--vio);border-radius:2px;vertical-align:-2px;animation:blink .9s infinite;margin-left:2px}
+.atts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:5px}
+.att-chip{background:var(--card2);border:1px solid var(--line2);border-radius:11px;padding:4px 9px;font-size:11px;display:flex;gap:5px;align-items:center}
+.voice-b{display:flex;align-items:center;gap:9px;background:rgba(124,92,255,.16);border:1px solid rgba(124,92,255,.35);border-radius:14px;padding:9px 12px;margin-bottom:5px}
+.play-b{width:32px;height:32px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;flex:none}
+.voice-b .bars{display:flex;gap:2.5px;align-items:center;height:20px}
+.voice-b .bars i{width:3px;height:12px;border-radius:2px;background:var(--vio);animation:bar 1s infinite}
+.voice-b .dur{font-size:11px;color:var(--mut)}
+.acts{display:flex;gap:4px;margin-top:6px;opacity:.75}
+.act{font-size:11.5px;color:var(--mut);padding:4px 8px;border-radius:9px;transition:background .15s}
+.act:active{background:var(--card2);color:var(--text)}
+.thinking{display:inline-flex;gap:4px;padding:4px 0}
+.thinking i{width:7px;height:7px;border-radius:50%;background:var(--vio);animation:blink 1.1s infinite}
+.thinking i:nth-child(2){animation-delay:.2s}.thinking i:nth-child(3){animation-delay:.4s}
 
-/* ── COMPOSER ─────────────────────────────── */
-.composer-wrap{position:absolute;left:0;right:0;bottom:calc(74px + var(--safe-b));padding:8px 14px 10px;background:linear-gradient(0deg,var(--bg) 62%,rgba(13,11,26,0));z-index:5}
-.composer{display:flex;gap:8px;align-items:flex-end;background:var(--card);border:1.5px solid #322b66;border-radius:22px;padding:8px 8px 8px 16px;transition:border .2s}
-.composer:focus-within{border-color:var(--purple)}
-.composer textarea{flex:1;background:none;border:none;color:var(--txt);font-size:15px;line-height:1.45;resize:none;outline:none;max-height:110px;padding:7px 0}
-.composer textarea::placeholder{color:#6b64a3}
-.send-btn{width:40px;height:40px;border-radius:16px;background:var(--grad);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .15s}
-.send-btn:active{transform:scale(.88)}
-.send-btn.busy{background:var(--err)}
+.mission-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px;margin-bottom:16px;animation:pop .3s both;max-width:82%}
+.mission-card .st{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600}
+.mission-card .st .spin{width:15px;height:15px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--vio);animation:spin .8s linear infinite;flex:none}
+.m-tools{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.m-tools span{font-size:10.5px;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:3px 8px;animation:pop .3s both}
+.dlv{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.dlv a{font-size:12px;background:rgba(52,211,153,.13);border:1px solid rgba(52,211,153,.4);color:var(--ok);border-radius:10px;padding:7px 11px;text-decoration:none;font-weight:600}
+.prog{height:4px;background:var(--card2);border-radius:4px;margin-top:10px;overflow:hidden;position:relative}
+.prog i{position:absolute;top:0;bottom:0;width:35%;background:var(--grad);border-radius:4px;animation:slideL 1.6s infinite}
 
-/* ── GENERIC CARDS / GRIDS ────────────────── */
-.sect-title{font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--mut);margin:18px 2px 12px}
-.hero{background:var(--grad);border-radius:24px;padding:20px;margin-bottom:6px;position:relative;overflow:hidden}
-.hero h3{font-size:19px;font-weight:800;position:relative;z-index:1}
-.hero p{font-size:12.5px;opacity:.9;margin-top:5px;position:relative;z-index:1;line-height:1.5}
-.hero .blob{position:absolute;right:-30px;top:-30px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.14)}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-.grid.g3{grid-template-columns:repeat(3,1fr)}
-.card{background:var(--card);border-radius:20px;padding:15px;border:1px solid #272155;transition:transform .15s}
-.card:active{transform:scale(.96)}
-.card .c-ico{font-size:26px;margin-bottom:8px}
-.card b{font-size:13.5px;display:block}
-.card p{font-size:11.5px;color:var(--mut);margin-top:4px;line-height:1.45}
-.cat-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:12px;scrollbar-width:none}
-.cat-chip{flex-shrink:0;background:var(--card);border:1.5px solid transparent;color:var(--mut);border-radius:99px;padding:7px 13px;font-size:12px;font-weight:600}
-.cat-chip.on{border-color:var(--orange);color:var(--txt);background:rgba(255,140,66,.12)}
-.searchbox{width:100%;background:var(--card);border:1.5px solid #322b66;border-radius:16px;padding:13px 15px;color:var(--txt);font-size:14px;outline:none;margin-bottom:14px}
-.searchbox:focus{border-color:var(--purple)}
+/* ── tools row + composer ───────────────── */
+#dock{padding:6px 12px calc(var(--safe-b) + 8px);background:rgba(13,11,26,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+.tools{display:flex;gap:6px;padding:7px 2px;overflow-x:auto;scrollbar-width:none}
+.tools::-webkit-scrollbar{display:none}
+.chip{
+  display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mut);
+  background:var(--card);border:1px solid var(--line);border-radius:20px;padding:7px 12px;
+  flex:none;transition:all .2s;
+}
+.chip:active{transform:scale(.93)}
+.chip.on{color:#fff;border-color:var(--vio);background:rgba(124,92,255,.22);box-shadow:0 0 16px -4px rgba(124,92,255,.5)}
+.composer{
+  display:flex;align-items:flex-end;gap:7px;background:var(--card);
+  border:1px solid var(--line2);border-radius:26px;padding:7px;
+  transition:border-color .25s,box-shadow .25s;
+}
+.composer.focus{border-color:var(--vio);box-shadow:0 0 0 3px rgba(124,92,255,.14)}
+.composer.rec{border-color:#f55656;box-shadow:0 0 0 3px rgba(245,86,86,.18)}
+#input{
+  flex:1;resize:none;max-height:110px;min-height:24px;line-height:1.45;font-size:14.5px;
+  padding:9px 4px;background:none;color:var(--text);
+}
+#input::placeholder{color:#6b6489}
+#send-btn{
+  width:38px;height:38px;border-radius:50%;background:var(--grad);color:#fff;font-size:15px;
+  display:flex;align-items:center;justify-content:center;flex:none;
+  transition:transform .15s;box-shadow:0 4px 14px -4px rgba(124,92,255,.6);
+}
+#send-btn:active{transform:scale(.85)}
+#send-btn:disabled{opacity:.45;transform:none}
+#mic-btn{flex:none;transition:transform .15s}
+#mic-btn.rec{color:#f55656;animation:pulse 1.2s infinite}
+.attach-prev{display:flex;gap:8px;padding:8px 2px 0}
+.attach-prev .p{position:relative;animation:pop .25s both}
+.attach-prev img{width:56px;height:56px;object-fit:cover;border-radius:13px;border:1px solid var(--line2)}
+.attach-prev .doc{background:var(--card2);border:1px solid var(--line2);border-radius:13px;padding:9px 12px;font-size:12px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attach-prev .rm{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#f55656;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
+.rec-ind{display:none;align-items:center;gap:9px;padding:9px 4px 0;font-size:12.5px;color:#f87171;animation:fadein .2s}
+.rec-ind.on{display:flex}
+.rec-ind .dot{width:9px;height:9px;border-radius:50%;background:#f55656;animation:blink 1s infinite}
 
-/* ── MCP CATALOG ──────────────────────────── */
-.mcp{background:var(--card);border-radius:18px;padding:14px;display:flex;gap:12px;align-items:center;margin-bottom:10px;border:1px solid #272155}
-.mcp .m-ico{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
-.mcp .m-body{flex:1;min-width:0}
-.mcp .m-body b{font-size:13.5px}
-.mcp .m-body p{font-size:11px;color:var(--mut);margin-top:2px;line-height:1.4}
-.mcp .m-meta{font-size:9.5px;font-weight:700;margin-top:4px;letter-spacing:.4px}
-.live{color:var(--ok)}.soon{color:#8f88c7}
-.toggle{width:52px;height:30px;border-radius:99px;background:#332b6e;position:relative;flex-shrink:0;transition:background .2s}
-.toggle::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .2s}
-.toggle.on{background:var(--grad)}
-.toggle.on::after{left:25px}
+/* ── sheets ── */
+#sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;max-height:76%;background:var(--bg2);
+  border-radius:24px 24px 0 0;border-top:1px solid var(--line2);
+  transform:translateY(100%);transition:transform .32s cubic-bezier(.32,.72,.28,1);
+  display:flex;flex-direction:column;padding-bottom:var(--safe-b);
+}
+#sheet.on{transform:none}
+.sh-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 8px}
+.sh-head b{font-size:16px}
+.sh-grab{width:38px;height:4px;border-radius:4px;background:var(--line2);margin:10px auto 0}
+#sheet-scrim{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .28s}
+#sheet-scrim.on{opacity:1;pointer-events:auto}
+.sh-body{overflow-y:auto;overscroll-behavior:contain;padding:6px 14px 18px}
+.sh-search{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:4px 0 10px;font-size:13px;color:var(--mut)}
+.sh-search input{flex:1;color:var(--text)}
+.p-row{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:14px;margin-bottom:3px;transition:background .15s;cursor:pointer;animation:pop .25s both}
+.p-row:active{background:var(--card2)}
+.p-row.sel{background:rgba(124,92,255,.14);border:1px solid rgba(124,92,255,.35)}
+.p-row .ico{width:40px;height:40px;border-radius:13px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
+.p-row b{font-size:14px;display:block}
+.p-row small{color:var(--mut);font-size:11.5px;line-height:1.35;display:block}
+.p-row .ck{margin-left:auto;color:var(--vio);font-size:15px;flex:none}
+.skill-row{display:flex;align-items:center;gap:11px;padding:11px 10px;border-radius:14px;margin-bottom:3px;transition:background .15s;cursor:pointer;animation:pop .22s both}
+.skill-row:active{background:var(--card2)}
+.skill-row b{font-size:13.5px;font-family:ui-monospace,monospace}
+.skill-row small{color:var(--mut);font-size:11.5px;display:block;line-height:1.35}
+.skill-row .cat{font-size:9.5px;background:rgba(124,92,255,.16);color:#b7a5ff;border-radius:7px;padding:2px 7px;flex:none;margin-left:auto}
+.set-card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px;margin-bottom:11px;animation:pop .25s both}
+.set-card b{font-size:13.5px;display:block;margin-bottom:4px}
+.set-card small{color:var(--mut);font-size:11.5px;line-height:1.45;display:block}
+.set-card input{width:100%;margin-top:9px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:10px 12px;font-size:13px;color:var(--text)}
+.set-btn{display:inline-block;margin-top:10px;background:var(--grad);border-radius:11px;padding:9px 16px;font-size:12.5px;font-weight:700;color:#fff;text-decoration:none}
 
-/* ── POWERS ──────────────────────────────── */
-.pow-input{width:100%;background:var(--card);border:1.5px solid #322b66;border-radius:16px;padding:13px 15px;color:var(--txt);font-size:14px;outline:none;margin:10px 0}
-.pow-input:focus{border-color:var(--purple)}
-.pow-btn{width:100%;background:var(--grad);color:#fff;font-weight:700;font-size:14px;padding:14px;border-radius:16px;margin-bottom:16px}
-.pow-btn:active{transform:scale(.97)}
-.pow-btn:disabled{opacity:.5}
-.result-card{background:var(--card);border-radius:18px;padding:14px;margin-bottom:14px;border:1px solid #272155;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:break-word;max-height:340px;overflow-y:auto}
-.result-img{width:100%;border-radius:16px;display:block;margin-bottom:14px;background:var(--card2)}
-.stat{display:flex;justify-content:space-between;align-items:center;background:var(--card);border-radius:16px;padding:14px 16px;margin-bottom:10px}
-.stat span{color:var(--mut);font-size:13px}
-.stat b{font-size:14px}
+/* ── toast ──────────────────────────────── */
+#toast{
+  position:fixed;top:calc(var(--safe-t) + 14px);left:50%;transform:translateX(-50%);z-index:99;
+  background:#26224a;border:1px solid var(--line2);border-radius:14px;padding:10px 16px;
+  font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:toastIn .25s both;max-width:88%;
+  transition:opacity .4s,transform .4s;white-space:pre-wrap;text-align:center;
+}
+#toast.off{opacity:0;transform:translate(-50%,-8px)}
 
-/* ── TOAST + MODAL ────────────────────────── */
-#toast{position:fixed;bottom:calc(110px + var(--safe-b));left:50%;transform:translateX(-50%) translateY(30px);background:#2b2358;border:1px solid #4a3f9e;color:var(--txt);padding:12px 20px;border-radius:16px;font-size:13px;font-weight:600;opacity:0;transition:all .3s;z-index:50;white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis}
-#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
-#modal{position:fixed;inset:0;background:rgba(5,3,15,.8);backdrop-filter:blur(6px);z-index:60;display:none;align-items:flex-end;justify-content:center}
-#modal.on{display:flex}
-#modal .sheet{background:var(--bg2);border-radius:28px 28px 0 0;width:100%;max-width:440px;padding:26px 22px calc(30px + var(--safe-b));animation:sheetUp .3s cubic-bezier(.34,1.3,.64,1)}
-@keyframes sheetUp{from{transform:translateY(60px);opacity:0}to{transform:none;opacity:1}}
-.sheet h3{font-size:19px;margin-bottom:10px}
-.sheet p{color:var(--mut);font-size:13.5px;line-height:1.65;margin-bottom:16px}
-.sheet .s-ico{font-size:44px;text-align:center;margin-bottom:8px}
-.sheet .btn-grad{margin-top:4px}
-.empty{text-align:center;color:var(--mut);font-size:13px;padding:40px 20px;line-height:1.7}
+/* ── splash ─────────────────────────────── */
+#splash{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .5s,visibility .5s}
+#splash.off{opacity:0;visibility:hidden}
+#splash .face{width:84px;height:84px;border-radius:24px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:42px;animation:pop .5s both}
+#splash b{font-size:17px}
+#splash span{font-size:11.5px;color:var(--mut)}
 
-/* ── MOTION LAYER ─────────────────────────── */
-#orbs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-.orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:.35;animation:orbFloat 14s ease-in-out infinite}
-.orb.o1{width:44vmax;height:44vmax;background:#6C3EF5;top:-18vmax;left:-14vmax}
-.orb.o2{width:36vmax;height:36vmax;background:#FF8C42;bottom:-16vmax;right:-12vmax;animation-delay:-5s}
-.orb.o3{width:28vmax;height:28vmax;background:#FF4E8E;top:38%;left:55%;animation-delay:-9s;opacity:.22}
-@keyframes orbFloat{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(4vmax,3vmax) scale(1.08)}66%{transform:translate(-3vmax,-4vmax) scale(.95)}}
-main,header,nav,.composer-wrap{position:relative;z-index:2}
-.grid .card{animation:cardIn .45s cubic-bezier(.34,1.4,.64,1) both}
-.grid .card:nth-child(1){animation-delay:.02s}.grid .card:nth-child(2){animation-delay:.07s}
-.grid .card:nth-child(3){animation-delay:.12s}.grid .card:nth-child(4){animation-delay:.17s}
-.grid .card:nth-child(5){animation-delay:.22s}.grid .card:nth-child(6){animation-delay:.27s}
-.grid .card:nth-child(7){animation-delay:.32s}.grid .card:nth-child(8){animation-delay:.37s}
-.grid .card:nth-child(9){animation-delay:.42s}.grid .card:nth-child(n+10){animation-delay:.47s}
-@keyframes cardIn{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:none}}
-.mcp{animation:cardIn .4s cubic-bezier(.34,1.4,.64,1) both}
-.mcp:nth-child(2){animation-delay:.05s}.mcp:nth-child(3){animation-delay:.1s}.mcp:nth-child(4){animation-delay:.15s}
-
-/* ── WORK OVERLAY (mission experience) ────── */
-#work{position:fixed;inset:0;z-index:55;background:rgba(8,6,20,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center}
-#work.on{display:flex;animation:fadeUp .35s ease}
-#work .w-mascot{width:110px;height:110px;border-radius:30px;animation:splashPop .6s cubic-bezier(.34,1.56,.64,1) both, bob 2s ease-in-out .6s infinite}
-#work .steam-row{display:flex;gap:14px;margin-top:-8px;height:30px;justify-content:center}
-#work .steam-row span{font-size:22px;animation:steam 1.8s ease-in-out infinite;opacity:0}
-#work .steam-row span:nth-child(2){animation-delay:.4s}
-#work .steam-row span:nth-child(3){animation-delay:.8s}
-@keyframes steam{0%{opacity:0;transform:translateY(8px) scale(.7)}30%{opacity:1}100%{opacity:0;transform:translateY(-16px) scale(1.25)}}
-#work h2{font-size:22px;margin-top:14px;font-weight:800}
-#work .w-stage{color:var(--mut);font-size:14px;margin-top:8px;min-height:20px;transition:opacity .3s}
-.w-bar{width:220px;height:7px;border-radius:4px;background:var(--card);margin-top:22px;overflow:hidden}
-.w-bar i{display:block;height:100%;width:35%;border-radius:4px;background:var(--grad);animation:slide 1.1s ease-in-out infinite}
-.w-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:20px;max-width:300px}
-.w-tool{background:var(--card2);border:1px solid #3a3178;color:var(--txt);font-size:10.5px;font-weight:700;padding:5px 10px;border-radius:99px;animation:cardIn .3s both}
-.w-elapsed{color:#6f68a8;font-size:11px;margin-top:18px}
-
-/* celebration */
-#work.done .w-mascot{animation:splashPop .7s cubic-bezier(.34,1.8,.64,1) both, celebrate .5s ease-in-out 4}
-@keyframes celebrate{0%,100%{transform:rotate(0)}25%{transform:rotate(-9deg) scale(1.06)}75%{transform:rotate(9deg) scale(1.06)}}
-#work .w-done{font-size:44px;display:none;animation:bob 1.6s infinite}
-#work.done .w-done{display:block}
-#work.done .w-bar{display:none}
-#work.done .steam-row{display:none}
-
-/* mission results */
-.mission-card{background:linear-gradient(135deg,rgba(108,62,245,.16),rgba(255,140,66,.1));border:1px solid #4a3f9e;border-radius:20px;padding:16px;margin:14px 0}
-.mission-card .m-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.mission-card .m-head b{font-size:14px}
-.file-btn{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid #3a3178;border-radius:14px;padding:12px 14px;margin-top:10px;color:var(--txt);font-size:13px;font-weight:600;text-decoration:none;animation:cardIn .4s both}
-.file-btn .f-ico{width:38px;height:38px;border-radius:11px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-.file-btn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chip-ex{background:var(--card2);border:1px solid #3a3178;color:var(--mut);border-radius:99px;padding:8px 13px;font-size:11.5px;font-weight:600;margin:0 6px 8px 0;display:inline-block;animation:cardIn .3s both}
+@media (min-width:700px){
+  #chatwrap{max-width:860px;margin:0 auto;width:100%}
+  #dock{max-width:860px;margin:0 auto;width:100%;border-radius:26px 26px 0 0}
+  .bubblewrap{max-width:70%}
+}
 </style>
 </head>
 <body>
 
-<div id="orbs"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
+<div id="splash"><div class="face">🍲</div><b>Stew</b><span>AI Superpowers — Built for Africa 🌍</span></div>
 
-<!-- WORK OVERLAY -->
-<div id="work">
-  <img class="w-mascot" src="/app/icons/icon-440.png" alt="Stew working">
-  <div class="steam-row"><span>♨️</span><span>♨️</span><span>♨️</span></div>
-  <div class="w-done">🎉</div>
-  <h2 id="w-title">Mission in progress</h2>
-  <div class="w-stage" id="w-stage">Waking up specialists…</div>
-  <div class="w-bar"><i></i></div>
-  <div class="w-tools" id="w-tools"></div>
-  <div class="w-elapsed" id="w-elapsed">0s</div>
-</div>
+<header>
+  <button class="ico-btn" onclick="toggleDrawer(true)" aria-label="Menu">☰</button>
+  <div class="h-title" onclick="openSheet('personas')">
+    <b id="h-persona">🤖 General Assistant</b>
+    <span>Stew · tap to switch persona</span>
+  </div>
+  <button class="ico-btn" id="auto-speak-btn" onclick="toggleAutoSpeak()" aria-label="Auto read">🔊</button>
+</header>
 
-<!-- SPLASH -->
-<div id="splash">
-  <img class="logo" src="/app/icons/icon-440.png" alt="Stew">
-  <h1>Stew <span>Agent</span></h1>
-  <p>AI Superpowers in your pocket</p>
-  <div class="loadbar"><i></i></div>
-</div>
+<div id="scrim" onclick="toggleDrawer(false)"></div>
+<aside id="drawer">
+  <div class="d-brand">
+    <div class="logo">🍲</div>
+    <div><b>Stew</b><span>Smart Thinking Executive Worker</span></div>
+  </div>
+  <button class="new-btn" onclick="newChat()">✚ New chat</button>
+  <div class="d-search">🔎<input id="find" placeholder="Search chats..." oninput="renderChatList()"></div>
+  <div class="d-label">CHATS</div>
+  <div id="chatlist"></div>
+  <div class="d-foot">
+    <div class="d-row" onclick="openSheet('skills')"><i>🧰</i>Skills<small>63 live</small></div>
+    <div class="d-row" onclick="openSheet('settings')"><i>⚙️</i>Settings</div>
+    <a class="d-row" href="/app/StewAgent.apk" download="StewAgent.apk"><i>🤖</i>Android APK<small>2.5MB</small></a>
+    <div class="d-row" onclick="showAbout()"><i>ℹ️</i>About Stew</div>
+  </div>
+</aside>
 
-<!-- ONBOARDING -->
-<div id="onboard" class="gone">
-  <div class="onb-card">
-    <img class="logo" src="/app/icons/icon-440.png" alt="Stew">
-    <h2>Meet Stew 🍲</h2>
-    <p class="sub">Your Smart Thinking Executive Worker — 12 personas, 63 skills, image generation, web search & MCP superpowers. Built for Africa. 🌍</p>
-    <input class="field" id="ob-name" placeholder="Your name" autocomplete="name">
-    <input class="field" id="ob-key" placeholder="Your Stew API key (stew_...)" autocomplete="off">
-    <button class="btn-grad" onclick="finishOnboard()">Power me up ⚡</button>
-    <p class="onb-note">No key yet? Get one free at the Stew API portal — or tap the demo key to explore instantly.</p>
-    <div class="chiprow"><button class="demo" onclick="useDemoKey()">🎟️ Use demo key</button></div>
+<main id="chatwrap"><div id="chat"></div></main>
+
+<div id="dock">
+  <div class="tools">
+    <button class="chip" id="c-web" onclick="toggleTool('web')">🌐 Web search</button>
+    <button class="chip" id="c-img" onclick="toggleTool('img')">🎨 Image</button>
+    <button class="chip" id="c-mission" onclick="toggleTool('mission')">🚀 Mission</button>
+    <button class="chip" onclick="openSheet('skills')">🧰 Skills</button>
+    <button class="chip" onclick="openSheet('personas')">🎭 Persona</button>
+  </div>
+  <div class="rec-ind" id="rec-ind"><span class="dot"></span><span id="rec-time">0:00</span>&nbsp;— recording voice note… tap 🎤 to send</div>
+  <div class="attach-prev" id="attach-prev"></div>
+  <div class="composer" id="composer">
+    <button class="ico-btn" onclick="pickAttach()" aria-label="Attach">📎</button>
+    <textarea id="input" rows="1" placeholder="Message Stew..." oninput="autoGrow(this)" onfocus="document.getElementById('composer').classList.add('focus')" onblur="document.getElementById('composer').classList.remove('focus')"></textarea>
+    <button class="ico-btn" id="mic-btn" onclick="micTap()" aria-label="Voice">🎤</button>
+    <button id="send-btn" onclick="send()" aria-label="Send">➤</button>
   </div>
 </div>
 
-<!-- APP -->
-<div id="app">
-  <header>
-    <img class="h-logo" src="/app/icons/icon-192.png" alt="Stew" onclick="goTab('me')">
-    <div class="h-txt" onclick="goTab('me')"><b id="h-title">Stew Agent</b><span id="h-sub">General Assistant</span></div>
-    <button class="icon-btn pulse" id="install-btn" onclick="promptInstall()" style="display:none">⬇️</button>
-    <button class="icon-btn" onclick="goTab('me')">👤</button>
-  </header>
-
-  <main>
-    <!-- CHAT -->
-    <section class="tab on" id="tab-chat">
-      <div class="persona-scroll" id="persona-scroll"></div>
-      <div id="chatlog"></div>
-      <div class="typing-hint" id="typing"><span class="steam">♨️</span> Stew is cooking up an answer…</div>
-      <div class="empty" id="chat-empty">
-        <div style="font-size:40px;margin-bottom:10px">👋🏾</div>
-        Say anything — Stew handles research, code, business plans,<br>health questions, legal drafts, documents & more.
-      </div>
-    </section>
-
-    <!-- SKILLS -->
-    <section class="tab" id="tab-skills">
-      <div class="hero"><div class="blob"></div><h3>63 Skills 🧰</h3><p>Tap any skill to run it live on Stew's engine — calculations, conversions, analysis, security & more.</p></div>
-      <input class="searchbox" id="skill-search" placeholder="🔍 Search skills…" oninput="renderSkills()">
-      <div class="cat-chips" id="cat-chips"></div>
-      <div class="grid" id="skills-grid"></div>
-    </section>
-
-    <!-- POWERS -->
-    <section class="tab" id="tab-powers">
-      <div class="hero"><div class="blob"></div><h3>Superpowers ⚡</h3><p>Launch missions — Stew researches, codes, writes, designs and builds real deliverables on its own.</p></div>
-
-      <div class="sect-title">🚀 Launch a Mission</div>
-      <input class="pow-input" id="mission-goal" placeholder="Tell Stew a goal… e.g. 'Research Nigeria's top fintechs and build me a PDF report with a logo'">
-      <div>
-        <button class="chip-ex" onclick="fillMission('Research the top 5 AI startups in Africa and create a PDF brief with a logo')">🌍 Africa AI brief</button>
-        <button class="chip-ex" onclick="fillMission('Create a one-page website for a Lagos coffee brand plus a logo')">☕ Website + logo</button>
-        <button class="chip-ex" onclick="fillMission('Research today\'s crypto prices and create an Excel sheet with analysis')">📊 Crypto report</button>
-        <button class="chip-ex" onclick="fillMission('Write a complete business plan PDF for a POS agency startup')">💼 Business plan</button>
-      </div>
-      <button class="pow-btn" style="background:linear-gradient(135deg,#FF4E8E,#FF8C42)" onclick="startMission()">🚀 Launch Mission</button>
-      <div id="mission-result"></div>
-
-      <div class="sect-title">🎨 Image Studio</div>
-      <input class="pow-input" id="img-prompt" placeholder="Describe an image… e.g. 'a Lagos sunset in anime style'">
-      <button class="pow-btn" onclick="runImageGen()">✨ Generate Image</button>
-      <div id="img-result"></div>
-
-      <div class="sect-title">🔎 Live Web Search</div>
-      <input class="pow-input" id="search-q" placeholder="Search the web… e.g. 'best fintechs in Nigeria 2026'">
-      <button class="pow-btn" onclick="runSearch()">🔍 Search Now</button>
-      <div id="search-result"></div>
-    </section>
-
-    <!-- MCPS -->
-    <section class="tab" id="tab-mcps">
-      <div class="hero"><div class="blob"></div><h3>MCP Hub 🔌</h3><p>Connect Stew to the systems you use. Connected MCPs give Stew context about your stack in every conversation.</p></div>
-      <div class="sect-title">Live connectors</div>
-      <div id="mcp-live"></div>
-      <div class="sect-title">Connect Stew to your systems</div>
-      <div id="mcp-catalog"></div>
-    </section>
-
-    <!-- ME -->
-    <section class="tab" id="tab-me">
-      <div class="hero"><div class="blob"></div><h3 id="me-hello">Hey there 👋🏾</h3><p>Stew is ready to work for you around the clock.</p></div>
-      <div class="sect-title">Account</div>
-      <div id="me-stats"></div>
-      <div class="sect-title">This app</div>
-      <a href="/app/StewAgent.apk" download="StewAgent.apk" style="text-decoration:none;display:block;margin-bottom:10px">
-        <div style="display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(108,62,245,.25),rgba(255,140,66,.2));border:1px solid #4a3f9e;border-radius:16px;padding:14px">
-          <div style="width:42px;height:42px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:20px">🤖</div>
-          <div style="flex:1"><b style="font-size:14px">Download Android APK</b><div style="color:var(--mut);font-size:12px">Install Stew as a real app — 2.5MB</div></div>
-          <b style="color:var(--orange);font-size:18px">⬇</b>
-        </div>
-      </a>
-      <div class="grid">
-        <div class="card" onclick="promptInstall()"><div class="c-ico">📲</div><b>Install app</b><p>Add Stew to your home screen</p></div>
-        <div class="card" onclick="newChat()"><div class="c-ico">🧹</div><b>New chat</b><p>Clear and start fresh</p></div>
-        <div class="card" onclick="showAbout()"><div class="c-ico">ℹ️</div><b>About Stew</b><p>What's inside</p></div>
-        <div class="card" onclick="logout()"><div class="c-ico">🚪</div><b>Sign out</b><p>Remove key from device</p></div>
-      </div>
-    </section>
-  </main>
-
-  <!-- COMPOSER (chat only) -->
-  <div class="composer-wrap" id="composer-wrap">
-    <div class="quickrow" id="quickrow">
-      <button class="quick" onclick="quickSend('Write me a business plan for a POS agency in Enugu')">💼 Business plan</button>
-      <button class="quick" onclick="quickSend('Explain this code and fix bugs:\n\n')">💻 Fix my code</button>
-      <button class="quick" onclick="quickSend('Research the top 5 AI startups in Africa and summarize')">🌍 Research Africa</button>
-      <button class="quick" onclick="quickSend('Create a complete study plan for me to learn data analysis in 60 days')">🎓 Study plan</button>
-    </div>
-    <div class="composer">
-      <textarea id="chat-input" rows="1" placeholder="Message Stew…"></textarea>
-      <button class="send-btn" id="send-btn" onclick="sendMsg()">➤</button>
-    </div>
-  </div>
-
-  <nav>
-    <button class="on" data-tab="chat" onclick="goTab('chat')"><i>💬</i>Chat</button>
-    <button data-tab="skills" onclick="goTab('skills')"><i>🧰</i>Skills</button>
-    <button data-tab="powers" onclick="goTab('powers')"><i>⚡</i>Powers</button>
-    <button data-tab="mcps" onclick="goTab('mcps')"><i>🔌</i>MCPs</button>
-    <button data-tab="me" onclick="goTab('me')"><i>👤</i>Me</button>
-  </nav>
+<div id="sheet-scrim" onclick="closeSheet()"></div>
+<div id="sheet">
+  <div class="sh-grab"></div>
+  <div class="sh-head"><b id="sh-title">Personas</b><button class="ico-btn" onclick="closeSheet()">✕</button></div>
+  <div class="sh-body" id="sh-body"></div>
 </div>
 
-<div id="toast"></div>
-<div id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
+<div id="toast" class="off"></div>
 
 <script>
-/* ═══ Stew Agent PWA — client v1.0 ═══ */
+/* ═══ Stew — single-chat AI app v2.0 ═══ */
 const API = location.origin;
-const DEMO_KEY = "stew_O9X6d0rXTR3OGcQEJ1F3XXgFKLAuxEYNwytqo0mdmLFE2sXBQC0chbjP8b2";
-let KEY = localStorage.getItem("stew_key") || "";
-let NAME = localStorage.getItem("stew_name") || "";
-let PERSONA = localStorage.getItem("stew_persona") || "general";
-let PERSONAS = [];
-let SKILLS = [];
-let CHAT = [];           // {role, content}
-let BUSY = false;
-let MCPS = {};
-let deferredPrompt = null;
+const DEFAULT_KEY = "stew_O9X6d0rXTR3OGcQEJ1F3XXgFKLAuxEYNwytqo0mdmLFE2sXBQC0chbjP8b2";
+let KEY = localStorage.getItem("stew_key") || DEFAULT_KEY;
+let PERSONA = localStorage.getItem("stew_persona") || "General Assistant";
+let AUTO_SPEAK = localStorage.getItem("stew_autospeak") === "1";
+let TOOLS = {web:false, img:false, mission:false};
+let BUSY = false, CHAT = [], CONVS = [], CUR = null;
+let ATTACH = null;
+let REC = null;
+let PERSONAS = [], SKILLS = [];
+const VOICES = {};
+const $ = id => document.getElementById(id);
 
-/* ── PWA install ─────────────────────────── */
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault(); deferredPrompt = e;
-  document.getElementById("install-btn").style.display = "flex";
-});
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js");
+/* ── boot ───────────────────────────────── */
+setTimeout(() => $("splash").classList.add("off"), 900);
+loadConvs();
+if (CUR && CHAT.length){ renderChat(); } else { renderWelcome(); }
+renderChatList();
+boot();
 
-/* ── boot ────────────────────────────────── */
-window.addEventListener("load", async () => {
-  setTimeout(() => {
-    document.getElementById("splash").classList.add("gone");
-    if (KEY) enterApp(); else document.getElementById("onboard").classList.remove("gone");
-  }, 1400);
-});
-
-function useDemoKey(){
-  document.getElementById("ob-key").value = DEMO_KEY;
-  toast("Demo key loaded — tap Power me up ⚡");
-}
-function finishOnboard(){
-  const k = document.getElementById("ob-key").value.trim();
-  const n = document.getElementById("ob-name").value.trim() || "Champ";
-  if (!k.startsWith("stew_")) return toast("That doesn't look like a Stew key (stew_…)");
-  KEY = k; NAME = n;
-  localStorage.setItem("stew_key", KEY); localStorage.setItem("stew_name", NAME);
-  confetti(); enterApp();
-}
-function logout(){
-  localStorage.removeItem("stew_key"); location.reload();
-}
-function enterApp(){
-  document.getElementById("onboard").classList.add("gone");
-  document.getElementById("app").classList.add("on");
-  document.getElementById("me-hello").textContent = `Hey ${NAME} 👋🏾`;
-  loadPersonas(); loadSkills(); renderMcps(); loadStats();
-  if (!localStorage.getItem("stew_greeted")) setTimeout(() => {
-    pushMsg("stew", `Hey ${NAME}! 🍲 I'm Stew — your Smart Thinking Executive Worker. Pick a persona, hit a skill, or just tell me what to build. I research the web, generate images, write documents and more — right here in your pocket.`);
-    localStorage.setItem("stew_greeted", "1");
-  }, 600);
-}
-
-/* ── tabs ────────────────────────────────── */
-function goTab(t){
-  haptic(8);
-  document.querySelectorAll(".tab").forEach(el => el.classList.remove("on"));
-  document.getElementById("tab-" + t).classList.add("on");
-  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
-  document.getElementById("composer-wrap").style.display = (t === "chat") ? "block" : "none";
-  if (t === "chat") setTimeout(()=>document.getElementById("chat-input").focus(), 60);
-}
-
-/* ── personas ────────────────────────────── */
-async function loadPersonas(){
+async function boot(){
+  if (AUTO_SPEAK) $("auto-speak-btn").classList.add("speak-on");
   try{
-    const r = await fetch(API + "/personas");
-    const d = await r.json();
-    PERSONAS = d.personas || [];
-  }catch(e){
-    PERSONAS = [{id:"general",label:"General Assistant",icon:"🤖"},{id:"doctor",label:"Medical Doctor",icon:"🩺"},{id:"startup",label:"Startup Co-founder",icon:"🚀"},{id:"developer",label:"Software Engineer",icon:"💻"},{id:"education",label:"AI Tutor",icon:"🎓"}];
+    const [p, s] = await Promise.all([
+      fetch(API + "/personas").then(r => r.json()),
+      fetch(API + "/skills").then(r => r.json())
+    ]);
+    PERSONAS = (Array.isArray(p) ? p : p.personas || []).map(x => typeof x === "string" ? {name:x, desc:""} : x);
+    SKILLS = Array.isArray(s) ? s : s.skills || [];
+  }catch(e){}
+  $("h-persona").textContent = "🤖 " + PERSONA;
+}
+
+/* ── conversations ────────── */
+function loadConvs(){
+  try{ CONVS = JSON.parse(localStorage.getItem("stew_convs") || "[]"); }catch(e){ CONVS = []; }
+  CUR = localStorage.getItem("stew_cur") || null;
+  const c = CONVS.find(x => x.id === CUR);
+  if (c) CHAT = c.messages || [];
+}
+function saveConv(){
+  if (!CHAT.length) return;
+  if (!CUR){ CUR = "c" + Date.now(); CONVS.unshift({id:CUR, title:"New chat", messages:CHAT, at:Date.now()}); }
+  const c = CONVS.find(x => x.id === CUR);
+  c.messages = CHAT;
+  if (c.title === "New chat"){
+    const first = CHAT.find(m => m.role === "user");
+    c.title = first ? msgText(first).slice(0, 46) : "New chat";
   }
-  const row = document.getElementById("persona-scroll");
-  row.innerHTML = PERSONAS.map(p =>
-    `<button class="persona-pill ${p.id===PERSONA?'on':''}" onclick="setPersona('${p.id}')">${p.icon} ${p.label}</button>`).join("");
-  updateSub();
+  localStorage.setItem("stew_convs", JSON.stringify(CONVS));
+  localStorage.setItem("stew_cur", CUR);
+  renderChatList();
 }
-function setPersona(id){
-  haptic(10);
-  PERSONA = id; localStorage.setItem("stew_persona", id);
-  document.querySelectorAll(".persona-pill").forEach(b => b.classList.remove("on"));
-  const p = PERSONAS.find(x => x.id === id);
-  pushMsg("stew", `${p.icon} ${p.label} mode activated. ${p.desc || "Let's go!"}`);
-  updateSub();
+function msgText(m){
+  const parts = m.parts || [{type:"text", text:m.content}];
+  return parts.filter(p => p.type === "text").map(p => p.text).join(" ");
 }
-function updateSub(){
-  const p = PERSONAS.find(x => x.id === PERSONA);
-  document.getElementById("h-sub").textContent = p ? `${p.icon} ${p.label}` : "";
+function renderChatList(){
+  const q = ($("find").value || "").toLowerCase();
+  $("chatlist").innerHTML = CONVS
+    .filter(c => !q || c.title.toLowerCase().includes(q))
+    .map(c => `<div class="chat-item ${c.id === CUR ? "sel" : ""}" onclick="openConv('${c.id}')"><span>💬</span><span class="t">${esc(c.title)}</span><span class="x" onclick="delConv(event,'${c.id}')">🗑</span></div>`)
+    .join("") || `<div style="padding:18px 8px;color:var(--mut);font-size:12.5px;text-align:center">No chats yet — start one ✨</div>`;
 }
+function openConv(id){
+  const c = CONVS.find(x => x.id === id); if (!c) return;
+  CUR = id; CHAT = c.messages;
+  localStorage.setItem("stew_cur", CUR);
+  toggleDrawer(false); renderChat(); renderChatList();
+}
+function delConv(ev, id){
+  ev.stopPropagation();
+  CONVS = CONVS.filter(c => c.id !== id);
+  localStorage.setItem("stew_convs", JSON.stringify(CONVS));
+  if (CUR === id){ CUR = null; CHAT = []; renderWelcome(); }
+  renderChatList();
+}
+function newChat(){
+  CUR = null; CHAT = []; ATTACH = null; renderAttach();
+  localStorage.removeItem("stew_cur");
+  toggleDrawer(false); renderWelcome();
+}
+function toggleDrawer(on){ $("drawer").classList.toggle("on", on); $("scrim").classList.toggle("on", on); }
 
-/* ── chat ────────────────────────────────── */
-const input = document.getElementById("chat-input");
-input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 110) + "px"; });
-input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendMsg(); }});
+/* ── chat render ─────────────────────────── */
+function renderWelcome(){
+  $("chat").innerHTML = `
+  <div class="welcome">
+    <div class="face">🍲</div>
+    <h2>Hey! I'm Stew</h2>
+    <p>Chat, send photos &amp; voice notes, generate images, search the live web — or launch a full mission. All in one place.</p>
+    <div class="sugg">
+      <button onclick="quick('Write me a business plan for a POS agency in Enugu')">💼 Business plan for my POS agency</button>
+      <button onclick="quick('Generate an image of a Lagos sunset in anime style')">🎨 Image of a Lagos sunset</button>
+      <button onclick="quick('What are the top fintech news in Nigeria this week?')">🌍 Top fintech news in Nigeria</button>
+      <button onclick="quick('Explain Bitcoin like I am 10')">🧠 Explain Bitcoin like I'm 10</button>
+    </div>
+  </div>`;
+}
+function renderChat(){
+  if (!CHAT.length){ renderWelcome(); return; }
+  $("chat").innerHTML = "";
+  CHAT.forEach(m => {
+    if (m.mission){
+      const div = document.createElement("div");
+      div.innerHTML = m.mission;
+      const card = div.querySelector(".mission-card");
+      if (card){ card.style.animation = "none"; $("chat").appendChild(card); }
+      return;
+    }
+    const el = renderMsg(m.role, m.parts || [{type:"text", text:m.content}]);
+    el.style.animation = "none";
+    $("chat").appendChild(el);
+  });
+  scrollDown(false);
+}
+function quick(t){ $("input").value = t; autoGrow($("input")); send(); }
 
-function pushMsg(who, text){
-  document.getElementById("chat-empty").style.display = "none";
-  const log = document.getElementById("chatlog");
+function renderMsg(role, parts){
   const div = document.createElement("div");
-  div.className = "msg " + (who === "me" ? "me" : "stew");
-  div.innerHTML = who === "me"
-    ? `<div class="av">🙂</div><div class="bubble"></div>`
-    : `<div class="av"><img src="/app/icons/icon-192.png" alt=""></div><div class="bubble"></div>`;
-  div.querySelector(".bubble").textContent = text;
-  log.appendChild(div);
-  log.scrollIntoView({block:"end"});
-  return div.querySelector(".bubble");
+  div.className = "msg " + (role === "user" ? "me" : "stew");
+  const av = role === "user" ? "🧑" : "🍲";
+  const textParts = parts.filter(p => p.type === "text").map(p => p.text).join("\n");
+  let inner = "";
+  if (role === "user"){
+    let atts = "";
+    for (const p of parts){
+      if (p.type === "image") atts += `<img src="${p.dataUrl}" alt="attachment">`;
+      if (p.type === "doc") atts += `<div class="att-chip">📄 ${esc(p.name)}</div>`;
+      if (p.type === "voice") atts += `<div class="voice-b"><button class="play-b" onclick="playVoice('${p.audioId}')">▶</button><div class="bars"><i></i><i style="animation-delay:.15s"></i><i style="animation-delay:.3s"></i><i style="animation-delay:.45s"></i></div><span class="dur">${p.dur}s</span></div>`;
+    }
+    inner = `<div style="display:flex;flex-direction:column;align-items:flex-end;max-width:100%">${atts}<div class="bubble">${esc(textParts)}</div></div>`;
+  } else {
+    inner = `<div class="bubble">${md(textParts)}</div>
+      <div class="acts">
+        <button class="act" onclick="copyMsg(this)">📋 Copy</button>
+        <button class="act" onclick="speak(this)">🔊 Read aloud</button>
+        <button class="act" onclick="regen()">🔁 Regenerate</button>
+      </div>`;
+  }
+  div.innerHTML = `<div class="av">${av}</div><div class="bubblewrap">${inner}</div>`;
+  return div;
 }
-function quickSend(t){ input.value = t; input.focus(); }
+function pushMsg(role, parts){
+  if ($("chat").querySelector(".welcome")) $("chat").innerHTML = "";
+  const el = renderMsg(role, parts);
+  $("chat").appendChild(el);
+  scrollDown();
+  return el;
+}
+function scrollDown(smooth = true){
+  const c = $("chat");
+  c.scrollTo({top: c.scrollHeight, behavior: smooth ? "smooth" : "auto"});
+}
 
-async function sendMsg(){
-  const text = input.value.trim();
-  if (!text || BUSY) return;
-  if (!KEY){ toast("Set your API key first"); return; }
-  input.value = ""; input.style.height = "auto";
-  pushMsg("me", text);
-  CHAT.push({role:"user", content:text});
-  if (CHAT.length > 24) CHAT = CHAT.slice(-24);
+/* ── send ───────── */
+async function send(){
+  const text = $("input").value.trim();
+  if (!text && !ATTACH){ return; }
+  if (BUSY){ toast("Stew is still working…"); return; }
+  const parts = [];
+  if (ATTACH){
+    if (ATTACH.kind === "image") parts.push({type:"image", dataUrl:ATTACH.dataUrl});
+    else parts.push({type:"doc", name:ATTACH.name, text:ATTACH.text});
+    ATTACH = null; renderAttach();
+  }
+  if (text) parts.push({type:"text", text});
 
-  BUSY = true;
-  const btn = document.getElementById("send-btn");
-  btn.classList.add("busy"); btn.textContent = "✕";
-  document.getElementById("typing").classList.add("on");
+  $("input").value = ""; autoGrow($("input"));
+  pushMsg("user", parts);
+  CHAT.push({role:"user", parts});
+  saveConv();
+  haptic(12);
 
-  const bubble = pushMsg("stew", "");
+  if (TOOLS.mission && text){ runMission(text); return; }
+  if (TOOLS.img && text){ runImage(text); return; }
+  await streamChat(parts);
+}
+
+async function streamChat(parts){
+  BUSY = true; $("send-btn").disabled = true;
+  const el = pushMsg("stew", [{type:"text", text:""}]);
+  const bubble = el.querySelector(".bubble");
   bubble.innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>`;
   let acc = "";
-
   try{
-    const sys = buildSystem();
+    const apiParts = parts.map(p =>
+      p.type === "image" ? {type:"image_url", image_url:{url:p.dataUrl}} :
+      p.type === "doc" ? {type:"text", text:`(Attached document: ${p.name})\n${(p.text || "").slice(0, 6000)}`} :
+      {type:"text", text:p.text}
+    );
+    const lastUser = apiParts.length === 1 && apiParts[0].type === "text" ? apiParts[0].text : apiParts;
+    const hist = CHAT.slice(0, -1).slice(-12).map(m => ({role:m.role, content: msgText(m)}));
     const body = {
       model: "stew-agent",
-      messages: [{role:"system", content:sys}, ...CHAT],
-      stream: true
+      messages: [
+        {role:"system", content:`You are Stew, a brilliant friendly AI assistant for Africans. Current persona: ${PERSONA}. Be concise, warm, use emoji naturally. Today: ${new Date().toDateString()}.`},
+        ...hist,
+        {role:"user", content: lastUser}
+      ],
+      stream: true,
+      web_search: TOOLS.web
     };
     const resp = await fetch(API + "/v1/chat/completions", {
       method: "POST",
       headers: {"Content-Type":"application/json", "Authorization":"Bearer " + KEY},
       body: JSON.stringify(body)
     });
-    if (!resp.ok){
-      const errText = await resp.text();
-      throw new Error(errText.slice(0, 200) || resp.status);
-    }
+    if (!resp.ok){ throw new Error((await resp.text()).slice(0, 160)); }
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "";
@@ -538,309 +547,360 @@ async function sendMsg(){
         if (payload === "[DONE]") continue;
         try{
           const j = JSON.parse(payload);
-          const delta = j.choices?.[0]?.delta?.content || "";
-          if (delta){ acc += delta; bubble.textContent = acc; document.getElementById("tab-chat").scrollTop = 1e9; }
+          const delta = (j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content) || "";
+          if (delta){
+            acc += delta;
+            bubble.innerHTML = md(acc) + `<span class="caret"></span>`;
+            scrollDown();
+          }
         }catch(_){}
       }
     }
-    if (!acc.trim()) acc = "…Stew returned an empty response. Try again?";
-    bubble.textContent = acc;
-    CHAT.push({role:"assistant", content:acc});
+    if (!acc) acc = "…";
+    bubble.innerHTML = md(acc);
+    CHAT.push({role:"assistant", parts:[{type:"text", text:acc}]});
+    saveConv();
+    if (AUTO_SPEAK) speak(el.querySelector(".acts .act:nth-child(2)"));
   }catch(e){
-    bubble.textContent = "⚠️ " + (e.message || "Connection problem") + "\n\nCheck your API key or try again.";
-  }finally{
-    BUSY = false; btn.classList.remove("busy"); btn.textContent = "➤";
-    document.getElementById("typing").classList.remove("on");
+    bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`;
   }
-}
-function buildSystem(){
-  const p = PERSONAS.find(x => x.id === PERSONA);
-  let sys = `You are S.T.E.W (Smart Thinking Executive Worker), a powerful AI agent built for the African market. You are chatting with ${NAME} inside the official Stew mobile app. Persona: ${p ? p.label : "General"} — ${p ? p.desc : ""}. Be warm, sharp, and genuinely useful. Use WhatsApp-safe formatting (bold with *word*, no markdown headers).`;
-  const on = Object.entries(MCPS).filter(([k,v]) => v && k !== "__live");
-  if (on.length) sys += `\n\nUser's connected systems (MCP context): ${on.map(([k]) => k).join(", ")}.`;
-  return sys;
-}
-function newChat(){
-  CHAT = [];
-  document.getElementById("chatlog").innerHTML = "";
-  document.getElementById("chat-empty").style.display = "block";
-  goTab("chat"); toast("Fresh chat 🧹");
+  BUSY = false; $("send-btn").disabled = false;
+  haptic(18);
 }
 
-/* ── skills ──────────────────────────────── */
-async function loadSkills(){
-  try{
-    const r = await fetch(API + "/skills");
-    const d = await r.json();
-    SKILLS = d.skills || [];
-    const cats = ["all", ...(d.categories || [])];
-    document.getElementById("cat-chips").innerHTML =
-      cats.map(c => `<button class="cat-chip ${c==='all'?'on':''}" onclick="pickCat('${c}',this)">${c === "all" ? "⭐ All" : c}</button>`).join("");
-    renderSkills();
-  }catch(e){ document.getElementById("skills-grid").innerHTML = `<div class="empty">Could not load skills.</div>`; }
+function regen(){
+  if (BUSY) return;
+  for (let i = CHAT.length - 1; i >= 0; i--){
+    if (CHAT[i].role === "assistant"){ CHAT.splice(i, 1); break; }
+  }
+  const lastUser = [...CHAT].reverse().find(m => m.role === "user");
+  if (!lastUser){ toast("Nothing to regenerate"); return; }
+  renderChat();
+  streamChat(lastUser.parts);
 }
-let CUR_CAT = "all";
-function pickCat(c, el){
-  CUR_CAT = c;
-  document.querySelectorAll(".cat-chip").forEach(b => b.classList.remove("on"));
-  el.classList.add("on"); renderSkills();
-}
-const SKILL_ICO = {math:"🧮",finance:"💰",code:"💻",web:"🌐",text:"📝",data:"📊",security:"🔐",documents:"📄",ai:"🤖",utility:"🛠️",datetime:"📅",network:"📡",system:"⚙️"};
-function renderSkills(){
-  const q = (document.getElementById("skill-search").value || "").toLowerCase();
-  const list = SKILLS.filter(s => (CUR_CAT === "all" || s.category === CUR_CAT) &&
-    (!q || s.name.toLowerCase().includes(q) || (s.desc||"").toLowerCase().includes(q)));
-  document.getElementById("skills-grid").innerHTML = list.map(s =>
-    `<div class="card" onclick="askSkill('${s.name}')"><div class="c-ico">${SKILL_ICO[s.category]||"✨"}</div><b>${s.name}</b><p>${(s.desc||"").slice(0,80)}</p></div>`).join("")
-    || `<div class="empty">No skills match “${q}”.</div>`;
-}
-function askSkill(name){ goTab("chat"); input.value = `Run the ${name} skill: `; input.focus(); }
 
-/* ── powers: image gen ───────────────────── */
-async function runImageGen(){
-  const prompt = document.getElementById("img-prompt").value.trim();
-  if (!prompt) return toast("Describe the image first");
-  const out = document.getElementById("img-result");
-  out.innerHTML = `<div class="result-card">🎨 Generating “${prompt}”…<span class="thinking"><i></i><i></i><i></i></span></div>`;
+/* ── image mode ──────────────────────────── */
+async function runImage(prompt){
+  BUSY = true; $("send-btn").disabled = true;
+  const el = pushMsg("stew", [{type:"text", text:""}]);
+  el.querySelector(".bubble").innerHTML = `🎨 Painting “${esc(prompt)}”…<span class="thinking"><i></i><i></i><i></i></span>`;
   try{
     const r = await fetch(API + "/generate-image", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({prompt, width:1024, height:1024, api_key: KEY})});
     const d = await r.json();
-    if (d.image_url) out.innerHTML = `<img class="result-img" src="${d.image_url}" alt="${prompt}"><div class="result-card">✅ “${prompt}” — powered by FLUX. Long-press to save.</div>`;
-    else if (d.base64) out.innerHTML = `<img class="result-img" src="data:image/png;base64,${d.base64}" alt="${prompt}"><div class="result-card">✅ Done — long-press to save.</div>`;
-    else throw new Error(d.detail || "Generation failed");
-  }catch(e){ out.innerHTML = `<div class="result-card">⚠️ ${e.message}</div>`; }
-}
-
-/* ── powers: web search ──────────────────── */
-async function runSearch(){
-  const q = document.getElementById("search-q").value.trim();
-  if (!q) return toast("Type something to search");
-  const out = document.getElementById("search-result");
-  out.innerHTML = `<div class="result-card">🔎 Searching the live web…<span class="thinking"><i></i><i></i><i></i></span></div>`;
-  try{
-    const r = await fetch(API + "/browse", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({url:q, api_key:KEY, question:""})});
-    const d = await r.json();
-    if (d.success !== false && (d.content || d.summary)){
-      out.innerHTML = `<div class="result-card">${(d.content || d.summary || "").slice(0, 2500)}</div>`;
-    } else if (d.organic && d.organic.length){
-      out.innerHTML = `<div class="result-card">` + d.organic.slice(0,5).map((o,i)=>`${i+1}. ${o.title}\n${o.link}`).join("\n\n") + `</div>`;
-    } else { throw new Error("No results"); }
-  }catch(e){ out.innerHTML = `<div class="result-card">⚠️ ${e.message}</div>`; }
-}
-
-/* ── MCP hub ─────────────────────────────── */
-const LIVE_MCPS = [
-  {name:"Web Search Engine", ico:"🌐", color:"#2563eb", desc:"Real-time web search across Google, Bing & DDG — ad-free & relevance-filtered.", meta:"LIVE"},
-  {name:"Web Browser", ico:"🧭", color:"#0ea5e9", desc:"Stew opens and reads any webpage, extracts the content it needs to work.", meta:"LIVE"},
-  {name:"Image Studio (FLUX)", ico:"🎨", color:"#f97316", desc:"Full AI image generation for logos, graphics & art.", meta:"LIVE"},
-  {name:"Live Market Data", ico:"📈", color:"#22c55e", desc:"Crypto, stocks, FX rates & Nigerian market prices in real time.", meta:"LIVE"},
-  {name:"Maps & Location", ico:"🗺️", color:"#16a34a", desc:"OSM maps, satellite imagery, routes & places — live on Telegram now.", meta:"LIVE"},
-];
-const MCPS_CATALOG = [
-  {name:"GitHub", ico:"🐙", color:"#171515", desc:"Repositories, issues, PRs & code search."},
-  {name:"Notion", ico:"📓", color:"#37352f", desc:"Pages, databases & workspace knowledge."},
-  {name:"Slack", ico:"💼", color:"#611f69", desc:"Channels, messages & team workflows."},
-  {name:"Google Drive", ico:"📁", color:"#1f9cf4", desc:"Docs, sheets & file storage."},
-  {name:"Gmail", ico:"✉️", color:"#ea4335", desc:"Read, draft & send email."},
-  {name:"Paystack", ico:"💳", color:"#00c3f7", desc:"Payments, invoices & Naira billing."},
-  {name:"Supabase", ico:"⚡", color:"#3ecf8e", desc:"Postgres data, auth & storage."},
-  {name:"WhatsApp", ico:"💬", color:"#25d366", desc:"Message automation & notifications."},
-  {name:"X / Twitter", ico:"✖️", color:"#1d1d1f", desc:"Posts, trends & social research."},
-  {name:"YouTube", ico:"▶️", color:"#ff0000", desc:"Video search, transcripts & research."},
-  {name:"PostgreSQL", ico:"🐘", color:"#336791", desc:"Direct database queries & reports."},
-  {name:"Filesystem", ico:"🗂️", color:"#8b5cf6", desc:"Read & organize documents & exports."},
-];
-function renderMcps(){
-  MCPS = JSON.parse(localStorage.getItem("stew_mcps") || "{}");
-  document.getElementById("mcp-live").innerHTML = LIVE_MCPS.map(m =>
-    `<div class="mcp"><div class="m-ico" style="background:${m.color}22;border:1px solid ${m.color}55">${m.ico}</div>
-     <div class="m-body"><b>${m.name}</b><p>${m.desc}</p><div class="m-meta live">● ACTIVE</div></div>
-     <div style="font-size:20px">✅</div></div>`).join("");
-  document.getElementById("mcp-catalog").innerHTML = MCPS_CATALOG.map(m =>
-    `<div class="mcp"><div class="m-ico" style="background:${m.color}22;border:1px solid ${m.color}55">${m.ico}</div>
-     <div class="m-body"><b>${m.name}</b><p>${m.desc}</p></div>
-     <div class="toggle ${MCPS[m.name]?'on':''}" onclick="toggleMcp('${m.name}',this)"></div></div>`).join("");
-}
-function toggleMcp(name, el){
-  haptic(10);
-  MCPS[name] = !MCPS[name];
-  el.classList.toggle("on", MCPS[name]);
-  localStorage.setItem("stew_mcps", JSON.stringify(MCPS));
-  toast(MCPS[name] ? `${name} connected — Stew now knows your stack` : `${name} disconnected`);
-}
-
-/* ── me / stats ──────────────────────────── */
-async function loadStats(){
-  try{
-    const r = await fetch(API + "/credits/balance?api_key=" + encodeURIComponent(KEY));
-    const d = await r.json();
-    const el = document.getElementById("me-stats");
-    if (d.credits !== undefined || d.balance !== undefined){
-      el.innerHTML = `<div class="stat"><span>Credits remaining</span><b>${d.credits ?? d.balance}</b></div>` +
-        (d.plan ? `<div class="stat"><span>Plan</span><b>${d.plan}</b></div>` : "");
-    }
-  }catch(e){}
-}
-
-/* ── install + misc ──────────────────────── */
-function promptInstall(){
-  if (deferredPrompt){
-    deferredPrompt.prompt();
-    deferredPrompt.userChoice.then(() => { deferredPrompt = null; document.getElementById("install-btn").style.display = "none"; });
-  } else {
-    openSheet(`<div class="s-ico">📲</div><h3>Install Stew on your phone</h3>
-      <p><b>Android (Chrome):</b> Menu ⋮ → “Add to Home screen” / “Install app”.<br><br>
-      <b>iPhone (Safari):</b> Share button ⬆️ → “Add to Home Screen”.<br><br>
-      Stew will get its own icon, splash screen and full-screen window — just like an app store app.</p>
-      <button class="btn-grad" onclick="closeModal()">Got it 🍲</button>`);
+    if (!r.ok) throw new Error(d.detail || "Generation failed");
+    const src = d.image_url || (d.base64 ? "data:image/png;base64," + d.base64 : null);
+    if (!src) throw new Error("No image returned");
+    el.querySelector(".bubble").innerHTML = `<img src="${src}" alt="${esc(prompt)}"><b>✨ ${esc(prompt)}</b>`;
+    CHAT.push({role:"assistant", parts:[{type:"text", text:"🎨 Image generated: " + prompt}]});
+    saveConv(); haptic(20);
+  }catch(e){
+    el.querySelector(".bubble").innerHTML = `⚠️ ${esc(e.message)}`;
   }
-}
-function showAbout(){
-  openSheet(`<div class="s-ico">🍲</div><h3>S.T.E.W Agent</h3>
-    <p><b>Smart Thinking Executive Worker</b> — an AI agent platform built for Africa by MUTYINT Nigeria.<br><br>
-    ✦ 12 specialist personas<br>✦ 63 live skills<br>✦ AI image studio (FLUX)<br>✦ Live web search & browsing<br>✦ MCP system integrations<br>✦ Maps, market data & documents on Telegram<br><br>
-    API: OpenAI-compatible at <code>${API}/v1</code></p>
-    <button class="btn-grad" onclick="closeModal()">Let's cook 🍲</button>`);
-}
-function openSheet(html){ document.getElementById("sheet").innerHTML = html; document.getElementById("modal").classList.add("on"); }
-function closeModal(){ document.getElementById("modal").classList.remove("on"); }
-let toastT;
-function toast(t){
-  const el = document.getElementById("toast");
-  el.textContent = t; el.classList.add("on");
-  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("on"), 2600);
-}
-/* ── haptics + sound ─────────────────────── */
-function haptic(ms){ try{ navigator.vibrate && navigator.vibrate(ms || 12); }catch(e){} }
-function chime(){
-  try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    [[523.25,0],[659.25,.12],[783.99,.24],[1046.5,.36]].forEach(([f,t]) => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = "sine"; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
-      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + t + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.5);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.55);
-    });
-  }catch(e){}
+  BUSY = false; $("send-btn").disabled = false;
 }
 
-/* ── MISSION ENGINE (async agent runs) ────── */
-const STAGE_LABELS = {
-  starting: "Waking up the specialists… 🛏️",
-  thinking: "Stew is thinking deeply… 🧠",
-  executing: "Running tools & building… ⚙️",
-  finishing: "Polishing your deliverables… ✨",
-  done: "Mission complete! 🎉"
-};
-function fillMission(t){ document.getElementById("mission-goal").value = t; haptic(8); }
-let POLL_T = null, ELAPSED_T = null;
-
-async function startMission(){
-  const goal = document.getElementById("mission-goal").value.trim();
-  if (!goal) return toast("Describe your mission first 🚀");
-  if (!KEY) return toast("Set your API key first");
-  const work = document.getElementById("work");
-  work.classList.remove("done"); work.classList.add("on");
-  document.getElementById("w-title").textContent = "Mission in progress";
-  document.getElementById("w-tools").innerHTML = "";
+/* ── mission mode ────────────────────────── */
+async function runMission(goal){
+  BUSY = true; $("send-btn").disabled = true;
+  const card = document.createElement("div");
+  card.className = "mission-card";
+  card.innerHTML = `<div class="st"><span class="spin"></span><span id="mc-stage">🚀 Launching mission…</span></div>
+    <div class="prog"><i></i></div><div class="m-tools" id="mc-tools"></div><div class="dlv" id="mc-dlv"></div>`;
+  if ($("chat").querySelector(".welcome")) $("chat").innerHTML = "";
+  $("chat").appendChild(card); scrollDown();
   const t0 = Date.now();
-  ELAPSED_T = setInterval(() => {
-    document.getElementById("w-elapsed").textContent = ((Date.now()-t0)/1000).toFixed(0) + "s";
-  }, 1000);
-  haptic(20);
-
+  let done = false;
+  const stages = ["🧠 Understanding the goal…", "🔬 Researching…", "🛠️ Building…", "✨ Polishing deliverables…"];
+  let si = 0;
+  const stageT = setInterval(() => {
+    const st = card.querySelector("#mc-stage");
+    if (st) st.textContent = stages[(si++) % stages.length];
+  }, 4000);
   try{
     const r = await fetch(API + "/agent/run", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({goal, api_key: KEY})});
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || "Launch failed");
-    pollMission(d.job_id, t0, goal);
-  }catch(e){
-    endWork(); toast("⚠️ " + e.message);
-  }
-}
-async function pollMission(jobId, t0, goal){
-  try{
-    const r = await fetch(API + "/agent/status/" + jobId + "?api_key=" + encodeURIComponent(KEY));
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || "Status failed");
-    document.getElementById("w-stage").textContent = STAGE_LABELS[d.stage] || STAGE_LABELS.thinking;
-    const tools = (d.tools_used || []).map(t => t.replace(/_/g," "));
-    document.getElementById("w-tools").innerHTML = tools.map(t => `<span class="w-tool">🔧 ${t}</span>`).join("");
-    if (d.status === "done" || d.status === "error"){
-      if (d.status === "error") throw new Error(d.error || "Mission failed");
-      missionDone(goal, d, t0); return;
+    while (!done){
+      await new Promise(res => setTimeout(res, 2500));
+      const s = await (await fetch(API + "/agent/status/" + d.job_id + "?api_key=" + encodeURIComponent(KEY))).json();
+      const tools = (s.tools_used || []).map(t => t.replace(/_/g, " "));
+      const tw = card.querySelector("#mc-tools");
+      if (tw && tools.length) tw.innerHTML = tools.map(t => `<span>🔧 ${esc(t)}</span>`).join("");
+      if (s.status === "done" || s.status === "error"){
+        done = true; clearInterval(stageT);
+        if (s.status === "error") throw new Error(s.error || "Mission failed");
+        const secs = Math.round((Date.now() - t0) / 1000);
+        card.querySelector(".st").innerHTML = `✅ Mission complete in ${secs}s`;
+        const bar = card.querySelector(".prog");
+        if (bar) bar.innerHTML = `<i style="width:100%;animation:none"></i>`;
+        let dlvHtml = "";
+        (s.deliverables || []).forEach(x => {
+          if (x.base64){
+            const mime = {pdf:"application/pdf", docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation"}[x.type || x.format] || "application/octet-stream";
+            dlvHtml += `<a href="data:${mime};base64,${x.base64}" download="${esc(x.name || ("deliverable." + (x.type || x.format || "bin")))}">⬇ ${esc((x.name || "deliverable").slice(0, 28))}</a>`;
+          }
+        });
+        const dl = card.querySelector("#mc-dlv");
+        if (dl) dl.innerHTML = dlvHtml;
+        CHAT.push({role:"assistant", mission: card.outerHTML});
+        const text = s.response || "Mission complete 🎉";
+        CHAT.push({role:"assistant", parts:[{type:"text", text}]});
+        saveConv();
+        const el = pushMsg("stew", [{type:"text", text}]);
+        el.style.animation = "none";
+        haptic([25, 40, 25]); chime();
+      }
     }
   }catch(e){
-    endWork(); toast("⚠️ " + e.message); return;
+    done = true; clearInterval(stageT);
+    const st = card.querySelector(".st");
+    if (st) st.innerHTML = `⚠️ ${esc(e.message).slice(0, 120)}`;
+    const sp = card.querySelector(".spin");
+    if (sp) sp.remove();
   }
-  POLL_T = setTimeout(() => pollMission(jobId, t0, goal), 2200);
+  BUSY = false; $("send-btn").disabled = false;
 }
-function endWork(){
-  clearInterval(ELAPSED_T); clearTimeout(POLL_T);
-  document.getElementById("work").classList.remove("on");
+
+/* ── attachments ─────────────────────────── */
+function pickAttach(){
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/*,application/pdf,.txt,.md,.csv,.json,.docx";
+  inp.onchange = () => { if (inp.files[0]) handleFile(inp.files[0]); };
+  inp.click();
 }
-function missionDone(goal, d, t0){
-  clearInterval(ELAPSED_T); clearTimeout(POLL_T);
-  const secs = ((Date.now()-t0)/1000).toFixed(0);
-  const work = document.getElementById("work");
-  work.classList.add("done");
-  document.getElementById("w-title").textContent = "Mission complete! 🎉";
-  document.getElementById("w-stage").textContent = `Finished in ${secs}s`;
-  confetti(); confettiBurst(); haptic([30,40,60]); chime();
-  setTimeout(() => {
-    endWork();
-    renderMissionResult(goal, d, secs);
-  }, 2100);
+async function handleFile(f){
+  haptic(10);
+  if (f.type.startsWith("image/")){
+    const dataUrl = await fileToDataUrl(f);
+    ATTACH = {kind:"image", dataUrl, name:f.name};
+  } else {
+    let text = "";
+    try{ text = await f.text(); }catch(e){}
+    ATTACH = {kind:"doc", name:f.name, text: text || "(binary file — could not extract text)"};
+  }
+  renderAttach();
 }
-const FILE_ICO = {pdf:"📕", docx:"📘", xlsx:"📗", pptx:"📙", image:"🖼️"};
-function renderMissionResult(goal, d, secs){
-  const out = document.getElementById("mission-result");
-  let filesHtml = (d.files || []).map((f, i) =>
-    `<a class="file-btn" style="animation-delay:${.08*i}s" download="${f.filename}" href="data:application/octet-stream;base64,${f.base64}">
-       <div class="f-ico">${FILE_ICO[f.doc_type] || "📁"}</div><span>${f.filename}</span><b style="color:var(--orange)">⬇</b></a>`).join("");
-  const imgFiles = (d.files || []).filter(f => f.doc_type === "image");
-  const imgHtml = imgFiles.map(f => `<img class="result-img" src="data:image/png;base64,${f.base64}">`).join("");
-  const tools = (d.tools_used || []).map(t => `<span class="w-tool">🔧 ${t.replace(/_/g," ")}</span>`).join("");
-  out.innerHTML = `
-    <div class="mission-card">
-      <div class="m-head">🎉 <b>Mission complete</b></div>
-      <p style="color:var(--mut);font-size:12px;margin-bottom:10px">${goal.slice(0,140)}</p>
-      <div class="w-tools" style="justify-content:flex-start;margin:0 0 4px">${tools}</div>
-      <div class="result-card" style="margin:10px 0 0">${(d.response || "Done!").slice(0, 1200)}</div>
-    </div>
-    ${imgHtml}
-    ${filesHtml ? `<div class="sect-title">📦 Deliverables — tap to download</div>` + filesHtml : ""}`;
-  out.scrollIntoView({behavior:"smooth", block:"start"});
+function fileToDataUrl(f){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(f);
+  });
 }
-function confettiBurst(){
-  const em = ["🎉","🎊","✨","🍲","💜","🔥","⭐️"];
-  for (let i = 0; i < 30; i++){
-    const s = document.createElement("div");
-    s.textContent = em[Math.floor(Math.random()*em.length)];
-    s.style.cssText = `position:fixed;z-index:99;top:-30px;left:${Math.random()*100}vw;font-size:${16+Math.random()*16}px;pointer-events:none;transition:transform 2s cubic-bezier(.2,.6,.4,1),opacity 2s;`;
-    document.body.appendChild(s);
-    requestAnimationFrame(() => { s.style.transform = `translateY(${window.innerHeight+80}px) translateX(${(Math.random()-.5)*160}px) rotate(${(Math.random()-.5)*720}deg)`; s.style.opacity = "0"; });
-    setTimeout(() => s.remove(), 2100);
+function renderAttach(){
+  const p = $("attach-prev");
+  if (!ATTACH){ p.innerHTML = ""; return; }
+  p.innerHTML = ATTACH.kind === "image"
+    ? `<div class="p"><img src="${ATTACH.dataUrl}"><button class="rm" onclick="ATTACH=null;renderAttach()">✕</button></div>`
+    : `<div class="p"><div class="doc">📄 ${esc(ATTACH.name)}</div><button class="rm" onclick="ATTACH=null;renderAttach()">✕</button></div>`;
+}
+function autoGrow(t){ t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 110) + "px"; }
+
+/* ── voice notes ───────────────────────────────── */
+function micTap(){
+  if (REC){ stopRec(); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder){ toast("🎤 Voice not supported on this browser"); return; }
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
+    const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "");
+    const mr = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined);
+    const chunks = [];
+    mr.ondataavailable = e => chunks.push(e.data);
+    const t0 = Date.now();
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, {type: mr.mimeType || "audio/webm"});
+      const secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
+      const vid = "v" + t0;
+      VOICES[vid] = URL.createObjectURL(blob);
+      const fd = new FormData();
+      fd.append("file", blob, "voice." + ((mr.mimeType || "").includes("mp4") ? "mp4" : "webm"));
+      const el = pushMsg("user", [{type:"voice", audioId:vid, dur:secs}, {type:"text", text:"…"}]);
+      el.querySelector(".bubble").innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>`;
+      try{
+        const r = await fetch(API + "/api/stt", {method:"POST", body:fd});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "Transcription failed");
+        const parts = [{type:"voice", audioId:vid, dur:secs}, {type:"text", text:d.text}];
+        el.remove();
+        CHAT.push({role:"user", parts});
+        saveConv();
+        const el2 = pushMsg("user", parts);
+        el2.style.animation = "none";
+        await streamChat(parts);
+      }catch(e){
+        el.querySelector(".bubble").innerHTML = `⚠️ ${esc(e.message).slice(0, 120)}`;
+      }
+      REC = null;
+    };
+    mr.start();
+    REC = {mr, timer:setInterval(() => {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      $("rec-time").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    }, 300)};
+    $("rec-ind").classList.add("on");
+    $("mic-btn").classList.add("rec");
+    $("composer").classList.add("rec");
+    haptic(15);
+  }).catch(() => toast("🎤 Microphone permission needed"));
+}
+function stopRec(){
+  if (!REC) return;
+  clearInterval(REC.timer);
+  $("rec-ind").classList.remove("on");
+  $("mic-btn").classList.remove("rec");
+  $("composer").classList.remove("rec");
+  haptic(25);
+  REC.mr.stop();
+}
+function playVoice(id){
+  const url = VOICES[id];
+  if (url){ new Audio(url).play(); return; }
+  toast("Voice replay available in this session only");
+}
+
+/* ── read aloud ────────────────────── */
+function toggleAutoSpeak(){
+  AUTO_SPEAK = !AUTO_SPEAK;
+  localStorage.setItem("stew_autospeak", AUTO_SPEAK ? "1" : "0");
+  $("auto-speak-btn").classList.toggle("speak-on", AUTO_SPEAK);
+  toast(AUTO_SPEAK ? "🔊 Auto-read ON — replies will be spoken" : "🔇 Auto-read OFF");
+}
+async function speak(btn){
+  if (!btn) return;
+  const bubble = btn.closest(".bubblewrap").querySelector(".bubble");
+  const text = bubble.innerText.replace(/\s+/g, " ").slice(0, 2500);
+  if (!text) return;
+  btn.textContent = "⏳";
+  try{
+    const r = await fetch(API + "/api/tts", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text})});
+    const d = await r.json();
+    if (!r.ok || !d.audio_base64) throw new Error("TTS failed");
+    new Audio("data:audio/mp3;base64," + d.audio_base64).play();
+    btn.textContent = "🔊";
+  }catch(e){
+    try{ speechSynthesis.speak(new SpeechSynthesisUtterance(text)); btn.textContent = "🔊"; }
+    catch(_){ btn.textContent = "⚠️"; }
   }
 }
 
-function confetti(){
-  const em = ["🍲","⚡","✨","🎉","💜","🔥"];
-  for (let i = 0; i < 24; i++){
-    const s = document.createElement("div");
-    s.textContent = em[Math.floor(Math.random()*em.length)];
-    s.style.cssText = `position:fixed;z-index:99;top:-30px;left:${Math.random()*100}vw;font-size:${14+Math.random()*14}px;pointer-events:none;transition:transform 1.6s ease-in,opacity 1.6s;`;
-    document.body.appendChild(s);
-    requestAnimationFrame(() => { s.style.transform = `translateY(${window.innerHeight+60}px) rotate(${(Math.random()-.5)*540}deg)`; s.style.opacity = "0"; });
-    setTimeout(() => s.remove(), 1800);
+/* ── sheets ──────────────────────────────── */
+function openSheet(kind){
+  toggleDrawer(false);
+  const body = $("sh-body");
+  $("sheet").classList.add("on"); $("sheet-scrim").classList.add("on");
+  if (kind === "personas"){
+    $("sh-title").textContent = "Personas";
+    body.innerHTML = (PERSONAS.length ? PERSONAS : [{name:"General Assistant", desc:"Brilliant all-round helper"}]).map(p => `
+      <div class="p-row ${p.name === PERSONA ? "sel" : ""}" onclick="setPersona('${esc(p.name)}')">
+        <div class="ico">🎭</div>
+        <div><b>${esc(p.name)}</b><small>${esc(p.desc || "")}</small></div>
+        ${p.name === PERSONA ? "<span class='ck'>✓</span>" : ""}
+      </div>`).join("");
+  }
+  if (kind === "skills"){
+    $("sh-title").textContent = "Skills — live on Stew's engine";
+    body.innerHTML = `<div class="sh-search">🔎<input id="sk-q" placeholder="Search 63 skills..." oninput="filterSkills()"></div><div id="sk-list"></div>`;
+    renderSkills("");
+  }
+  if (kind === "settings"){
+    $("sh-title").textContent = "Settings";
+    body.innerHTML = `
+      <div class="set-card"><b>🔑 API key</b><small>Works out of the box with the included free key. Paste your own Stew key for more credits (stew-agent.onrender.com).</small>
+        <input id="set-key" type="text" value="${esc(KEY === DEFAULT_KEY ? "" : KEY)}" placeholder="Using built-in free key">
+        <button class="set-btn" onclick="saveKey()">Save key</button></div>
+      <div class="set-card"><b>📲 Install</b><small>Add Stew to your home screen — full screen, own icon.</small>
+        <button class="set-btn" onclick="promptInstall()">Install app</button>
+        <a class="set-btn" style="margin-left:8px" href="/app/StewAgent.apk" download="StewAgent.apk">Android APK</a></div>
+      <div class="set-card"><b>🧹 Data</b><small>Clear all chats and settings on this device.</small>
+        <button class="set-btn" style="background:#f55656" onclick="wipeAll()">Reset app</button></div>`;
   }
 }
+function closeSheet(){ $("sheet").classList.remove("on"); $("sheet-scrim").classList.remove("on"); }
+function setPersona(name){ PERSONA = name; localStorage.setItem("stew_persona", name); $("h-persona").textContent = "🤖 " + name; closeSheet(); toast("🎭 Persona: " + name); haptic(12); }
+function renderSkills(q){
+  const list = SKILLS.filter(s => !q || (s.name + " " + (s.description || "") + " " + (s.category || "")).toLowerCase().includes(q));
+  $("sk-list").innerHTML = list.map(s => `
+    <div class="skill-row" onclick="useSkill('${esc(s.name)}')">
+      <div><b>${esc(s.name)}</b><small>${esc((s.description || "").slice(0, 70))}</small></div>
+      ${s.category ? `<span class="cat">${esc(s.category)}</span>` : ""}
+    </div>`).join("") || `<div style="padding:16px;color:var(--mut);font-size:12.5px">No skills match.</div>`;
+}
+function filterSkills(){ renderSkills(($("sk-q").value || "").toLowerCase()); }
+function useSkill(name){ closeSheet(); $("input").value = "Run the " + name + " skill: "; $("input").focus(); autoGrow($("input")); }
+function saveKey(){
+  const v = $("set-key").value.trim();
+  KEY = v || DEFAULT_KEY;
+  localStorage.setItem("stew_key", KEY);
+  toast(v ? "🔑 Key saved" : "🔑 Back to built-in free key");
+}
+function wipeAll(){
+  if (!confirm("Clear all chats and settings?")) return;
+  localStorage.clear(); location.reload();
+}
+
+/* ── tools toggle ────────────────────────── */
+function toggleTool(t){
+  if (BUSY) return;
+  TOOLS[t] = !TOOLS[t];
+  if (TOOLS[t]){
+    if (t === "mission") TOOLS.img = false;
+    if (t === "img") TOOLS.mission = false;
+  }
+  $("c-web").classList.toggle("on", TOOLS.web);
+  $("c-img").classList.toggle("on", TOOLS.img);
+  $("c-mission").classList.toggle("on", TOOLS.mission);
+  $("input").placeholder = TOOLS.mission ? "Describe the mission…" : TOOLS.img ? "Describe an image…" : "Message Stew...";
+  haptic(10);
+}
+
+/* ── misc ────────────────────────────────── */
+function esc(s){ return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function md(t){
+  t = esc(t);
+  t = t.replace(/```([\s\S]*?)```/g, (_, c) => `<pre><code>${c.replace(/^\w+\n/, "").trim()}</code></pre>`);
+  t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  t = t.replace(/\*([^*\n]+)\*/g, "<i>$1</i>");
+  t = t.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  return t;
+}
+function copyMsg(btn){
+  const text = btn.closest(".bubblewrap").querySelector(".bubble").innerText;
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => { btn.textContent = "✅ Copied"; setTimeout(() => btn.textContent = "📋 Copy", 1400); });
+}
+function toast(m){
+  const t = $("toast");
+  t.textContent = m; t.classList.remove("off");
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.add("off"), 2400);
+}
+function haptic(p){ try{ navigator.vibrate(p); }catch(e){} }
+function chime(){ try{ const c = new (window.AudioContext || window.webkitAudioContext)(); const o = c.createOscillator(); const g = c.createGain();
+  o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.setValueAtTime(.08, c.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .5); o.start(); o.stop(c.currentTime + .5);}catch(e){} }
+function promptInstall(){
+  toast("📲 Browser menu → “Add to Home screen” / “Install app”");
+  closeSheet();
+}
+function showAbout(){
+  closeSheet();
+  toast("🍲 Stew v2.0 — Smart Thinking Executive Worker by MUTYINT Nigeria. Chat, voice, images, missions. Built for Africa 🌍");
+}
+
+$("input").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
+});
+let tx = null;
+document.addEventListener("touchstart", e => { if (e.touches[0].clientX < 28) tx = e.touches[0].clientX; }, {passive:true});
+document.addEventListener("touchmove", e => { if (tx !== null && e.touches[0].clientX - tx > 60){ toggleDrawer(true); tx = null; } }, {passive:true});
+document.addEventListener("touchend", () => { tx = null; }, {passive:true});
+window.addEventListener("load", () => { if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {}); });
 </script>
 </body>
 </html>

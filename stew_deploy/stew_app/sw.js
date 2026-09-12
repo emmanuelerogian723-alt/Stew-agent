@@ -1,5 +1,5 @@
 /* Stew Agent PWA service worker — offline shell + fast loads */
-const CACHE = 'stew-app-v1';
+const CACHE = 'stew-app-v2';
 const SHELL = [
   '/app/',
   '/app/index.html',
