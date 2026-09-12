@@ -276,6 +276,17 @@ header{
 .followups button:active{transform:scale(.95)}
 .src-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#7ee2b8;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);border-radius:999px;padding:3px 10px;margin:8px 0 0}
 #send-btn.stop{background:linear-gradient(135deg,#ff8c42,#f05252);box-shadow:0 0 22px -6px rgba(240,82,82,.7)}
+.sitecard{background:var(--card2);border:1px solid var(--line2);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.sitecard b{font-size:14px}
+.sitecard span{font-size:12px;color:var(--mut)}
+.siteacts{display:flex;gap:8px;margin-top:6px}
+.siteacts button{font-size:12px;background:rgba(124,92,255,.2);border:1px solid var(--line2);border-radius:999px;padding:7px 14px}
+.siteacts button:active{transform:scale(.95)}
+.srcol{margin:6px 0 6px 20px}
+.srcol a{color:#8fd4ff;text-decoration:underline;font-size:12.5px}
+.msg.me .acts{justify-content:flex-end}
+.ubar{height:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin:8px 0 6px}
+.ubar div{height:100%;background:linear-gradient(90deg,#7c5cff,#ff8c42);border-radius:99px;transition:width .5s}
 #scroll-fab{position:fixed;right:16px;bottom:150px;width:40px;height:40px;border-radius:50%;background:var(--card2);border:1px solid var(--line2);box-shadow:0 8px 24px -8px rgba(0,0,0,.6);font-size:18px;color:var(--text);z-index:25;opacity:0;pointer-events:none;transform:translateY(8px);transition:all .25s}
 #scroll-fab.on{opacity:1;pointer-events:auto;transform:none}
 </style>
@@ -290,6 +301,7 @@ header{
     <b id="h-persona">🤖 General Assistant</b>
     <span>Stew · tap to switch persona</span>
   </div>
+  <button class="ico-btn" onclick="exportChat()" aria-label="Export chat">📤</button>
   <button class="ico-btn" id="auto-speak-btn" onclick="toggleAutoSpeak()" aria-label="Auto read">🔊</button>
 </header>
 
@@ -319,6 +331,9 @@ header{
     <button class="chip" id="c-web" onclick="toggleTool('web')">🌐 Web search</button>
     <button class="chip" id="c-img" onclick="toggleTool('img')">🎨 Image</button>
     <button class="chip" id="c-mission" onclick="toggleTool('mission')">🚀 Mission</button>
+    <button class="chip" id="c-research" onclick="toggleTool('research')">🔬 Research</button>
+    <button class="chip" id="c-webbuild" onclick="toggleTool('webbuild')">🏗️ Website</button>
+    <button class="chip" id="c-fusion" onclick="toggleTool('fusion')">⚡ Fusion</button>
     <button class="chip" onclick="openSheet('skills')">🧰 Skills</button>
     <button class="chip" onclick="openSheet('personas')">🎭 Persona</button>
   </div>
@@ -348,7 +363,7 @@ const DEFAULT_KEY = "stew_O9X6d0rXTR3OGcQEJ1F3XXgFKLAuxEYNwytqo0mdmLFE2sXBQC0chb
 let KEY = localStorage.getItem("stew_key") || DEFAULT_KEY;
 let PERSONA = localStorage.getItem("stew_persona") || "General Assistant";
 let AUTO_SPEAK = localStorage.getItem("stew_autospeak") === "1";
-let TOOLS = {web:false, img:false, mission:false};
+let TOOLS = {web:false, img:false, mission:false, research:false, webbuild:false, fusion:false};
 let BUSY = false, CHAT = [], CONVS = [], CUR = null;
 let ATTACH = null;
 let ABORT = null;
@@ -447,7 +462,7 @@ function renderWelcome(){
 function renderChat(){
   if (!CHAT.length){ renderWelcome(); return; }
   $("chat").innerHTML = "";
-  CHAT.forEach(m => {
+  CHAT.forEach((m, i) => {
     if (m.mission){
       const div = document.createElement("div");
       div.innerHTML = m.mission;
@@ -455,7 +470,9 @@ function renderChat(){
       if (card){ card.style.animation = "none"; $("chat").appendChild(card); }
       return;
     }
-    const el = renderMsg(m.role, m.parts || [{type:"text", text:m.content}]);
+    let lastUser = -1;
+    for (let li = CHAT.length - 1; li >= 0; li--){ if (CHAT[li].role === "user" && !CHAT[li].mission){ lastUser = li; break; } }
+    const el = renderMsg(m.role, m.parts || [{type:"text", text:m.content}], i === lastUser);
     el.style.animation = "none";
     $("chat").appendChild(el);
   });
@@ -463,7 +480,7 @@ function renderChat(){
 }
 function quick(t){ $("input").value = t; autoGrow($("input")); send(); }
 
-function renderMsg(role, parts){
+function renderMsg(role, parts, editable){
   const div = document.createElement("div");
   div.className = "msg " + (role === "user" ? "me" : "stew");
   const av = role === "user" ? "🧑" : "🍲";
@@ -476,7 +493,8 @@ function renderMsg(role, parts){
       if (p.type === "doc") atts += `<div class="att-chip">📄 ${esc(p.name)}</div>`;
       if (p.type === "voice") atts += `<div class="voice-b"><button class="play-b" onclick="playVoice('${p.audioId}')">▶</button><div class="bars"><i></i><i style="animation-delay:.15s"></i><i style="animation-delay:.3s"></i><i style="animation-delay:.45s"></i></div><span class="dur">${p.dur}s</span></div>`;
     }
-    inner = `<div style="display:flex;flex-direction:column;align-items:flex-end;max-width:100%">${atts}<div class="bubble">${esc(textParts)}</div></div>`;
+    inner = `<div style="display:flex;flex-direction:column;align-items:flex-end;max-width:100%">${atts}<div class="bubble">${esc(textParts)}</div></div>` +
+      (editable ? `<div class="acts editrow"><button class="act" onclick="editMsg()">✏️ Edit</button></div>` : "");
   } else {
     inner = `<div class="bubble">${md(textParts)}</div>
       <div class="acts">
@@ -488,9 +506,10 @@ function renderMsg(role, parts){
   div.innerHTML = `<div class="av">${av}</div><div class="bubblewrap">${inner}</div>`;
   return div;
 }
-function pushMsg(role, parts){
+function pushMsg(role, parts, editable){
   if ($("chat").querySelector(".welcome")) $("chat").innerHTML = "";
-  const el = renderMsg(role, parts);
+  if (role === "user") $("chat").querySelectorAll(".editrow").forEach(r => r.remove());
+  const el = renderMsg(role, parts, editable);
   $("chat").appendChild(el);
   scrollDown();
   return el;
@@ -520,13 +539,15 @@ async function send(){
   if (text) parts.push({type:"text", text});
 
   $("input").value = ""; autoGrow($("input"));
-  pushMsg("user", parts);
+  pushMsg("user", parts, true);
   CHAT.push({role:"user", parts});
   saveConv();
   haptic(12);
 
   if (TOOLS.mission && text){ runMission(text); return; }
   if (TOOLS.img && text){ runImage(text); return; }
+  if (TOOLS.research && text){ runResearch(text); return; }
+  if (TOOLS.webbuild && text){ runWebbuild(text); return; }
   await streamChat(parts);
 }
 
@@ -553,7 +574,8 @@ async function streamChat(parts){
         {role:"user", content: lastUser}
       ],
       stream: true,
-      web_search: TOOLS.web
+      web_search: TOOLS.web,
+      fusion_mode: TOOLS.fusion
     };
     const resp = await fetch(API + "/v1/chat/completions", {
       method: "POST",
@@ -588,9 +610,12 @@ async function streamChat(parts){
     }
     if (!acc) acc = "…";
     bubble.innerHTML = md(acc);
-    if (TOOLS.web){
+    const badges = [];
+    if (TOOLS.web) badges.push(`<span class="src-chip">🌐 Answered with live web results</span>`);
+    if (TOOLS.fusion) badges.push(`<span class="src-chip" style="color:#ffca7a;background:rgba(255,140,66,.1);border-color:rgba(255,140,66,.3)">⚡ Fusion answer — multiple models</span>`);
+    if (badges.length){
       const chip = document.createElement("div");
-      chip.innerHTML = `<span class="src-chip">🌐 Answered with live web results</span>`;
+      chip.innerHTML = badges.join(" ");
       el.querySelector(".bubblewrap").insertBefore(chip, el.querySelector(".acts"));
     }
     CHAT.push({role:"assistant", parts:[{type:"text", text:acc}]});
@@ -621,6 +646,113 @@ function addFollowups(el){
     <button onclick="quick('Summarize this in simpler terms')">✨ Simpler</button>
     <button onclick="quick('What should I do next? Give me action steps')">➡️ Next steps</button>`;
   el.querySelector(".bubblewrap").appendChild(row);
+}
+
+/* ── deep research ─────────────────────── */
+async function runResearch(query){
+  BUSY = true; $("send-btn").textContent = "⏹"; $("send-btn").classList.add("stop");
+  const el = pushMsg("stew", [{type:"text", text:""}]);
+  const bubble = el.querySelector(".bubble");
+  bubble.innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>&nbsp;🔎 Searching multiple sources & synthesizing a report…`;
+  ABORT = new AbortController();
+  try{
+    const r = await fetch(API + "/research", {method:"POST",
+      headers:{"Content-Type":"application/json", "X-API-Key": KEY},
+      body: JSON.stringify({query, depth: 3}), signal: ABORT.signal});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "Research failed");
+    let html = md(d.report || "No report returned.");
+    if (d.sources && d.sources.length){
+      html += `<div class="mdh">📚 Sources</div><ol class="srcol">` +
+        d.sources.slice(0, 8).map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title || x.url)}</a></li>`).join("") +
+        `</ol>`;
+    }
+    bubble.innerHTML = html;
+    const txt = (d.report || "") + (d.sources && d.sources.length ? "\n\nSources:\n" + d.sources.map(x => "- " + x.url).join("\n") : "");
+    CHAT.push({role:"assistant", parts:[{type:"text", text: txt}]});
+    saveConv();
+    addFollowups(el);
+    TOOLS.research = false; $("c-research").classList.remove("on"); $("input").placeholder = "Message Stew...";
+  }catch(e){
+    if (e.name === "AbortError"){ bubble.innerHTML = "⏹ _Research stopped_"; toast("⏹ Stopped"); }
+    else{ bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`; }
+  }
+  ABORT = null; BUSY = false;
+  $("send-btn").textContent = "➤"; $("send-btn").classList.remove("stop");
+}
+
+/* ── website builder ─────────────────── */
+const SITES = {};
+async function runWebbuild(desc){
+  BUSY = true; $("send-btn").textContent = "⏹"; $("send-btn").classList.add("stop");
+  const el = pushMsg("stew", [{type:"text", text:""}]);
+  const bubble = el.querySelector(".bubble");
+  bubble.innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>&nbsp;🏗️ Designing your website with motion, photos & SEO…`;
+  ABORT = new AbortController();
+  try{
+    const r = await fetch(API + "/generate/webbuild", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({description: desc, api_key: KEY}), signal: ABORT.signal});
+    const d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.detail || d.error || "Website generation failed");
+    const sid = "site" + Date.now();
+    SITES[sid] = d.html;
+    const kb = d.size_bytes ? (d.size_bytes / 1024).toFixed(1) : "?";
+    bubble.innerHTML = `<div class="sitecard">
+      <b>🏗️ ${esc(d.site_name || "Your new website")}</b>
+      <span>Motion-design website ready · ${kb} KB · single HTML file</span>
+      <div class="siteacts">
+        <button onclick="previewSite('${sid}')">👁 Preview</button>
+        <button onclick="downloadSite('${sid}')">⬇ Download</button>
+      </div></div>`;
+    CHAT.push({role:"assistant", parts:[{type:"text", text:`🏗️ Built a website: ${d.site_name || desc} (${kb} KB). Preview/download available in this session.`}]});
+    saveConv();
+    TOOLS.webbuild = false; $("c-webbuild").classList.remove("on"); $("input").placeholder = "Message Stew...";
+  }catch(e){
+    if (e.name === "AbortError"){ bubble.innerHTML = "⏹ _Website build stopped_"; toast("⏹ Stopped"); }
+    else{ bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`; }
+  }
+  ABORT = null; BUSY = false;
+  $("send-btn").textContent = "➤"; $("send-btn").classList.remove("stop");
+}
+function previewSite(sid){
+  const html = SITES[sid]; if (!html){ toast("Preview expired — rebuild the site"); return; }
+  window.open(URL.createObjectURL(new Blob([html], {type:"text/html"})), "_blank");
+}
+function downloadSite(sid){
+  const html = SITES[sid]; if (!html){ toast("Download expired — rebuild the site"); return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([html], {type:"text/html"}));
+  a.download = "stew-website.html"; a.click();
+  toast("⬇ Website downloaded");
+}
+
+/* ── export chat ─────────────────────── */
+function exportChat(){
+  if (!CHAT.length){ toast("Nothing to export yet"); return; }
+  const conv = CONVS.find(c => c.id === CUR);
+  const title = (conv && conv.title) || "Stew chat";
+  let out = `# ${title}\n_Exported from Stew · ${new Date().toLocaleString()}_\n\n`;
+  for (const m of CHAT){ out += (m.role === "user" ? "## 🧑 You\n" : "## 🍲 Stew\n") + msgText(m) + "\n\n"; }
+  const blob = new Blob([out], {type:"text/markdown"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = ((title || "stew-chat").replace(/[^\w]+/g, "-").slice(0, 30) || "stew-chat") + ".md";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("📄 Chat exported as Markdown");
+}
+
+function editMsg(){
+  if (BUSY) return;
+  let idx = -1;
+  for (let i = CHAT.length - 1; i >= 0; i--){ if (CHAT[i].role === "user" && !CHAT[i].mission){ idx = i; break; } }
+  if (idx < 0) return;
+  const m = CHAT[idx];
+  const text = ((m.parts || []).find(pp => pp.type === "text") || {}).text || "";
+  CHAT.splice(idx);
+  saveConv(); renderChat();
+  $("input").value = text; autoGrow($("input")); $("input").focus();
+  toast("✏️ Edit your message, then send again");
 }
 
 function regen(){
@@ -788,7 +920,7 @@ function micTap(){
         el.remove();
         CHAT.push({role:"user", parts});
         saveConv();
-        const el2 = pushMsg("user", parts);
+        const el2 = pushMsg("user", parts, true);
         el2.style.animation = "none";
         await streamChat(parts);
       }catch(e){
@@ -876,6 +1008,8 @@ function openSheet(kind){
       <div class="set-card"><b>📲 Install</b><small>Add Stew to your home screen — full screen, own icon.</small>
         <button class="set-btn" onclick="promptInstall()">Install app</button>
         <a class="set-btn" style="margin-left:8px" href="/app/StewAgent.apk" download="StewAgent.apk">Android APK</a></div>
+      <div class="set-card"><b>📊 Usage & credits</b><small>See your plan, calls remaining, reset date and coin balance.</small>
+        <button class="set-btn" onclick="showUsage()">View usage</button></div>
       <div class="set-card"><b>🧹 Data</b><small>Clear all chats and settings on this device.</small>
         <button class="set-btn" style="background:#f55656" onclick="wipeAll()">Reset app</button></div>`;
   }
@@ -904,17 +1038,22 @@ function wipeAll(){
 }
 
 /* ── tools toggle ────────────────────────── */
+const EXCLUSIVE_TOOLS = ["mission", "img", "research", "webbuild"];
 function toggleTool(t){
   if (BUSY) return;
   TOOLS[t] = !TOOLS[t];
-  if (TOOLS[t]){
-    if (t === "mission") TOOLS.img = false;
-    if (t === "img") TOOLS.mission = false;
-  }
+  if (TOOLS[t] && EXCLUSIVE_TOOLS.includes(t)) EXCLUSIVE_TOOLS.forEach(x => { if (x !== t) TOOLS[x] = false; });
   $("c-web").classList.toggle("on", TOOLS.web);
   $("c-img").classList.toggle("on", TOOLS.img);
   $("c-mission").classList.toggle("on", TOOLS.mission);
-  $("input").placeholder = TOOLS.mission ? "Describe the mission…" : TOOLS.img ? "Describe an image…" : "Message Stew...";
+  $("c-research").classList.toggle("on", TOOLS.research);
+  $("c-webbuild").classList.toggle("on", TOOLS.webbuild);
+  $("c-fusion").classList.toggle("on", TOOLS.fusion);
+  $("input").placeholder = TOOLS.mission ? "Describe the mission…" :
+    TOOLS.img ? "Describe an image…" :
+    TOOLS.research ? "What should Stew deep-research?" :
+    TOOLS.webbuild ? "Describe the website you want…" :
+    "Message Stew...";
   haptic(10);
 }
 
@@ -949,6 +1088,31 @@ function codeCopy(btn){
 function copyMsg(btn){
   const text = btn.closest(".bubblewrap").querySelector(".bubble").innerText;
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => { btn.textContent = "✅ Copied"; setTimeout(() => btn.textContent = "📋 Copy", 1400); });
+}
+async function showUsage(){
+  const body = $("sh-body");
+  body.innerHTML = `<div style="padding:30px 10px;text-align:center;color:var(--mut);font-size:13px">⏳ Loading usage…</div>`;
+  try{
+    const r = await fetch(API + "/usage?api_key=" + encodeURIComponent(KEY));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "Could not load usage");
+    const cyc = d.cycle || {};
+    const coins = d.coins || {};
+    const pct = cyc.limit ? Math.min(100, Math.round((cyc.used || 0) / cyc.limit * 100)) : 0;
+    const resets = cyc.resets_at ? new Date(cyc.resets_at).toLocaleDateString() : "—";
+    body.innerHTML = `
+      <div class="set-card">
+        <b>📦 Plan: ${esc(String(d.plan || "free"))}</b>
+        <div class="ubar"><div style="width:${pct}%"></div></div>
+        <small>${(cyc.used || 0)} / ${(cyc.limit || 0)} calls used · resets ${resets}</small>
+      </div>
+      ${coins.balance !== undefined ? `
+      <div class="set-card"><b>🪙 S.T.E.W Coins</b><small>Balance: <b>${coins.balance ?? 0}</b> — auto-used when your monthly calls run out.</small></div>` : ""}
+      ${d.plan_expires_at ? `<div class="set-card"><b>⏳ Plan renews</b><small>${new Date(d.plan_expires_at).toLocaleDateString()}</small></div>` : ""}
+      <div class="set-card"><b>⬆️ Need more?</b><small>Upgrade or top up coins at stew-agent.onrender.com — instant Paystack checkout.</small></div>`;
+  }catch(e){
+    body.innerHTML = `<div style="padding:30px 10px;text-align:center;color:var(--mut);font-size:13px">⚠️ ${esc(String(e.message || e)).slice(0, 120)}</div>`;
+  }
 }
 function toast(m){
   const t = $("toast");
