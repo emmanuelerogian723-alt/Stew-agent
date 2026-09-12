@@ -4,7 +4,7 @@
    with the /generate-image fix — deployed, but the phone kept serving the old
    cached index.html). Network-first fixes that permanently: online users always
    get the latest code; offline users still get the last-known-good cache. */
-const CACHE = 'stew-app-v3';
+const CACHE = 'stew-app-v4';
 const SHELL = [
   '/app/',
   '/app/index.html',

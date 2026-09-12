@@ -259,6 +259,25 @@ header{
   #dock{max-width:860px;margin:0 auto;width:100%;border-radius:26px 26px 0 0}
   .bubblewrap{max-width:70%}
 }
+
+/* ── maturity pack: code blocks, follow-ups, scroll fab, source chip ── */
+.codeblk{background:#0a0818;border:1px solid var(--line2);border-radius:12px;margin:8px 0;overflow:hidden}
+.codehead{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:rgba(255,255,255,.05);font-size:11px;color:var(--mut)}
+.codehead button{font-size:11px;color:#c9c3e8;padding:2px 10px;border-radius:8px;background:rgba(124,92,255,.18)}
+.codeblk pre{margin:0;padding:12px;overflow-x:auto;font-family:ui-monospace,'JetBrains Mono',Menlo,monospace;font-size:12px;line-height:1.55;color:#dcd8f5}
+.codeblk code{background:none;padding:0;font-family:inherit}
+.bubble code{background:rgba(124,92,255,.16);padding:1px 6px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:.9em}
+.mdh{font-weight:700;font-size:1.02em;margin:10px 0 4px;color:#fff}
+.mdq{border-left:3px solid var(--vio);padding:6px 12px;margin:8px 0;color:var(--mut);background:rgba(124,92,255,.07);border-radius:0 10px 10px 0}
+.bubble ul,.bubble ol{margin:6px 0 6px 20px}
+.bubble li{margin:3px 0}
+.followups{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px;animation:fadein .4s}
+.followups button{font-size:12px;color:#c9c3e8;background:var(--card2);border:1px solid var(--line2);border-radius:999px;padding:7px 14px}
+.followups button:active{transform:scale(.95)}
+.src-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#7ee2b8;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);border-radius:999px;padding:3px 10px;margin:8px 0 0}
+#send-btn.stop{background:linear-gradient(135deg,#ff8c42,#f05252);box-shadow:0 0 22px -6px rgba(240,82,82,.7)}
+#scroll-fab{position:fixed;right:16px;bottom:150px;width:40px;height:40px;border-radius:50%;background:var(--card2);border:1px solid var(--line2);box-shadow:0 8px 24px -8px rgba(0,0,0,.6);font-size:18px;color:var(--text);z-index:25;opacity:0;pointer-events:none;transform:translateY(8px);transition:all .25s}
+#scroll-fab.on{opacity:1;pointer-events:auto;transform:none}
 </style>
 </head>
 <body>
@@ -293,6 +312,7 @@ header{
 </aside>
 
 <main id="chatwrap"><div id="chat"></div></main>
+<button id="scroll-fab" onclick="scrollDown()" aria-label="Scroll to latest">⌄</button>
 
 <div id="dock">
   <div class="tools">
@@ -331,6 +351,7 @@ let AUTO_SPEAK = localStorage.getItem("stew_autospeak") === "1";
 let TOOLS = {web:false, img:false, mission:false};
 let BUSY = false, CHAT = [], CONVS = [], CUR = null;
 let ATTACH = null;
+let ABORT = null;
 let REC = null;
 let PERSONAS = [], SKILLS = [];
 const VOICES = {};
@@ -477,13 +498,19 @@ function pushMsg(role, parts){
 function scrollDown(smooth = true){
   const c = $("chat");
   c.scrollTo({top: c.scrollHeight, behavior: smooth ? "smooth" : "auto"});
+  $("scroll-fab").classList.remove("on");
 }
+function fabWatch(){
+  const c = $("chat");
+  $("scroll-fab").classList.toggle("on", c.scrollHeight - c.scrollTop - c.clientHeight > 320);
+}
+$("chat").addEventListener("scroll", fabWatch, {passive:true});
 
 /* ── send ───────── */
 async function send(){
+  if (BUSY){ stopGen(); return; }
   const text = $("input").value.trim();
   if (!text && !ATTACH){ return; }
-  if (BUSY){ toast("Stew is still working…"); return; }
   const parts = [];
   if (ATTACH){
     if (ATTACH.kind === "image") parts.push({type:"image", dataUrl:ATTACH.dataUrl});
@@ -504,11 +531,12 @@ async function send(){
 }
 
 async function streamChat(parts){
-  BUSY = true; $("send-btn").disabled = true;
+  BUSY = true; $("send-btn").textContent = "⏹"; $("send-btn").classList.add("stop");
   const el = pushMsg("stew", [{type:"text", text:""}]);
   const bubble = el.querySelector(".bubble");
   bubble.innerHTML = `<span class="thinking"><i></i><i></i><i></i></span>`;
   let acc = "";
+  ABORT = new AbortController();
   try{
     const apiParts = parts.map(p =>
       p.type === "image" ? {type:"image_url", image_url:{url:p.dataUrl}} :
@@ -530,7 +558,8 @@ async function streamChat(parts){
     const resp = await fetch(API + "/v1/chat/completions", {
       method: "POST",
       headers: {"Content-Type":"application/json", "Authorization":"Bearer " + KEY},
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: ABORT.signal
     });
     if (!resp.ok){ throw new Error((await resp.text()).slice(0, 160)); }
     const reader = resp.body.getReader();
@@ -559,14 +588,39 @@ async function streamChat(parts){
     }
     if (!acc) acc = "…";
     bubble.innerHTML = md(acc);
+    if (TOOLS.web){
+      const chip = document.createElement("div");
+      chip.innerHTML = `<span class="src-chip">🌐 Answered with live web results</span>`;
+      el.querySelector(".bubblewrap").insertBefore(chip, el.querySelector(".acts"));
+    }
     CHAT.push({role:"assistant", parts:[{type:"text", text:acc}]});
     saveConv();
+    addFollowups(el);
     if (AUTO_SPEAK) speak(el.querySelector(".acts .act:nth-child(2)"));
   }catch(e){
-    bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`;
+    if (e.name === "AbortError"){
+      bubble.innerHTML = md((acc || "") + "\n\n⏹ _Stopped_");
+      if (acc){ CHAT.push({role:"assistant", parts:[{type:"text", text:acc}]}); saveConv(); }
+      toast("⏹ Generation stopped");
+    }else{
+      bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`;
+    }
   }
-  BUSY = false; $("send-btn").disabled = false;
+  ABORT = null; BUSY = false;
+  $("send-btn").textContent = "➤"; $("send-btn").classList.remove("stop");
   haptic(18);
+}
+function stopGen(){ if (ABORT) ABORT.abort(); }
+function addFollowups(el){
+  if (!el) return;
+  const row = document.createElement("div");
+  row.className = "followups";
+  row.innerHTML = `
+    <button onclick="quick('Tell me more about this')">＋ Tell me more</button>
+    <button onclick="quick('Give me practical examples of this')">🧪 Examples</button>
+    <button onclick="quick('Summarize this in simpler terms')">✨ Simpler</button>
+    <button onclick="quick('What should I do next? Give me action steps')">➡️ Next steps</button>`;
+  el.querySelector(".bubblewrap").appendChild(row);
 }
 
 function regen(){
@@ -582,12 +636,13 @@ function regen(){
 
 /* ── image mode ──────────────────────────── */
 async function runImage(prompt){
-  BUSY = true; $("send-btn").disabled = true;
+  BUSY = true; $("send-btn").textContent = "⏹"; $("send-btn").classList.add("stop");
+  ABORT = new AbortController();
   const el = pushMsg("stew", [{type:"text", text:""}]);
   el.querySelector(".bubble").innerHTML = `🎨 Painting “${esc(prompt)}”…<span class="thinking"><i></i><i></i><i></i></span>`;
   try{
     const r = await fetch(API + "/generate/image", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({prompt, width:1024, height:1024, api_key: KEY})});
+      body: JSON.stringify({prompt, width:1024, height:1024, api_key: KEY}), signal: ABORT.signal});
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || "Generation failed");
     const src = d.image_data || d.image_url || (d.base64 ? "data:image/png;base64," + d.base64 : null);
@@ -596,9 +651,11 @@ async function runImage(prompt){
     CHAT.push({role:"assistant", parts:[{type:"text", text:"🎨 Image generated: " + prompt}]});
     saveConv(); haptic(20);
   }catch(e){
-    el.querySelector(".bubble").innerHTML = `⚠️ ${esc(e.message)}`;
+    if (e.name === "AbortError"){ el.querySelector(".bubble").innerHTML = "⏹ _Image generation stopped_"; }
+    else{ el.querySelector(".bubble").innerHTML = `⚠️ ${esc(e.message)}`; }
   }
-  BUSY = false; $("send-btn").disabled = false;
+  ABORT = null; BUSY = false;
+  $("send-btn").textContent = "➤"; $("send-btn").classList.remove("stop");
 }
 
 /* ── mission mode ────────────────────────── */
@@ -865,12 +922,29 @@ function toggleTool(t){
 function esc(s){ return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function md(t){
   t = esc(t);
-  t = t.replace(/```([\s\S]*?)```/g, (_, c) => `<pre><code>${c.replace(/^\w+\n/, "").trim()}</code></pre>`);
+  const blocks = [];
+  t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, c) => {
+    blocks.push(`<div class="codeblk"><div class="codehead"><span>${lang || "code"}</span><button class="codecopy" onclick="codeCopy(this)">📋 Copy</button></div><pre><code>${c.replace(/\n$/, "")}</code></pre></div>`);
+    return "\u0000B" + (blocks.length - 1) + "\u0000";
+  });
+  t = t.replace(/^#{1,4}\s+(.+)$/gm, '<div class="mdh">$1</div>');
+  t = t.replace(/^&gt;\s?(.+)$/gm, '<div class="mdq">$1</div>');
+  t = t.replace(/(^|\n)((?:[-•]\s.+(?:\n|$))+)/g, (m, pre, list) =>
+    pre + "<ul>" + list.trim().split("\n").map(l => `<li>${l.replace(/^[-•]\s/, "")}</li>`).join("") + "</ul>");
+  t = t.replace(/(^|\n)((?:\d+[.)]\s.+(?:\n|$))+)/g, (m, pre, list) =>
+    pre + "<ol>" + list.trim().split("\n").map(l => `<li>${l.replace(/^\d+[.)]\s/, "")}</li>`).join("") + "</ol>");
   t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
   t = t.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
   t = t.replace(/\*([^*\n]+)\*/g, "<i>$1</i>");
   t = t.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  t = t.replace(/\u0000B(\d+)\u0000/g, (_, i) => blocks[+i]);
   return t;
+}
+function codeCopy(btn){
+  const code = btn.closest(".codeblk").querySelector("code").innerText;
+  if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = "✅ Copied"; setTimeout(() => btn.textContent = "📋 Copy", 1400);
+  });
 }
 function copyMsg(btn){
   const text = btn.closest(".bubblewrap").querySelector(".bubble").innerText;
