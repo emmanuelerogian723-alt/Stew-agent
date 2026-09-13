@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0a0a0a">
+<meta name="theme-color" content="#07070d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,10 +13,10 @@
 <link rel="icon" href="icons/icon-192.png">
 <style>
 :root{
-  --bg:#0a0a0a; --bg2:#000000; --card:#111111; --card2:#171717;
-  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.13);
-  --text:#f5f5f5; --mut:#8f8f8f;
-  --vio:#ffffff; --org:#cfcfcf; --grad:linear-gradient(135deg,#ffffff,#dcdcdc);
+  --bg:#07070d; --bg2:#030309; --card:#10101b; --card2:#17172a;
+  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.15);
+  --text:#f4f5fb; --mut:#9c9cb6;
+  --vio:#8b5cf6; --org:#22d3ee; --grad:linear-gradient(135deg,#8b5cf6,#22d3ee);
   --ok:#34d399;
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
 }
@@ -28,8 +28,8 @@ body{
   display:flex;flex-direction:column;height:100dvh;overflow:hidden;
 }
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:radial-gradient(50% 30% at 15% 0%,rgba(255,255,255,.06),transparent 70%),
-             radial-gradient(50% 30% at 90% 100%,rgba(255,255,255,.03),transparent 70%);}
+  background:radial-gradient(50% 32% at 15% 0%,rgba(139,92,246,.17),transparent 70%),
+             radial-gradient(50% 32% at 90% 100%,rgba(34,211,238,.09),transparent 70%);}
 input,textarea,button{font:inherit;color:inherit;border:none;background:none;outline:none}
 button{cursor:pointer}
 img{display:block}
@@ -78,9 +78,9 @@ header{
 .d-brand b{font-size:16px}
 .d-brand span{font-size:11px;color:var(--mut);display:block}
 .new-btn{
-  width:100%;padding:12px;border-radius:14px;background:var(--grad);color:#0a0a0a;font-weight:800;font-size:14px;
+  width:100%;padding:12px;border-radius:14px;background:var(--grad);color:#fff;font-weight:800;font-size:14px;
   color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;
-  transition:transform .15s;box-shadow:0 6px 22px -8px rgba(255,255,255,.35);
+  transition:transform .15s;box-shadow:0 6px 24px -8px rgba(139,92,246,.45);
 }
 .new-btn:active{transform:scale(.96)}
 .d-search{
@@ -108,7 +108,7 @@ header{
 #chatwrap{flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column}
 #chat{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:14px 14px 4px;scroll-behavior:smooth}
 .welcome{margin:auto;text-align:center;padding:20px 10px;animation:pop .5s}
-.welcome .face{width:92px;height:92px;margin:0 auto 16px;border-radius:26px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:46px;box-shadow:0 18px 50px -16px rgba(255,255,255,.45);animation:pop .55s both}
+.welcome .face{width:92px;height:92px;margin:0 auto 16px;border-radius:26px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:46px;box-shadow:0 18px 50px -14px rgba(139,92,246,.55);animation:pop .55s both}
 .welcome h2{font-size:21px;margin-bottom:7px}
 .welcome p{color:var(--mut);font-size:13px;line-height:1.5;max-width:300px;margin:0 auto}
 .sugg{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:22px;padding:0 6px}
@@ -123,7 +123,7 @@ header{
 .msg{display:flex;gap:9px;margin-bottom:16px;animation:pop .3s both;max-width:100%}
 .msg.me{flex-direction:row-reverse}
 .av{width:30px;height:30px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;font-size:16px;margin-top:2px}
-.msg.stew .av{background:var(--grad);filter:grayscale(1)}
+.msg.stew .av{background:var(--grad)}
 .msg.me .av{background:var(--card2);font-size:14px}
 .bubblewrap{max-width:82%;min-width:0}
 .msg.me .bubblewrap{display:flex;flex-direction:column;align-items:flex-end}
@@ -131,7 +131,7 @@ header{
   padding:11px 14px;border-radius:20px;font-size:14.5px;line-height:1.55;white-space:pre-wrap;
   word-wrap:break-word;overflow-wrap:break-word;
 }
-.msg.me .bubble{background:var(--grad);color:#0a0a0a;border-bottom-right-radius:6px;font-weight:500}
+.msg.me .bubble{background:var(--grad);color:#fff;border-bottom-right-radius:6px;font-weight:600}
 .msg.stew .bubble{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:6px}
 .bubble img{border-radius:14px;max-width:240px;margin-bottom:6px}
 .bubble a{color:#a78bfa;text-decoration:underline;word-break:break-all}
@@ -141,8 +141,8 @@ header{
 .caret{display:inline-block;width:8px;height:15px;background:var(--vio);border-radius:2px;vertical-align:-2px;animation:blink .9s infinite;margin-left:2px}
 .atts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:5px}
 .att-chip{background:var(--card2);border:1px solid var(--line2);border-radius:11px;padding:4px 9px;font-size:11px;display:flex;gap:5px;align-items:center}
-.voice-b{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);border-radius:14px;padding:9px 12px;margin-bottom:5px}
-.play-b{width:32px;height:32px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:13px;color:#0a0a0a;flex:none}
+.voice-b{display:flex;align-items:center;gap:9px;background:rgba(139,92,246,.14);border:1px solid rgba(139,92,246,.35);border-radius:14px;padding:9px 12px;margin-bottom:5px}
+.play-b{width:32px;height:32px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;flex:none}
 .voice-b .bars{display:flex;gap:2.5px;align-items:center;height:20px}
 .voice-b .bars i{width:3px;height:12px;border-radius:2px;background:var(--vio);animation:bar 1s infinite}
 .voice-b .dur{font-size:11px;color:var(--mut)}
@@ -179,7 +179,7 @@ header{
   border:1px solid var(--line2);border-radius:26px;padding:7px;
   transition:border-color .25s,box-shadow .25s;
 }
-.composer.focus{border-color:var(--vio);box-shadow:0 0 0 3px rgba(255,255,255,.14)}
+.composer.focus{border-color:var(--vio);box-shadow:0 0 0 3px rgba(139,92,246,.16)}
 .composer.rec{border-color:#f55656;box-shadow:0 0 0 3px rgba(245,86,86,.18)}
 #input{
   flex:1;resize:none;max-height:110px;min-height:24px;line-height:1.45;font-size:14.5px;
@@ -187,9 +187,9 @@ header{
 }
 #input::placeholder{color:#6b6489}
 #send-btn{
-  width:38px;height:38px;border-radius:50%;background:var(--grad);color:#0a0a0a;font-size:15px;font-weight:800;
+  width:38px;height:38px;border-radius:50%;background:var(--grad);color:#fff;font-size:15px;font-weight:800;
   display:flex;align-items:center;justify-content:center;flex:none;
-  transition:transform .15s;box-shadow:0 4px 14px -4px rgba(255,255,255,.4);
+  transition:transform .15s;box-shadow:0 4px 16px -4px rgba(139,92,246,.5);
 }
 #send-btn:active{transform:scale(.85)}
 #send-btn:disabled{opacity:.45;transform:none}
@@ -222,7 +222,7 @@ header{
 .sh-search input{flex:1;color:var(--text)}
 .p-row{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:14px;margin-bottom:3px;transition:background .15s;cursor:pointer;animation:pop .25s both}
 .p-row:active{background:var(--card2)}
-.p-row.sel{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35)}
+.p-row.sel{background:rgba(139,92,246,.13);border:1px solid rgba(139,92,246,.38)}
 .p-row .ico{width:40px;height:40px;border-radius:13px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
 .p-row b{font-size:14px;display:block}
 .p-row small{color:var(--mut);font-size:11.5px;line-height:1.35;display:block}
@@ -231,12 +231,12 @@ header{
 .skill-row:active{background:var(--card2)}
 .skill-row b{font-size:13.5px;font-family:ui-monospace,monospace}
 .skill-row small{color:var(--mut);font-size:11.5px;display:block;line-height:1.35}
-.skill-row .cat{font-size:9.5px;background:rgba(255,255,255,.16);color:#cfcfcf;border-radius:7px;padding:2px 7px;flex:none;margin-left:auto}
+.skill-row .cat{font-size:9.5px;background:rgba(139,92,246,.16);color:#c4b5fd;border-radius:7px;padding:2px 7px;flex:none;margin-left:auto}
 .set-card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px;margin-bottom:11px;animation:pop .25s both}
 .set-card b{font-size:13.5px;display:block;margin-bottom:4px}
 .set-card small{color:var(--mut);font-size:11.5px;line-height:1.45;display:block}
 .set-card input{width:100%;margin-top:9px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:10px 12px;font-size:13px;color:var(--text)}
-.set-btn{display:inline-block;margin-top:10px;background:var(--grad);border-radius:11px;padding:9px 16px;font-size:12.5px;font-weight:800;color:#0a0a0a;text-decoration:none}
+.set-btn{display:inline-block;margin-top:10px;background:var(--grad);border-radius:11px;padding:9px 16px;font-size:12.5px;font-weight:800;color:#fff;text-decoration:none}
 
 /* ── toast ──────────────────────────────── */
 #toast{
@@ -250,7 +250,7 @@ header{
 /* ── splash ─────────────────────────────── */
 #splash{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .5s,visibility .5s}
 #splash.off{opacity:0;visibility:hidden}
-#splash .face{width:84px;height:84px;border-radius:24px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:42px;animation:pop .5s both;box-shadow:0 14px 44px -12px rgba(255,255,255,.35)}
+#splash .face{width:84px;height:84px;border-radius:24px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:42px;animation:pop .5s both;box-shadow:0 14px 44px -12px rgba(139,92,246,.5)}
 #splash b{font-size:17px}
 #splash span{font-size:11.5px;color:var(--mut)}
 
@@ -263,12 +263,12 @@ header{
 /* ── maturity pack: code blocks, follow-ups, scroll fab, source chip ── */
 .codeblk{background:#0a0818;border:1px solid var(--line2);border-radius:12px;margin:8px 0;overflow:hidden}
 .codehead{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:rgba(255,255,255,.05);font-size:11px;color:var(--mut)}
-.codehead button{font-size:11px;color:#c4c4c4;padding:2px 10px;border-radius:8px;background:rgba(255,255,255,.18)}
+.codehead button{font-size:11px;color:#c4b5fd;padding:2px 10px;border-radius:8px;background:rgba(139,92,246,.18)}
 .codeblk pre{margin:0;padding:12px;overflow-x:auto;font-family:ui-monospace,'JetBrains Mono',Menlo,monospace;font-size:12px;line-height:1.55;color:#dcd8f5}
 .codeblk code{background:none;padding:0;font-family:inherit}
-.bubble code{background:rgba(255,255,255,.16);padding:1px 6px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:.9em}
+.bubble code{background:rgba(139,92,246,.16);padding:1px 6px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:.9em}
 .mdh{font-weight:700;font-size:1.02em;margin:10px 0 4px;color:#fff}
-.mdq{border-left:3px solid var(--vio);padding:6px 12px;margin:8px 0;color:var(--mut);background:rgba(255,255,255,.07);border-radius:0 10px 10px 0}
+.mdq{border-left:3px solid var(--vio);padding:6px 12px;margin:8px 0;color:var(--mut);background:rgba(139,92,246,.07);border-radius:0 10px 10px 0}
 .bubble ul,.bubble ol{margin:6px 0 6px 20px}
 .bubble li{margin:3px 0}
 .followups{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px;animation:fadein .4s}
@@ -280,13 +280,13 @@ header{
 .sitecard b{font-size:14px}
 .sitecard span{font-size:12px;color:var(--mut)}
 .siteacts{display:flex;gap:8px;margin-top:6px}
-.siteacts button{font-size:12px;background:rgba(255,255,255,.2);border:1px solid var(--line2);border-radius:999px;padding:7px 14px}
+.siteacts button{font-size:12px;background:rgba(139,92,246,.18);border:1px solid var(--line2);border-radius:999px;padding:7px 14px}
 .siteacts button:active{transform:scale(.95)}
 .srcol{margin:6px 0 6px 20px}
 .srcol a{color:#8fd4ff;text-decoration:underline;font-size:12.5px}
 .msg.me .acts{justify-content:flex-end}
 .ubar{height:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin:8px 0 6px}
-.ubar div{height:100%;background:linear-gradient(90deg,#ffffff,#bdbdbd);border-radius:99px;transition:width .5s}
+.ubar div{height:100%;background:linear-gradient(90deg,#8b5cf6,#22d3ee);border-radius:99px;transition:width .5s}
 #scroll-fab{position:fixed;right:16px;bottom:150px;width:40px;height:40px;border-radius:50%;background:var(--card2);border:1px solid var(--line2);box-shadow:0 8px 24px -8px rgba(0,0,0,.6);font-size:18px;color:var(--text);z-index:25;opacity:0;pointer-events:none;transform:translateY(8px);transition:all .25s}
 #scroll-fab.on{opacity:1;pointer-events:auto;transform:none}
 </style>
@@ -317,6 +317,11 @@ header{
   <div id="chatlist"></div>
   <div class="d-foot">
     <div class="d-row" onclick="openSheet('skills')"><i>🧰</i>Skills<small>63 live</small></div>
+    <div class="d-row" onclick="openSheet('personas')"><i>🎭</i>Persona<small>12 minds</small></div>
+    <div class="d-row" onclick="armMode('research','🔬 Deep research')"><i>🔬</i>Deep research<small>armed next msg</small></div>
+    <div class="d-row" onclick="armMode('webbuild','🏗️ Website builder')"><i>🏗️</i>Build a website<small>armed next msg</small></div>
+    <div class="d-row" onclick="armMode('mission','🚀 Full mission')"><i>🚀</i>New mission<small>autonomous</small></div>
+    <div class="d-row" onclick="toggleFusion()"><i>⚡</i>Fusion replies<small id="fusion-state">Off</small></div>
     <div class="d-row" onclick="openSheet('settings')"><i>⚙️</i>Settings</div>
     <a class="d-row" href="/app/StewAgent.apk" download="StewAgent.apk"><i>🤖</i>Android APK<small>2.5MB</small></a>
     <div class="d-row" onclick="showAbout()"><i>ℹ️</i>About Stew</div>
@@ -327,16 +332,6 @@ header{
 <button id="scroll-fab" onclick="scrollDown()" aria-label="Scroll to latest">⌄</button>
 
 <div id="dock">
-  <div class="tools">
-    <button class="chip" id="c-web" onclick="toggleTool('web')">🌐 Web search</button>
-    <button class="chip" id="c-img" onclick="toggleTool('img')">🎨 Image</button>
-    <button class="chip" id="c-mission" onclick="toggleTool('mission')">🚀 Mission</button>
-    <button class="chip" id="c-research" onclick="toggleTool('research')">🔬 Research</button>
-    <button class="chip" id="c-webbuild" onclick="toggleTool('webbuild')">🏗️ Website</button>
-    <button class="chip" id="c-fusion" onclick="toggleTool('fusion')">⚡ Fusion</button>
-    <button class="chip" onclick="openSheet('skills')">🧰 Skills</button>
-    <button class="chip" onclick="openSheet('personas')">🎭 Persona</button>
-  </div>
   <div class="rec-ind" id="rec-ind"><span class="dot"></span><span id="rec-time">0:00</span>&nbsp;— recording voice note… tap 🎤 to send</div>
   <div class="attach-prev" id="attach-prev"></div>
   <div class="composer" id="composer">
@@ -386,6 +381,21 @@ async function ensureKey(){
 let PERSONA = localStorage.getItem("stew_persona") || "General Assistant";
 let AUTO_SPEAK = localStorage.getItem("stew_autospeak") === "1";
 let TOOLS = {web:false, img:false, mission:false, research:false, webbuild:false, fusion:false};
+let PENDING = null;
+let FUSION_ON = localStorage.getItem("stew_fusion") === "1";
+function armMode(m, label){
+  if (BUSY) return;
+  PENDING = m;
+  toast(label + " — type your request below");
+  closeDrawer(); $("input").focus();
+}
+function toggleFusion(){
+  FUSION_ON = !FUSION_ON;
+  localStorage.setItem("stew_fusion", FUSION_ON ? "1" : "0");
+  const st = $("fusion-state");
+  if (st) st.textContent = FUSION_ON ? "On — multi-model" : "Off";
+  toast(FUSION_ON ? "⚡ Fusion replies ON" : "Fusion replies off");
+}
 let BUSY = false, CHAT = [], CONVS = [], CUR = null;
 let ATTACH = null;
 let ABORT = null;
@@ -399,6 +409,7 @@ setTimeout(() => $("splash").classList.add("off"), 900);
 loadConvs();
 if (CUR && CHAT.length){ renderChat(); } else { renderWelcome(); }
 renderChatList();
+(function(){ const st = $("fusion-state"); if (st) st.textContent = FUSION_ON ? "On — multi-model" : "Off"; })();
 boot();
 
 async function boot(){
@@ -471,13 +482,13 @@ function renderWelcome(){
   $("chat").innerHTML = `
   <div class="welcome">
     <div class="face">🍲</div>
-    <h2>Hey! I'm Stew</h2>
-    <p>Chat, send photos &amp; voice notes, generate images, search the live web — or launch a full mission. All in one place.</p>
+    <h2>Hey! I'm Stew — your AI agent</h2>
+    <p>Just type. Stew auto-detects what you need: deep research, building a website, drawing images, live web answers or a full autonomous mission. Photos &amp; voice notes work too.</p>
     <div class="sugg">
-      <button onclick="quick('Write me a business plan for a POS agency in Enugu')">💼 Business plan for my POS agency</button>
-      <button onclick="quick('Generate an image of a Lagos sunset in anime style')">🎨 Image of a Lagos sunset</button>
-      <button onclick="quick('What are the top fintech news in Nigeria this week?')">🌍 Top fintech news in Nigeria</button>
-      <button onclick="quick('Explain Bitcoin like I am 10')">🧠 Explain Bitcoin like I'm 10</button>
+      <button onclick="quick('Research the top fintech trends in Nigeria')">🔬 Research fintech trends</button>
+      <button onclick="quick('Build me a website for my design brand')">🏗️ Build my website</button>
+      <button onclick="quick('Draw an image of a Lagos sunset in anime style')">🎨 Draw a Lagos sunset</button>
+      <button onclick="quick('What is trending in tech news today?')">🌍 Trending tech news</button>
     </div>
   </div>`;
 }
@@ -566,11 +577,21 @@ async function send(){
   saveConv();
   haptic(12);
 
-  if (TOOLS.mission && text){ runMission(text); return; }
-  if (TOOLS.img && text){ runImage(text); return; }
-  if (TOOLS.research && text){ runResearch(text); return; }
-  if (TOOLS.webbuild && text){ runWebbuild(text); return; }
+  if (!text) { await streamChat(parts); return; }
+  const lo = text.toLowerCase();
+  const isMission = PENDING === "mission" || /^mission\s*:/i.test(text) || /\b(launch|start|run|do)\b[^\n]{0,24}\bfull mission\b/.test(lo);
+  const isResearch = PENDING === "research" || /^research\s*:/i.test(text) || /\b(research|deep dive|investigate)\b/.test(lo) || /\b(find|get)\s+(information|info|details)\s+(about|on)\b/.test(lo);
+  const isSite = !/\b(how\s+(do|can|to)|what\s+is|explain|teach|learn)\b/.test(lo) && /\b(build|create|make|design|develop|code)\b[^\n]{0,44}\b(website|web\s?site|landing\s?page|web\s?page|portfolio\s?site|site)\b/.test(lo);
+  const isImg = /^(draw|paint)\b/.test(lo) || /^(image|img)\s*:/i.test(text) || /\b(generate|create|make)\b[^\n]{0,60}\b(image|picture|photo|artwork|logo|poster|wallpaper|thumbnail|icon)\b/.test(lo);
+  const needsWeb = /\b(news|headline|latest|today|trending|current(ly)?|this\s+week|breaking|score|price\s+of|who\s+won|weather|exchange\s+rate)\b/.test(lo);
+  PENDING = null;
+  if (isMission){ runMission(text); return; }
+  if (isResearch){ runResearch(text); return; }
+  if (isSite){ runWebbuild(text); return; }
+  if (isImg){ runImage(text); return; }
+  TOOLS.web = needsWeb;
   await streamChat(parts);
+  TOOLS.web = false;
 }
 
 async function streamChat(parts){
@@ -597,7 +618,7 @@ async function streamChat(parts){
       ],
       stream: true,
       web_search: TOOLS.web,
-      fusion_mode: TOOLS.fusion
+      fusion_mode: FUSION_ON
     };
     const resp = await fetch(API + "/v1/chat/completions", {
       method: "POST",
@@ -634,7 +655,7 @@ async function streamChat(parts){
     bubble.innerHTML = md(acc);
     const badges = [];
     if (TOOLS.web) badges.push(`<span class="src-chip">🌐 Answered with live web results</span>`);
-    if (TOOLS.fusion) badges.push(`<span class="src-chip" style="color:#e8e8e8;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25)">⚡ Fusion answer — multiple models</span>`);
+    if (TOOLS.fusion) badges.push(`<span class="src-chip" style="color:#c4b5fd;background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.35)">⚡ Fusion answer — multiple models</span>`);
     if (badges.length){
       const chip = document.createElement("div");
       chip.innerHTML = badges.join(" ");
@@ -695,7 +716,7 @@ async function runResearch(query){
     CHAT.push({role:"assistant", parts:[{type:"text", text: txt}]});
     saveConv();
     addFollowups(el);
-    TOOLS.research = false; $("c-research").classList.remove("on"); $("input").placeholder = "Message Stew...";
+    TOOLS.research = false;
   }catch(e){
     if (e.name === "AbortError"){ bubble.innerHTML = "⏹ _Research stopped_"; toast("⏹ Stopped"); }
     else{ bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`; }
@@ -731,7 +752,7 @@ async function runWebbuild(desc){
       </div></div>`;
     CHAT.push({role:"assistant", parts:[{type:"text", text:`🏗️ Built a website: ${d.site_name || desc} (${kb} KB). Preview/download available in this session.`}]});
     saveConv();
-    TOOLS.webbuild = false; $("c-webbuild").classList.remove("on"); $("input").placeholder = "Message Stew...";
+    TOOLS.webbuild = false;
   }catch(e){
     if (e.name === "AbortError"){ bubble.innerHTML = "⏹ _Website build stopped_"; toast("⏹ Stopped"); }
     else{ bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`; }
@@ -1063,23 +1084,6 @@ function wipeAll(){
 
 /* ── tools toggle ────────────────────────── */
 const EXCLUSIVE_TOOLS = ["mission", "img", "research", "webbuild"];
-function toggleTool(t){
-  if (BUSY) return;
-  TOOLS[t] = !TOOLS[t];
-  if (TOOLS[t] && EXCLUSIVE_TOOLS.includes(t)) EXCLUSIVE_TOOLS.forEach(x => { if (x !== t) TOOLS[x] = false; });
-  $("c-web").classList.toggle("on", TOOLS.web);
-  $("c-img").classList.toggle("on", TOOLS.img);
-  $("c-mission").classList.toggle("on", TOOLS.mission);
-  $("c-research").classList.toggle("on", TOOLS.research);
-  $("c-webbuild").classList.toggle("on", TOOLS.webbuild);
-  $("c-fusion").classList.toggle("on", TOOLS.fusion);
-  $("input").placeholder = TOOLS.mission ? "Describe the mission…" :
-    TOOLS.img ? "Describe an image…" :
-    TOOLS.research ? "What should Stew deep-research?" :
-    TOOLS.webbuild ? "Describe the website you want…" :
-    "Message Stew...";
-  haptic(10);
-}
 
 /* ── misc ────────────────────────────────── */
 function esc(s){ return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
