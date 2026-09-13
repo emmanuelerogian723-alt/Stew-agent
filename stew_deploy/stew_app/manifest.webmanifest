@@ -6,8 +6,8 @@
   "scope": "/app/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0d0b1a",
-  "theme_color": "#6C3EF5",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
   "lang": "en",
   "categories": ["productivity", "utilities", "education"],
   "icons": [

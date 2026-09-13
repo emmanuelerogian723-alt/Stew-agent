@@ -26,6 +26,7 @@ Usage for developers:
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -297,6 +298,38 @@ async def chat_completions(
             if user and getattr(user, "custom_instructions", None):
                 system_prompt += f"\n\nUSER CUSTOM INSTRUCTIONS:\n{user.custom_instructions}"
             raw_messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # ── Anti-hallucination guard (Stew extension) ──
+        # News / time-sensitive asks MUST be grounded. If the user asks for current
+        # events without web_search enabled, force it on automatically. A model
+        # inventing "today's news" is worse than a model admitting it has none.
+        _FRESHNESS_RE = re.compile(
+            r"\b(news|headline|trending|today|tonight|yesterday|latest|current(ly)?|"
+            r"this (week|month|year)|right now|breaking|just happened|happened (in|on)|"
+            r"score|who won|winner|election|weather|exchange rate|price of|stock market|"
+            r"20(2[5-9]|3[0-9]))\b", re.I)
+        _last_user_for_freshness = ""
+        for _m in reversed(raw_messages):
+            if _m["role"] == "user":
+                _last_user_for_freshness = _m["content"] or ""
+                break
+        _freshness_hit = bool(_last_user_for_freshness and _FRESHNESS_RE.search(_last_user_for_freshness))
+        if _freshness_hit and not body.web_search:
+            body.web_search = True
+        _honesty_note = (
+            "\n\nHONESTY RULES (non-negotiable):\n"
+            "- For anything current — news, events, scores, prices, elections, weather — "
+            "use ONLY the WEB SEARCH CONTEXT below. Do not add events, dates, people or "
+            "numbers that are not in it.\n"
+            "- If there is no WEB SEARCH CONTEXT below, or it does not cover what was "
+            "asked, say plainly that you cannot access live information right now, and "
+            "invite the user to enable web search or try again later. NEVER invent news, "
+            "statistics, quotations or 'trending' lists.\n"
+        )
+        for m in raw_messages:
+            if m["role"] == "system":
+                m["content"] += _honesty_note
+                break
 
         # Web search grounding (Stew extension)
         web_context = ""
