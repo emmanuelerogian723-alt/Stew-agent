@@ -704,7 +704,16 @@ async function runResearch(query){
       headers:{"Content-Type":"application/json", "X-API-Key": KEY},
       body: JSON.stringify({query, depth: 3}), signal: ABORT.signal});
     const d = await r.json();
-    if (!r.ok) throw new Error(String(d.detail || "Research failed").includes("API key") ? "Free key busy — add your own Stew key in Settings for full power" : d.detail || "Research failed");
+    if (!r.ok){
+      if (String(d.detail || "").includes("API key") || r.status === 401 || r.status === 429){
+        bubble.innerHTML = "🔬 _Deep-report quota busy — answering with live web search instead…_";
+        TOOLS.web = true;
+        await streamChat([{type:"text", text: query}]);
+        TOOLS.web = false;
+        return;
+      }
+      throw new Error(d.detail || "Research failed");
+    }
     let html = md(d.report || "No report returned.");
     if (d.sources && d.sources.length){
       html += `<div class="mdh">📚 Sources</div><ol class="srcol">` +
