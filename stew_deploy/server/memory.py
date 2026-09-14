@@ -13,7 +13,7 @@ Key design decisions:
 """
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select, desc, and_, or_, text as sa_text
@@ -109,7 +109,7 @@ def build_llm_messages(
 
 # ── ROLLING CONVERSATION DIGEST ────────────────────────────────────────────────
 
-DIGEST_EVERY_N_USER_MSGS = 8
+DIGEST_EVERY_N_USER_MSGS = 5
 DIGEST_MAX_TURNS = 16
 
 
@@ -339,12 +339,39 @@ async def get_relevant_context(db: AsyncSession, user_id: str, query: str,
     except Exception as e:
         logger.warning(f"Core memory recall failed (non-fatal): {e}")
 
+    # 1b. MEMORY V2 — recent memories (last 7 days) ALWAYS injected, even
+    # without keyword matches. This is what makes Stew feel like it genuinely
+    # remembers yesterday's conversation even when keyword/vector recall miss.
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        recent_q = await db.execute(
+            select(UserMemory).where(
+                and_(
+                    UserMemory.user_id == user_id,
+                    UserMemory.is_active == True,
+                    UserMemory.category != "digest",
+                    UserMemory.updated_at >= cutoff,
+                )
+            ).order_by(desc(UserMemory.importance), desc(UserMemory.updated_at)).limit(12)
+        )
+        recent = list(recent_q.scalars().all())
+        if core_mems:
+            _core_ids = {m.id for m in core_mems}
+            recent = [m for m in recent if m.id not in _core_ids]
+        if recent:
+            lines = ["\n=== RECENT MEMORIES — from the last 7 days ==="]
+            for i, m in enumerate(recent, 1):
+                lines.append(f"{i}. [{m.category.upper()}] {m.content[:250]}")
+            lines.append("=== END RECENT MEMORIES ===\n")
+            parts.append("\n".join(lines))
+    except Exception as e:
+        logger.warning(f"Recent-memory recall failed (non-fatal): {e}")
+
     # 2. Keyword-matched DB memories (survives Render restarts)
     try:
         db_memories = await search_user_memories(db, user_id, query, limit=15)
-        if core_mems:
-            core_ids = {m.id for m in core_mems}
-            db_memories = [m for m in db_memories if m.id not in core_ids]
+        _seen_ids = {m.id for m in core_mems} | {m.id for m in recent}
+        db_memories = [m for m in db_memories if m.id not in _seen_ids]
         if db_memories:
             lines = ["\n=== RECALLED MEMORIES (relevant to current message) ==="]
             for i, m in enumerate(db_memories, 1):
@@ -426,11 +453,20 @@ async def extract_and_store_memories(
         )
 
         exchange = f"User: {user_message[:800]}\nAssistant: {assistant_reply[:800]}"
-        result = llm_chat_fn(
-            [{"role": "system", "content": extract_prompt},
-             {"role": "user", "content": exchange}],
-            max_tokens=1500
-        )
+        result = None
+        for _attempt in range(2):  # retry once — extraction must not silently die
+            try:
+                result = llm_chat_fn(
+                    [{"role": "system", "content": extract_prompt},
+                     {"role": "user", "content": exchange}],
+                    max_tokens=1500
+                )
+                if _safe_content(result):
+                    break
+            except Exception as _ex_err:
+                logger.warning(f"Memory extraction attempt {_attempt+1} failed: {_ex_err}")
+        if not result:
+            return
 
         raw = _safe_content(result)
 

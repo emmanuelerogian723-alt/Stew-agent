@@ -29,8 +29,40 @@ logger = logging.getLogger("stew.voice_clone")
 # ── Public open-source cloning Spaces (anonymous, no token needed).
 # First that responds wins. Add mirrors here as they appear.
 F5_SPACES = [
-    "mrfakename/E2-F5-TTS",  # verified working anonymously (2026-09)
+    "mrfakename/E2-F5-TTS",   # verified working anonymously (2026-09)
+    "F5-TTS/F5-TTS",          # official F5-TTS space (mirror)
 ]
+
+def _hf_token() -> Optional[str]:
+    """HuggingFace token (Render env) — authenticated Space access is far
+    more reliable than anonymous (bypasses queue saturation and IP blocks)."""
+    tok = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
+    return tok or None
+
+
+def _to_clean_wav(in_bytes: bytes, src_name: str = "sample.ogg") -> Optional[bytes]:
+    """Convert any audio (OGG/OPUS/MP3/WAV) to clean 16-bit 16kHz mono WAV —
+    the format F5-TTS clones best from."""
+    import subprocess, tempfile
+    try:
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(src_name)[1] or ".ogg", delete=False) as f:
+            f.write(in_bytes)
+            src = f.name
+        out = src + ".wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1",
+             "-sample_fmt", "s16", out],
+            capture_output=True, timeout=60,
+        )
+        if not os.path.exists(out) or os.path.getsize(out) < 2000:
+            return None
+        with open(out, "rb") as f:
+            data = f.read()
+        os.remove(src); os.remove(out)
+        return data
+    except Exception as e:
+        logger.warning(f"wav conversion failed (using raw bytes): {e}")
+        return None
 
 PROFILE_DIR = "/tmp/stew_voice_profiles"
 MAX_GEN_CHARS = 1200        # keep Space generation under ~60s
@@ -85,11 +117,13 @@ def _profile_meta(key: str) -> dict:
     return meta
 
 
-async def save_profile(key: str, wav_bytes: bytes, transcript: str) -> bool:
-    """Store a creator's voice sample + its transcript. Durable via Supabase
+async def save_profile(key: str, raw_bytes: bytes, transcript: str) -> bool:
+    """Store a creator's voice sample + its transcript. The sample is converted
+    to clean 16kHz mono WAV (F5 clones best from WAV). Durable via Supabase
     when configured; local /tmp copy always kept for this instance."""
-    if not wav_bytes or len(wav_bytes) > MAX_PROFILE_BYTES:
+    if not raw_bytes or len(raw_bytes) > MAX_PROFILE_BYTES:
         return False
+    wav_bytes = await asyncio.to_thread(_to_clean_wav, raw_bytes) or raw_bytes
     try:
         path = _profile_path(key)
         await asyncio.to_thread(_write, path, wav_bytes)
@@ -163,7 +197,11 @@ def _clone_sync(profile_path: str, ref_text: str, gen_text: str) -> tuple[Option
     last_err = "no engine reachable"
     for space in F5_SPACES:
         try:
-            client = Client(space, verbose=False)
+            _tok = _hf_token()
+            try:
+                client = Client(space, verbose=False, hf_token=_tok)
+            except TypeError:  # older gradio_client without hf_token kwarg
+                client = Client(space, verbose=False)
             result = client.predict(
                 ref_audio=handle_file(profile_path),
                 ref_text=ref_text,
@@ -237,4 +275,17 @@ def is_voiceover_intent(text: str) -> Optional[str]:
                   low, re.DOTALL)
     if m:
         return t[m.start(1):].strip()
+    # "say X in my voice" / "say X in my cloned voice" / "say X using my voice"
+    m = re.search(r"\b(?:say|speak|read|narrate|voice)\b\s*(?:this|that|it)?\s*[:\-]?\s*(.+?)\s*(?:\bin\s+(?:my|the|your|our)\s+(?:cloned\s+)?voice\b|\bwith\s+(?:my|the)\s+(?:cloned\s+)?voice\b|\busing\s+(?:my|the)\s+(?:cloned\s+)?voice\b)\s*\.?$",
+                  low, re.DOTALL)
+    if m:
+        return t[m.start(1):m.end(1)].strip()
+    # "in my voice: X" / "with my cloned voice: X" prefix form
+    m = re.match(r"^(?:in|with|using)\s+(?:my|the)\s+(?:cloned\s+)?voice\s*[:\-]?\s*(.+)$", low, re.DOTALL)
+    if m:
+        return t[len(m.group(0)) - len(m.group(1)):].strip()
+    # "speak with my voice: X" — voice request stated first
+    m = re.match(r"^(?:say|speak|voice|read|narrate)\s+(?:this|that|it)?\s*(?:in|with|using)\s+(?:my|the)\s+(?:cloned\s+)?voice\s*[:\-]?\s*(.+)$", low, re.DOTALL)
+    if m:
+        return t[len(m.group(0)) - len(m.group(1)):].strip()
     return None

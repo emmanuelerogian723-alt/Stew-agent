@@ -351,6 +351,7 @@ header{
 
 <div id="toast" class="off"></div>
 
+<script src="https://js.puter.com/v2/"></script>
 <script>
 /* ═══ Stew — single-chat AI app v2.0 ═══ */
 const API = location.origin;
@@ -670,6 +671,28 @@ async function streamChat(parts){
       bubble.innerHTML = md((acc || "") + "\n\n⏹ _Stopped_");
       if (acc){ CHAT.push({role:"assistant", parts:[{type:"text", text:acc}]}); saveConv(); }
       toast("⏹ Generation stopped");
+    }else if (window.puter && window.puter.ai && window.puter.ai.chat){
+      // puter.js keyless fallback — flagship models free in-browser (user-pays)
+      try{
+        bubble.innerHTML = md("⚡ Stew API busy — answering via the puter.js AI gateway…") + `<span class="caret"></span>`;
+        const stream = await puter.ai.chat(lastUser, { model: "gpt-5.4-nano", stream: true });
+        for await (const part of stream){
+          if (part && part.text){
+            acc += part.text;
+            bubble.innerHTML = md(acc) + `<span class="caret"></span>`;
+            scrollDown();
+          }
+        }
+        if (!acc) acc = "…";
+        bubble.innerHTML = md(acc);
+        const chip = document.createElement("div");
+        chip.innerHTML = `<span class="src-chip" style="color:#7dd3fc;background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.35)">🛡️ Answered via puter.js gateway — zero keys, zero cost</span>`;
+        el.querySelector(".bubblewrap").insertBefore(chip, el.querySelector(".acts"));
+        CHAT.push({role:"assistant", parts:[{type:"text", text:acc}]});
+        saveConv(); addFollowups(el);
+      }catch(pe){
+        bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`;
+      }
     }else{
       bubble.innerHTML = `⚠️ ${esc(String(e.message || e)).slice(0, 180)}`;
     }

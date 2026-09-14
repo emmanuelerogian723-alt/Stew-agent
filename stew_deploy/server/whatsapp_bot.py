@@ -832,20 +832,12 @@ async def _handle_imagegen(wa_id: str, text: str):
     deliver it as a native WhatsApp image."""
     prompt = _image_prompt_from(text)
     await _wa_typing(wa_id)
-    import random as _random
     from urllib.parse import quote as _quote
     encoded = _quote(prompt[:400], safe="")
-    image_bytes = b""
+    from server.image_gen import generate_image as _gen_img_v2
+    image_bytes, _provider = b"", ""
     try:
-        async with httpx.AsyncClient(timeout=90, follow_redirects=True) as http:
-            for attempt in range(3):
-                seed = _random.randint(1, 999999)
-                url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
-                resp = await http.get(url)
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    image_bytes = resp.content
-                    break
-                await asyncio.sleep(2)
+        image_bytes, _provider = await _gen_img_v2(prompt, 1024, 1024)
     except Exception as e:
         logger.warning(f"WA imagegen failed: {e}")
     if not image_bytes:

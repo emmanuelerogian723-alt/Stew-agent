@@ -113,7 +113,16 @@ async def orchestrate_text(prompt: str, system: Optional[str] = None,
     if not available:
         raise RuntimeError("No LLM providers configured")
 
-    chosen_workers = workers or available[:3] or available
+    chosen_workers = workers or (available[:3] or available)
+    # MoA v2 — mix in free high-class models (Puter gateway / OpenRouter free)
+    if workers is None:
+        try:
+            from server.model_pool import pool_workers
+            _extra = pool_workers(2, puter_enabled="puter" in client.providers,
+                                  openrouter_enabled="openrouter" in client.providers)
+            chosen_workers = (chosen_workers + _extra)[:5]
+        except Exception as _pool_err:
+            logger.warning(f"model pool unavailable: {_pool_err}")
     base_messages = [
         {"role": "system", "content": system or "You are a helpful, precise reasoning assistant."},
         {"role": "user", "content": prompt}
@@ -248,6 +257,16 @@ async def fast_fusion(prompt: str, system: str = "", workers: Optional[list[str]
         raise RuntimeError("No LLM providers configured")
     
     chosen = workers or available[:2]
+    # Fusion v2 — diversify: 1 base provider + 1 free flagship model
+    if workers is None:
+        try:
+            from server.model_pool import pool_workers
+            _pool = pool_workers(1, puter_enabled="puter" in client.providers,
+                                 openrouter_enabled="openrouter" in client.providers)
+            if _pool and _pool[0] not in chosen:
+                chosen = chosen[:1] + _pool[:1]
+        except Exception as _pool_err:
+            logger.warning(f"model pool unavailable: {_pool_err}")
     if len(chosen) < 2:
         chosen = available[:2] if len(available) >= 2 else available
     

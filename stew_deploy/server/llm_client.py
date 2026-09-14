@@ -28,6 +28,7 @@ PROVIDER_MODELS = {
     "groq_fast":    "openai/gpt-oss-20b",            # faster Groq model (replaced llama-4-scout)
     "nvidia":       "meta/llama-3.3-70b-instruct",   # free on build.nvidia.com NIM
     "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
+    "puter":        "gpt-5.4-nano",
     "openai":       "gpt-4o-mini",
     "huggingface":  "Qwen/Qwen3-235B-A22B",         # best free on HF Router
     "mistral":      "mistral-large-latest",          # Mistral AI flagship
@@ -98,6 +99,18 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"NVIDIA NIM init failed: {e}")
 
+        # Puter AI Gateway — OpenAI-compatible access to GPT, Claude, Gemini,
+        # Grok + more (api.puter.com). Free Puter account token required.
+        if settings.PUTER_AUTH_TOKEN:
+            try:
+                self.providers["puter"] = OpenAI(
+                    base_url="https://api.puter.com/puterai/openai/v1/",
+                    api_key=settings.PUTER_AUTH_TOKEN,
+                )
+                logger.info("Puter AI Gateway provider initialized (gpt-5.4-nano default)")
+            except Exception as e:
+                logger.warning(f"Puter init failed: {e}")
+
         if settings.OPENROUTER_API_KEY:
             try:
                 self.providers["openrouter"] = OpenAI(
@@ -152,7 +165,7 @@ class LLMClient:
 
     @property
     def fallback_order(self) -> list[str]:
-        return [p for p in ["groq", "nvidia", "mistral", "openrouter", "huggingface", "openai", "pollinations"] if p in self.providers]
+        return [p for p in ["groq", "puter", "nvidia", "mistral", "openrouter", "huggingface", "openai", "pollinations"] if p in self.providers]
 
     def _call_groq_with_fallback(self, messages: list[dict], temperature: float, max_tokens: int = 4096) -> dict:
         """Try each Groq model in fallback order."""
@@ -221,6 +234,12 @@ class LLMClient:
 
     def _call_provider(self, provider_name: str, messages: list[dict],
                        model: Optional[str], temperature: float, max_tokens: int = 4096) -> dict:
+        # Worker-id resolution: orchestration workers may be "provider:model-id"
+        # (e.g. "puter:claude-sonnet-5", "openrouter:google/gemma-4-31b-it:free").
+        if model is None and provider_name and ":" in provider_name:
+            _base, _, _override = provider_name.partition(":")
+            if _base in self.providers:
+                return self._call_provider(_base, messages, _override, temperature, max_tokens)
         if provider_name == "groq":
             m = model or self._groq_model
             if model is None:

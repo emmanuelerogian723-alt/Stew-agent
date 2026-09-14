@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # LLM Providers
     GROQ_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
+    PUTER_AUTH_TOKEN: str = ""
     OPENAI_API_KEY: str = ""
     HF_TOKEN: str = ""
     HF_TOKEN_IMAGE: str = ""

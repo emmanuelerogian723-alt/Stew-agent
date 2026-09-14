@@ -36,21 +36,11 @@ DEFAULT_STYLE = "whimsical children's storybook illustration, warm colors, story
 # ── image fetching (free, no key) ────────────────────────────────────────────
 def _fetch_image(prompt: str, width: int = 768, height: int = 768,
                  seed: int = 0, retries: int = 3) -> Optional[bytes]:
-    encoded = urllib.parse.quote(prompt[:900])
-    import httpx
-    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"}
-    for attempt in range(retries):
-        try:
-            url = (f"https://image.pollinations.ai/prompt/{encoded}"
-                   f"?width={width}&height={height}&nologo=true&seed={seed + attempt}")
-            with httpx.Client(timeout=90, follow_redirects=True, headers=headers) as http:
-                resp = http.get(url)
-            if resp.status_code == 200 and len(resp.content) > 4000:
-                return resp.content
-        except Exception as e:
-            logger.warning(f"storybook image attempt {attempt+1} failed: {e}")
-            time.sleep(2)
-    return None
+    """Illustrate via the S.T.E.W Image Engine v2 (Cloudflare FLUX-2 first,
+    Pollinations as the final fallback). Synchronous for thread-pool use."""
+    from server.image_gen import generate_image_sync
+    img, _provider = generate_image_sync(prompt, width, height)
+    return img
 
 
 # ── prompts ──────────────────────────────────────────────────────────────────

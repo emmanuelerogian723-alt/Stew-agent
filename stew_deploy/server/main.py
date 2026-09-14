@@ -2521,31 +2521,16 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
     model_map = {"flux": "flux", "turbo": "turbo", "flux-realism": "flux-realism"}
     model_name = model_map.get(body.model, "flux")
 
-    encoded_prompt = urllib.parse.quote(body.prompt, safe='')
-
-    # Try up to 3 times with different seeds — pollinations sometimes returns 0 bytes
-    image_bytes = None
-    content_type = "image/jpeg"
-    final_url = None
-
-    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as http:
-        for attempt in range(3):
-            seed = random.randint(1, 999999)
-            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={body.width}&height={body.height}&model={model_name}&nologo=true&seed={seed}"
-            try:
-                resp = await http.get(url)
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    image_bytes = resp.content
-                    content_type = resp.headers.get("content-type", "image/jpeg")
-                    final_url = url
-                    break
-                else:
-                    logger.warning(f"Image gen attempt {attempt+1}: status={resp.status_code} size={len(resp.content)} — retrying")
-            except Exception as e:
-                logger.warning(f"Image gen attempt {attempt+1} error: {e} — retrying")
+    # S.T.E.W Image Engine v2: Cloudflare Workers AI (FLUX-2 flagship)
+    # with Leonardo/FLUX-1 + Pollinations as automatic fallbacks.
+    from server.image_gen import generate_image as _gen_image_v2
+    image_bytes, provider_used = await _gen_image_v2(body.prompt, body.width, body.height)
 
     if image_bytes is None:
-        raise HTTPException(503, "Image generation failed after 3 attempts. The free image service may be overloaded — please try again in a moment.")
+        raise HTTPException(503, "Image generation failed — all engines busy. Please try again in a moment.")
+
+    content_type = "image/jpeg" if image_bytes[:2] == b"\xff\xd8" else "image/png"
+    final_url = None
 
     # Convert to base64 data URL for reliable embedding
     b64 = base64.b64encode(image_bytes).decode('utf-8')
@@ -2568,7 +2553,7 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
         "prompt": body.prompt,
         "model": model_name,
         "dimensions": f"{body.width}x{body.height}",
-        "provider": "pollinations.ai",
+        "provider": provider_used,
         "image_size_bytes": len(image_bytes),
     }
 
@@ -8565,16 +8550,12 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             return {"ok": True}
         await bot.send_chat_action(chat_id, "upload_photo")
         try:
-            import urllib.parse
-            encoded = urllib.parse.quote(prompt)
-            seed = random.randint(1, 999999)
-            img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.get(img_url)
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    await bot.send_photo(chat_id, resp.content, caption=f"AI Image: {prompt[:80]}")
-                else:
-                    await bot.send_message(chat_id, "Image generation failed. Try a different prompt.")
+            from server.image_gen import generate_image as _gen_img_v2
+            img_bytes, _provider_used = await _gen_img_v2(prompt, 1024, 1024)
+            if img_bytes:
+                await bot.send_photo(chat_id, img_bytes, caption=f"AI Image: {prompt[:80]}")
+            else:
+                await bot.send_message(chat_id, "Image generation failed. Try a different prompt.")
         except Exception as e:
             await bot.send_message(chat_id, f"Image error: {str(e)[:100]}")
         return {"ok": True}
@@ -9584,6 +9565,25 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         # Use user's preferred voice or override or default to Nigerian female
         _voice_to_use = _voice_override or getattr(tg_user, "preferred_voice", None) or "en-NG-EzinneNeural"
 
+        # ── CLONED-VOICE PRIORITY ── if the creator has a voice profile and
+        # didn't explicitly ask for a different voice, speak in THEIR voice.
+        _cloned_done = False
+        if not _voice_override:
+            try:
+                import server.voice_clone as _vcx
+                _vc_key = f"tg:{chat_id}"
+                if await _vcx.has_profile(_vc_key):
+                    await bot.send_message(chat_id, "🎙️ Recording in *your cloned voice*...")
+                    _cwav, _cerr = await _vcx.synthesize_cloned_voice(_vc_key, script_text)
+                    if _cwav:
+                        await bot.send_voice(chat_id, _cwav)
+                        await bot.send_message(chat_id, f"Voice note sent in your cloned voice 🎧\nText: {script_text[:200]}")
+                        return {"ok": True}
+                    # clone failed → fall through to normal voice with a note
+                    await bot.send_message(chat_id, f"⚠️ Your cloned voice engine is busy — using my regular voice for this one.")
+            except Exception as _vcx_err:
+                logger.warning(f"cloned-voice say path failed: {_vcx_err}")
+
         # Natural-language requests give a description ("wishing me happy new
         # month"), not exact words to read — compose an actual short spoken
         # message from it via the LLM before synthesizing, so the voice note
@@ -10206,30 +10206,17 @@ Requirements:
         await bot.send_chat_action(chat_id, "upload_photo")
 
         try:
-            import httpx as _httpx
-            import urllib.parse as _urlparse
-            import random as _random
-            encoded = _urlparse.quote(image_prompt, safe='')
-            image_bytes = None
-            async with _httpx.AsyncClient(timeout=90, follow_redirects=True) as http:
-                for attempt in range(3):
-                    seed = _random.randint(1, 999999)
-                    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true&seed={seed}"
-                    try:
-                        resp = await http.get(url)
-                        if resp.status_code == 200 and len(resp.content) > 2000:
-                            image_bytes = resp.content
-                            break
-                        else:
-                            logger.warning(f"TG image gen attempt {attempt+1}: status={resp.status_code} size={len(resp.content)}")
-                    except Exception as e:
-                        logger.warning(f"TG image gen attempt {attempt+1} error: {e}")
+            # S.T.E.W Image Engine v2: Cloudflare FLUX-2 flagship, Pollinations fallback
+            from server.image_gen import generate_image as _gen_img_v2
+            image_bytes, _img_provider = await _gen_img_v2(image_prompt, 1024, 1024)
+            if not image_bytes:
+                logger.warning("TG image gen: all engines failed")
 
             if image_bytes:
                 await bot.send_photo(chat_id, image_bytes,
                     caption=f"Generated by S.T.E.W\nPrompt: {image_prompt[:200]}")
             else:
-                await bot.send_message(chat_id, "Sorry, image generation failed after 3 attempts. The free image service may be busy. Please try again in a moment.")
+                await bot.send_message(chat_id, "Sorry, image generation failed — all engines are busy. Please try again in a moment.")
         except Exception as e:
             logger.error(f"Telegram image generation error: {e}")
             await bot.send_message(chat_id, f"Image generation error: {str(e)[:200]}")
