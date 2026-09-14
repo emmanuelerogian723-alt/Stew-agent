@@ -5042,6 +5042,60 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                                                       tg_user_early.id if tg_user_early else None))
             return {"ok": True}
 
+    # ── STEW VOICE CLONER (content creators) ────────────────────────────────
+    # /voiceclone arms a session; the next voice note is captured as the
+    # creator's voice profile (Whisper transcribes it). "voiceover: <text>"
+    # then generates a voice note in their cloned voice (open-source F5-TTS).
+    import server.voice_clone as _vc
+    _vc_key = f"tg:{chat_id}"
+    if _raw_text_early.startswith("/voiceclone") or (
+        _raw_text_early and re.search(r"\b(clone|copy|mimic)\s+(my|the)?\s*voice\b", _raw_text_early.lower())
+    ):
+        if await _vc.has_profile(_vc_key):
+            _vc.start_session(_vc_key)
+            await bot.send_message(chat_id,
+                "🎙️ *Your voice is already cloned!*\n\n"
+                "Create a voiceover with your voice — send:\n"
+                "`voiceover: <your text here>`\n\n"
+                "To re-capture with a fresh sample, just send a new voice note now.",
+                parse_mode="Markdown")
+        else:
+            _vc.start_session(_vc_key)
+            await bot.send_message(chat_id,
+                "🎙️ *Voice Cloner — for content creators*\n\n"
+                "1. Send a voice note now (10–20 seconds, clear speech, low noise)\n"
+                "2. I'll capture your voice print\n"
+                "3. Then send `voiceover: anything you want me to say` and I'll speak it *in your voice*\n\n"
+                "_Powered by open-source F5-TTS. English voiceovers work best._",
+                parse_mode="Markdown")
+        return {"ok": True}
+
+    if not _raw_text_early.startswith("/") and not _is_callback_early:
+        _vo_text = _vc.is_voiceover_intent(_raw_text_early)
+        if _vo_text:
+            if tg_user_early is not None:
+                _vo_allowed, _vo_used, _vo_limit = await _check_quota(tg_user_early, db, "voice")
+                if not _vo_allowed:
+                    await bot.send_message(chat_id, f"Monthly voice limit reached ({_vo_used}/{_vo_limit}). Use /upgrade to continue.")
+                    return {"ok": True}
+            if not await _vc.has_profile(_vc_key):
+                await bot.send_message(chat_id,
+                    "I haven't captured your voice yet — send /voiceclone, then a 10–20s voice note, and I'll clone your voice for voiceovers. 🎙️")
+                return {"ok": True}
+            await bot.send_chat_action(chat_id, "typing")
+            await bot.send_message(chat_id, "🎙️ Cloning your voice — generating your voiceover…")
+            try:
+                _wav, _err = await _vc.synthesize_cloned_voice(_vc_key, _vo_text)
+                if _wav:
+                    await bot.send_voice(chat_id, _wav, caption="🎙️ Voiceover in your cloned voice")
+                else:
+                    await bot.send_message(chat_id,
+                        f"Cloning engine is busy right now ({_err[:120]}). Please try again in a few minutes.")
+            except Exception as _ve:
+                logger.error(f"Voice clone error: {_ve}", exc_info=True)
+                await bot.send_message(chat_id, "Voice cloning hit an error — please try again.")
+            return {"ok": True}
+
     # Admin unlock: "/admin <SECRET>" grants this Telegram account permanent,
     # unmetered access. Never counted toward quota, never rate-limited.
     if _raw_text_early.startswith("/admin"):
@@ -6390,7 +6444,9 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "21. /song - Create AI song with music\n"
             "22. /remember - Tell Stew to remember something\n"
             "23. /memory - View what Stew remembers\n"
-            "24. /forget - Clear all memories\n\n"
+            "24. /forget - Clear all memories\n"
+            "25. /videoedit - Edit videos like a pro\n"
+            "26. /voiceclone - Clone your voice for creator voiceovers\n\n"
             "Documents: /pdf /docx /xlsx /pptx\n"
             "Images: generate image of...\n"
             "Browse: browse https://...\n"
@@ -6441,6 +6497,37 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # ── VOICE MESSAGE HANDLING (voice notes, audio files, songs) ──────────────
     if msg.get("has_voice") or msg.get("has_audio"):
+        # S.T.E.W Voice Cloner: awaiting the creator's sample → capture it
+        import server.voice_clone as _vc
+        _vc_key = f"tg:{chat_id}"
+        if _vc.is_awaiting_sample(_vc_key):
+            _vc.end_session(_vc_key)
+            try:
+                _sample = await bot.download_file(msg["file_id"])
+                if not _sample:
+                    await bot.send_message(chat_id, "Couldn't download that voice note — please send it again.")
+                    return {"ok": True}
+                await bot.send_chat_action(chat_id, "typing")
+                _tr, _terr = await _transcribe_audio_bytes(_sample, "voice.ogg")
+                if not _tr or len(_tr.split()) < 5:
+                    await bot.send_message(chat_id,
+                        "I couldn't hear enough clear speech to clone. Please send a 10–20s voice note, "
+                        "speaking clearly in a quiet place.")
+                    return {"ok": True}
+                _ok = await _vc.save_profile(_vc_key, _sample, _tr.strip())
+                if _ok:
+                    await bot.send_message(chat_id,
+                        "✅ *Voice captured!* I heard: \"" + _tr.strip()[:120] + "\"\n\n"
+                        "Your voice is cloned. Now create any voiceover — send:\n"
+                        "`voiceover: your text here`\n\n"
+                        "Example:\n`voiceover: Welcome back to my channel, in today's video we're going deep!`",
+                        parse_mode="Markdown")
+                else:
+                    await bot.send_message(chat_id, "Couldn't save your voice sample — please try again with a shorter clip.")
+            except Exception as _ce:
+                logger.error(f"Voice clone capture error: {_ce}", exc_info=True)
+                await bot.send_message(chat_id, "Something went wrong capturing your voice — please try again.")
+            return {"ok": True}
         # S.T.E.W Video Editor: captioned music upload → save as edit bed
         _ve_music_cap = (msg.get("caption") or "").strip()
         if _ve_music_cap and re.search(r"\b(music|soundtrack|bgm|beat|song|track)\b", _ve_music_cap.lower()):
@@ -10342,7 +10429,8 @@ Requirements:
     _existing_conv = _conv_q.scalar_one_or_none()
     conv = _existing_conv if _existing_conv else await get_or_create_conversation(db, tg_user.id, None)
 
-    recalled_tg = await get_relevant_context(db, tg_user.id, user_text, platform="telegram")
+    recalled_tg = await get_relevant_context(db, tg_user.id, user_text, platform="telegram",
+                                             conversation_id=conv.id)
     await append_message(db, conv, "user", user_text, platform="telegram")
     messages = build_llm_messages(conv, system, recalled_tg)
 
@@ -10385,6 +10473,15 @@ Requirements:
                     await extract_and_store_memories(
                         mem_db, uid, u_msg, a_reply, "telegram", cid, _sync_llm_chat_mem
                     )
+                    # Rolling conversation digest — Stew's "never forget the thread" layer
+                    from server.database import AsyncSessionLocal as _ASL
+                    from server.memory import update_conversation_digest as _upd_digest
+                    from sqlalchemy import select as _sel_d
+                    async with _ASL() as _dig_db:
+                        _dq = await _dig_db.execute(_sel_d(Conversation).where(Conversation.id == cid))
+                        _dconv = _dq.scalar_one_or_none()
+                        if _dconv:
+                            await _upd_digest(_dig_db, _dconv, _sync_llm_chat_mem)
                 except Exception as me:
                     logger.warning(f"Memory extraction failed (non-fatal): {me}")
 

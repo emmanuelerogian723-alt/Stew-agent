@@ -94,10 +94,89 @@ def build_llm_messages(
     if recalled_memories:
         full_system += recalled_memories
     msgs = [{"role": "system", "content": full_system}]
-    for m in (conversation.messages or []):
-        if m.get("role") in ("user", "assistant"):
-            msgs.append({"role": m["role"], "content": m["content"]})
+    hist = [m for m in (conversation.messages or []) if m.get("role") in ("user", "assistant")]
+    # Window to the last 24 messages — older turns live on in the rolling
+    # digest (see update_conversation_digest) + extracted facts, so nothing
+    # is forgotten but token cost stays bounded on months-long chats.
+    if len(hist) > 24:
+        msgs.append({"role": "system", "content":
+            f"(_Earlier turns of this conversation are summarized in your memories above._)"})
+        hist = hist[-24:]
+    for m in hist:
+        msgs.append({"role": m["role"], "content": m["content"]})
     return msgs
+
+
+# ── ROLLING CONVERSATION DIGEST ────────────────────────────────────────────────
+
+DIGEST_EVERY_N_USER_MSGS = 8
+DIGEST_MAX_TURNS = 16
+
+
+async def update_conversation_digest(
+    db: AsyncSession,
+    conversation: Conversation,
+    llm_chat_fn,
+) -> Optional[str]:
+    """Maintain a rolling LLM summary of the conversation.
+
+    Called after every user message; only does work every N user messages.
+    Reads the previous digest (stored as a UserMemory, category='digest',
+    tied to this conversation) and folds in the newest turns, then upserts.
+    Injected by get_relevant_context so long chats never lose their thread.
+    """
+    try:
+        msgs = [m for m in (conversation.messages or [])
+                if m.get("role") in ("user", "assistant")]
+        user_count = sum(1 for m in msgs if m["role"] == "user")
+        if user_count < DIGEST_EVERY_N_USER_MSGS or user_count % DIGEST_EVERY_N_USER_MSGS != 0:
+            return None
+
+        # previous digest
+        dq = await db.execute(
+            select(UserMemory).where(
+                UserMemory.user_id == conversation.user_id,
+                UserMemory.category == "digest",
+                UserMemory.conversation_id == conversation.id,
+                UserMemory.is_active == True,
+            ).order_by(UserMemory.importance.desc()).limit(1)
+        )
+        prev = dq.scalar_one_or_none()
+        prev_text = (prev.content if prev else "") or ""
+
+        recent = msgs[-DIGEST_MAX_TURNS:]
+        transcript = "\n".join(f"{m['role'].upper()}: {str(m['content'])[:400]}" for m in recent)
+
+        prompt = [
+            {"role": "system", "content":
+                "You maintain a running memory digest of a user's conversation with their AI assistant, Stew. "
+                "Be concise, factual, third-person. Capture: who the user is, their goals/projects, decisions made, "
+                "preferences, open threads, and any numbers/dates/names mentioned. Never invent anything."},
+            {"role": "user", "content":
+                f"PREVIOUS DIGEST:\n{prev_text or '(none yet)'}\n\nNEWEST TURNS:\n{transcript}\n\n"
+                f"Write the updated digest (max 250 words) merging previous digest with the newest turns:"},
+        ]
+        result = llm_chat_fn(prompt, max_tokens=500)
+        new_digest = (result.get("content") or result if isinstance(result, dict) else str(result)).strip()
+        if not new_digest:
+            return None
+
+        if prev:
+            prev.content = new_digest[:2000]
+            prev.importance = 10
+        else:
+            from server.models import UserMemory as _UM
+            new_row = _UM(
+                user_id=conversation.user_id, category="digest",
+                content=new_digest[:2000], importance=10,
+                source_platform="system", conversation_id=conversation.id,
+            )
+            db.add(new_row)
+        await db.commit()
+        return new_digest[:2000]
+    except Exception as e:
+        logger.warning(f"Digest update failed (non-fatal): {e}")
+        return None
 
 
 # ── DATABASE-BACKED PERSISTENT MEMORY ─────────────────────────────────────────
@@ -220,10 +299,32 @@ async def search_user_memories(
     return memories
 
 
-async def get_relevant_context(db: AsyncSession, user_id: str, query: str, platform: str = "api") -> str:
+async def get_relevant_context(db: AsyncSession, user_id: str, query: str,
+                                platform: str = "api",
+                                conversation_id: Optional[str] = None) -> str:
     """Retrieve semantically relevant past context for the current query.
-    Combines: core memories (always) + keyword-matched DB memories + vector recall."""
+    Combines: core memories (always) + conversation digest + keyword-matched
+    DB memories + vector recall."""
     parts = []
+
+    # 0. Rolling conversation digest — the running summary of this thread so
+    # the model stays anchored on everything discussed, even past the window.
+    try:
+        if conversation_id:
+            dq = await db.execute(
+                select(UserMemory).where(
+                    UserMemory.user_id == user_id,
+                    UserMemory.category == "digest",
+                    UserMemory.conversation_id == conversation_id,
+                    UserMemory.is_active == True,
+                ).order_by(UserMemory.importance.desc()).limit(1)
+            )
+            digest = dq.scalar_one_or_none()
+            if digest and digest.content:
+                parts.append(
+                    f"\n=== ONGOING CONVERSATION DIGEST (summary so far — stay consistent with it) ===\n{digest.content[:1500]}\n=== END DIGEST ===\n")
+    except Exception as e:
+        logger.warning(f"Digest recall failed (non-fatal): {e}")
 
     core_mems = []
     # 1. Core memories — ALWAYS injected (high importance, must never be forgotten)
