@@ -5096,6 +5096,113 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "Voice cloning hit an error — please try again.")
             return {"ok": True}
 
+    # ── STEW STORYBOOK (illustrated books — a picture on every chapter) ─────
+    import server.storybook as _sb
+    _sb_topic = _sb.is_storybook_intent(_raw_text_early)
+    if _raw_text_early.startswith("/storybook") or _sb_topic:
+        if tg_user_early is not None:
+            _sb_allowed, _sb_used, _sb_limit = await _check_quota(tg_user_early, db, "document")
+            if not _sb_allowed:
+                await bot.send_message(chat_id, f"Monthly limit reached ({_sb_used}/{_sb_limit}). Use /upgrade to continue.")
+                return {"ok": True}
+        _topic = _sb_topic or "an adventure story"
+        await bot.send_chat_action(chat_id, "typing")
+        await bot.send_message(chat_id, f"📖 *Making your illustrated storybook* about: {_topic[:80]}\n_Cover + a picture on every chapter — this takes 1–3 minutes._", parse_mode="Markdown")
+
+        async def _run_storybook(cid, topic):
+            def _sb_llm(messages, max_tokens=1200):
+                return get_llm_client().chat(messages, max_tokens=max_tokens)
+            try:
+                pdf, meta = await _sb.generate_storybook(
+                    topic, _sb_llm,
+                    progress_cb=lambda msg: bot.send_message(cid, msg))
+                if pdf:
+                    safe_title = re.sub(r"[^\w\s-]", "", meta.get("title", "story"))[:40].strip().replace(" ", "_") or "storybook"
+                    await bot.send_document(cid, pdf, f"{safe_title}_storybook.pdf",
+                        caption=f"📖 *{meta.get('title','')}* — {meta.get('chapters',0)} chapters, {meta.get('illustrated',0)} illustrations. Enjoy!")
+                else:
+                    await bot.send_message(cid, f"Storybook hit a snag ({(meta or {}).get('error','')[:100]}) — please try again.")
+            except Exception as _se:
+                logger.error(f"storybook task error: {_se}", exc_info=True)
+                await bot.send_message(cid, "Storybook generation failed — please try again.")
+
+        asyncio.create_task(_run_storybook(chat_id, _topic))
+        return {"ok": True}
+
+    # ── STEW AI PODCAST (two-host episode from any topic — Gen Z favorite) ────
+    import server.podcast as _pd
+    _pd_topic = _pd.is_podcast_intent(_raw_text_early)
+    if _raw_text_early.startswith("/podcast") or _pd_topic:
+        if tg_user_early is not None:
+            _pd_allowed, _pd_used, _pd_limit = await _check_quota(tg_user_early, db, "voice")
+            if not _pd_allowed:
+                await bot.send_message(chat_id, f"Monthly voice limit reached ({_pd_used}/{_pd_limit}). Use /upgrade to continue.")
+                return {"ok": True}
+        _topic = _pd_topic or "the latest trends young creators are talking about"
+        await bot.send_chat_action(chat_id, "typing")
+        await bot.send_message(chat_id, f"🎙️ *Recording your AI podcast* about: {_topic[:80]}\n_Two hosts, fully voiced — takes about a minute._", parse_mode="Markdown")
+
+        async def _run_podcast(cid, topic):
+            def _pd_llm(messages, max_tokens=1500):
+                return get_llm_client().chat(messages, max_tokens=max_tokens)
+            try:
+                mp3, meta = await _pd.generate_podcast(
+                    topic, _pd_llm,
+                    progress_cb=lambda msg: bot.send_message(cid, msg))
+                if mp3:
+                    safe_title = re.sub(r"[^\w\s-]", "", meta.get("title", "podcast"))[:40].strip().replace(" ", "_") or "podcast"
+                    await bot.send_audio(cid, mp3, filename=f"{safe_title}_stew_podcast.mp3",
+                        performer="S.T.E.W", title=meta.get("title", "Stew Podcast"))
+                else:
+                    await bot.send_message(cid, f"Podcast hit a snag ({(meta or {}).get('error','')[:100]}) — please try again.")
+            except Exception as _pe:
+                logger.error(f"podcast task error: {_pe}", exc_info=True)
+                await bot.send_message(cid, "Podcast generation failed — please try again.")
+
+        asyncio.create_task(_run_podcast(chat_id, _topic))
+        return {"ok": True}
+
+    # ── STEW REMINDERS (natural language → scheduled Telegram pings) ─────────
+    import server.reminder as _rm
+    if _raw_text_early.startswith("/remind") or re.search(r"^remind\s+me\b", _raw_text_early.lower()):
+        _r = _rm.parse_reminder(_raw_text_early)
+        if not _r:
+            await bot.send_message(chat_id,
+                "⏰ Tell me like: `remind me to call mum at 5pm` or `remind me to stretch in 20 minutes`.")
+            return {"ok": True}
+        try:
+            _task_row = ScheduledTask(
+                user_id=tg_user_early.id,
+                name=_r["task"][:80],
+                prompt=_r["prompt"],
+                schedule_type="once",
+                schedule_config=_r["schedule_config"],
+                delivery_method="telegram",
+                delivery_target=str(chat_id),
+                is_active=True,
+            )
+            db.add(_task_row)
+            await db.commit()
+            await bot.send_message(chat_id, f"✅ Got it — I'll remind you: *{_r['task'][:120]}* at {_r['when_str']}.", parse_mode="Markdown")
+        except Exception as _re_err:
+            await db.rollback()
+            logger.error(f"reminder create failed: {_re_err}", exc_info=True)
+            await bot.send_message(chat_id, "Couldn't set that reminder — please try again.")
+        return {"ok": True}
+
+    # ── STEW DOC COMPARE (two documents, one side-by-side analysis) ────────────
+    import server.doccompare as _dc
+    if _raw_text_early.startswith("/compare") or _dc.is_compare_intent(_raw_text_early):
+        if tg_user_early is not None:
+            _dc_allowed, _dc_used, _dc_limit = await _check_quota(tg_user_early, db, "document")
+            if not _dc_allowed:
+                await bot.send_message(chat_id, f"Monthly limit reached ({_dc_used}/{_dc_limit}). Use /upgrade to continue.")
+                return {"ok": True}
+        _dc.arm(f"tg:{chat_id}")
+        await bot.send_message(chat_id,
+            "📊 *Doc Compare*\n\nSend me the first document (PDF, DOCX, CSV or TXT), then the second — I'll analyze matches, differences, risks and give you a recommendation.")
+        return {"ok": True}
+
     # Admin unlock: "/admin <SECRET>" grants this Telegram account permanent,
     # unmetered access. Never counted toward quota, never rate-limited.
     if _raw_text_early.startswith("/admin"):
@@ -5595,6 +5702,29 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await bot.send_typing(chat_id)
 
             ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+
+            # S.T.E.W Doc Compare: capture documents while a compare is armed
+            import server.doccompare as _dc
+            if _dc.is_armed(f"tg:{chat_id}") and ext not in _AUDIO_EXTENSIONS:
+                _dc_text = await asyncio.to_thread(_dc.extract_bytes, file_bytes, file_name)
+                if len(_dc_text.strip()) < 20:
+                    await bot.send_message(chat_id, f"I couldn't read text from {file_name} — try a PDF, DOCX, CSV or TXT file.")
+                    return {"ok": True}
+                _status = _dc.store_doc(f"tg:{chat_id}", file_name, _dc_text)
+                if _status == "__READY__":
+                    _pair = _dc.pop_pair(f"tg:{chat_id}")
+                    await bot.send_message(chat_id, "⚖️ Comparing your two documents…")
+                    await bot.send_typing(chat_id)
+                    def _dc_llm(messages, max_tokens=2000):
+                        return get_llm_client().chat(messages, max_tokens=max_tokens)
+                    _report = await _dc.run_comparison(_pair, _dc_llm)
+                    if _report:
+                        await bot.send_message(chat_id, clean_response(_report), parse_mode="")
+                    else:
+                        await bot.send_message(chat_id, "Comparison failed — please try again.")
+                elif _status:
+                    await bot.send_message(chat_id, _status, parse_mode="Markdown")
+                return {"ok": True}
 
             # Songs/audio sent via the file picker land here as "document" instead of
             # "voice"/"audio" — detect and route to transcription instead of text extraction.
@@ -6446,7 +6576,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "23. /memory - View what Stew remembers\n"
             "24. /forget - Clear all memories\n"
             "25. /videoedit - Edit videos like a pro\n"
-            "26. /voiceclone - Clone your voice for creator voiceovers\n\n"
+            "26. /voiceclone - Clone your voice for creator voiceovers\n"
+            "27. /storybook - Illustrated storybook (a picture on every chapter!)\n"
+            "28. /podcast - Two-host AI podcast episode from any topic\n"
+            "29. /compare - Compare two documents side by side\n"
+            "30. remind me to X at 5pm - Set a reminder\n\n"
             "Documents: /pdf /docx /xlsx /pptx\n"
             "Images: generate image of...\n"
             "Browse: browse https://...\n"
