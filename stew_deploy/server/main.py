@@ -5128,15 +5128,22 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, f"Monthly voice limit reached ({_pd_used}/{_pd_limit}). Use /upgrade to continue.")
                 return {"ok": True}
         _topic = _pd_topic or "the latest trends young creators are talking about"
+        _pd_pack = "naija"
+        for _pk in ("afro", "global", "naija"):
+            _tag = f" | {_pk}"
+            if _tag in _topic.lower():
+                _pd_pack = _pk
+                _topic = _topic.lower().replace(_tag, "").strip()
+                break
         await bot.send_chat_action(chat_id, "typing")
-        await bot.send_message(chat_id, f"🎙️ *Recording your AI podcast* about: {_topic[:80]}\n_Two hosts, fully voiced — takes about a minute._", parse_mode="Markdown")
+        await bot.send_message(chat_id, f"🎙️ *Recording your AI podcast* about: {_topic[:80]}\n_Voice pack: {_pd_pack} — two hosts, fully voiced._", parse_mode="Markdown")
 
         async def _run_podcast(cid, topic):
             def _pd_llm(messages, max_tokens=1500):
                 return get_llm_client().chat(messages, max_tokens=max_tokens)
             try:
                 mp3, meta = await _pd.generate_podcast(
-                    topic, _pd_llm,
+                    topic, _pd_llm, voice_pack=_pd_pack,
                     progress_cb=lambda msg: bot.send_message(cid, msg))
                 if mp3:
                     safe_title = re.sub(r"[^\w\s-]", "", meta.get("title", "podcast"))[:40].strip().replace(" ", "_") or "podcast"
@@ -11114,6 +11121,7 @@ class PodcastRequest(BM):
     """Generate a two-host AI podcast episode from a topic."""
     topic: str
     api_key: str = ""
+    voice_pack: str = "naija"  # naija | afro | global
 
 
 class CaptionRequest(BM):
@@ -11379,7 +11387,8 @@ async def api_generate_podcast(body: PodcastRequest, background_tasks: Backgroun
         except Exception:
             return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
 
-    mp3, meta = await _pd.generate_podcast(topic, _llm_chat)
+    _vp = body.voice_pack if body.voice_pack in ("naija", "afro", "global") else "naija"
+    mp3, meta = await _pd.generate_podcast(topic, _llm_chat, voice_pack=_vp)
     if not mp3:
         raise HTTPException(503, f"Podcast generation failed: {meta.get('error', 'unknown')}")
 

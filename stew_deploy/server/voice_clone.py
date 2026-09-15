@@ -255,7 +255,7 @@ async def synthesize_cloned_voice(key: str, gen_text: str) -> tuple[Optional[byt
         try:
             import edge_tts
             _fb_voice = "en-US-GuyNeural"
-            _com = await edge_tts.Communicate(gen_text[:MAX_GEN_CHARS], _fb_voice)
+            _com = edge_tts.Communicate(gen_text[:MAX_GEN_CHARS], _fb_voice)
             _chunks = b""
             async for _ch in _com.stream():
                 if _ch["type"] == "audio":

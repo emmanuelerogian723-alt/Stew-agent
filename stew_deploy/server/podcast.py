@@ -17,10 +17,23 @@ from typing import Callable, Optional
 
 logger = logging.getLogger("stew.podcast")
 
-HOSTS = {
-    "Ada": "en-NG-EzinneNeural",   # female, Nigerian
-    "Zik": "en-GB-RyanNeural",     # male, British
+# Voice packs — all free edge-tts neural voices, no API key needed.
+# Default is full Naija (both hosts Nigerian) — the differentiator for the market.
+VOICE_PACKS = {
+    "naija": {
+        "Ada": "en-NG-EzinneNeural",   # female, Nigerian
+        "Zik": "en-NG-AbeoNeural",     # male, Nigerian
+    },
+    "afro": {
+        "Ada": "en-ZA-LeahNeural",      # female, South African
+        "Zik": "en-KE-ChilemeNeural",  # male, Kenyan
+    },
+    "global": {
+        "Ada": "en-US-JennyNeural",    # female, US
+        "Zik": "en-GB-RyanNeural",     # male, British
+    },
 }
+HOSTS = VOICE_PACKS["naija"]
 MAX_LINES = 22
 MAX_EPISODE_SECONDS = 210  # safety cap
 
@@ -50,7 +63,7 @@ def _safe_json(raw: str) -> Optional[dict]:
         return None
 
 
-async def generate_podcast(topic: str, llm_chat_fn: Callable,
+async def generate_podcast(topic: str, llm_chat_fn: Callable, voice_pack: str = "naija",
                            progress_cb=None) -> tuple[Optional[bytes], dict]:
     """Returns (mp3_bytes, meta{'title','lines','seconds'})."""
     topic = (topic or "").strip()[:600]
@@ -75,7 +88,8 @@ async def generate_podcast(topic: str, llm_chat_fn: Callable,
     if not script or not script.get("lines"):
         return None, {"error": "could not write a podcast script"}
 
-    lines = [l for l in script["lines"] if l.get("speaker") in HOSTS and l.get("line")]
+    _hosts = VOICE_PACKS.get(voice_pack) or VOICE_PACKS["naija"]
+    lines = [l for l in script["lines"] if l.get("speaker") in _hosts and l.get("line")]
     if not lines:
         return None, {"error": "empty script"}
     lines = lines[:MAX_LINES]
@@ -85,7 +99,7 @@ async def generate_podcast(topic: str, llm_chat_fn: Callable,
 
     async def _tts_line(idx: int, speaker: str, text: str) -> Optional[str]:
         import edge_tts
-        voice = HOSTS[speaker]
+        voice = _hosts[speaker]
         out = os.path.join(tempfile.gettempdir(), f"stew_pod_{int(time.time()*1000)}_{idx}.mp3")
         try:
             communicate = edge_tts.Communicate(text[:600], voice)
