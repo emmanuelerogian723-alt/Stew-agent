@@ -30,7 +30,7 @@ logger = logging.getLogger("stew.voice_clone")
 # First that responds wins. Add mirrors here as they appear.
 F5_SPACES = [
     "mrfakename/E2-F5-TTS",   # verified working anonymously (2026-09)
-    "F5-TTS/F5-TTS",          # official F5-TTS space (mirror)
+    "mrfakename/E2-F5-TTS",   # retry (space is flaky under load; 2nd attempt usually lands)
 ]
 
 def _hf_token() -> Optional[str]:
