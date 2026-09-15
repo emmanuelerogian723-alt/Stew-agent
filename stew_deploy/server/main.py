@@ -556,6 +556,14 @@ async def _ensure_plan_valid(user: User, db: AsyncSession) -> bool:
     return False
 
 
+def _is_paid_or_admin(user) -> bool:
+    """Cloudflare FLUX.2 image engine is reserved for paid plans + admin.
+    Free users get the free Pollinations engine instead."""
+    if user is None:
+        return False
+    return getattr(user, "plan", "free") != "free"
+
+
 async def _check_quota(user: User, db: AsyncSession, feature: str = "chat") -> tuple[bool, int, int]:
     """Check if user has remaining quota. Returns (allowed, calls_used, limit).
     Once the monthly allowance is exhausted, S.T.E.W Coins are consumed
@@ -2524,7 +2532,8 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
     # S.T.E.W Image Engine v2: Cloudflare Workers AI (FLUX-2 flagship)
     # with Leonardo/FLUX-1 + Pollinations as automatic fallbacks.
     from server.image_gen import generate_image as _gen_image_v2
-    image_bytes, provider_used = await _gen_image_v2(body.prompt, body.width, body.height)
+    image_bytes, provider_used = await _gen_image_v2(
+        body.prompt, body.width, body.height, premium=_is_paid_or_admin(user))
 
     if image_bytes is None:
         raise HTTPException(503, "Image generation failed — all engines busy. Please try again in a moment.")
@@ -2548,6 +2557,8 @@ async def generate_image_endpoint(body: GenerateImageRequest, db: AsyncSession =
 
     return {
         "success": True,
+        "provider": provider_used,
+        "premium_engine": provider_used.startswith("@cf/"),
         "image_url": final_url,
         "image_data": data_url,
         "prompt": body.prompt,
@@ -8562,7 +8573,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_chat_action(chat_id, "upload_photo")
         try:
             from server.image_gen import generate_image as _gen_img_v2
-            img_bytes, _provider_used = await _gen_img_v2(prompt, 1024, 1024)
+            img_bytes, _provider_used = await _gen_img_v2(
+                prompt, 1024, 1024, premium=_is_paid_or_admin(tg_user_early))
             if img_bytes:
                 await bot.send_photo(chat_id, img_bytes, caption=f"AI Image: {prompt[:80]}")
             else:
@@ -10219,7 +10231,8 @@ Requirements:
         try:
             # S.T.E.W Image Engine v2: Cloudflare FLUX-2 flagship, Pollinations fallback
             from server.image_gen import generate_image as _gen_img_v2
-            image_bytes, _img_provider = await _gen_img_v2(image_prompt, 1024, 1024)
+            image_bytes, _img_provider = await _gen_img_v2(
+                image_prompt, 1024, 1024, premium=_is_paid_or_admin(tg_user_early))
             if not image_bytes:
                 logger.warning("TG image gen: all engines failed")
 

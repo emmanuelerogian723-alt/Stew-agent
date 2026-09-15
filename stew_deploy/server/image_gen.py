@@ -119,12 +119,15 @@ def _validate(raw: bytes) -> Optional[bytes]:
 
 
 def generate_image_sync(prompt: str, width: int = 1024, height: int = 1024,
-                        enrich: bool = True) -> tuple[Optional[bytes], str]:
-    """Returns (image_bytes, provider_used). Tries Cloudflare engines then Pollinations."""
+                        enrich: bool = True,
+                        premium: bool = False) -> tuple[Optional[bytes], str]:
+    """Returns (image_bytes, provider_used).
+    Cloudflare Workers AI (FLUX.2) is reserved for PAID users + admin
+    (premium=True). Free users go straight to the free Pollinations engine."""
     p = enrich_prompt(prompt) if enrich else prompt
 
     token, _ = _cf_creds()
-    if token:
+    if token and premium:
         for model, mode in CF_ENGINES:
             t0 = time.time()
             raw, err = _cf_call(model, mode, p, timeout=90)
@@ -142,5 +145,6 @@ def generate_image_sync(prompt: str, width: int = 1024, height: int = 1024,
 
 
 async def generate_image(prompt: str, width: int = 1024, height: int = 1024,
-                         enrich: bool = True) -> tuple[Optional[bytes], str]:
-    return await asyncio.to_thread(generate_image_sync, prompt, width, height, enrich)
+                         enrich: bool = True,
+                         premium: bool = False) -> tuple[Optional[bytes], str]:
+    return await asyncio.to_thread(generate_image_sync, prompt, width, height, enrich, premium)
