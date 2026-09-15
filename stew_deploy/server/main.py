@@ -5072,7 +5072,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             try:
                 _wav, _err = await _vc.synthesize_cloned_voice(_vc_key, _vo_text)
                 if _wav:
-                    await bot.send_voice(chat_id, _wav, caption="🎙️ Voiceover in your cloned voice")
+                    _cap = "🎙️ Voiceover in your cloned voice"
+                    if _err.startswith("FALLBACK:"):
+                        _cap = ("⚠️ Clone engine busy (free GPU quota) — used Stew's standard voice.\n"
+                                "Your clone resets in a few hours.")
+                    await bot.send_voice(chat_id, _wav, caption=_cap)
                 else:
                     await bot.send_message(chat_id,
                         f"Cloning engine is busy right now ({_err[:120]}). Please try again in a few minutes.")
@@ -9575,7 +9579,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 if await _vcx.has_profile(_vc_key):
                     await bot.send_message(chat_id, "🎙️ Recording in *your cloned voice*...")
                     _cwav, _cerr = await _vcx.synthesize_cloned_voice(_vc_key, script_text)
-                    if _cwav:
+                    if _cwav and not (_cerr or "").startswith("FALLBACK:"):
                         await bot.send_voice(chat_id, _cwav)
                         await bot.send_message(chat_id, f"Voice note sent in your cloned voice 🎧\nText: {script_text[:200]}")
                         return {"ok": True}
@@ -11327,9 +11331,12 @@ async def api_voiceclone_say(body: VoiceCloneSayRequest, background_tasks: Backg
     if not wav:
         raise HTTPException(503, f"Voice synthesis failed: {err or 'clone engine busy — retry in a moment'}")
 
+    _fell_back = (err or "").startswith("FALLBACK:")
     background_tasks.add_task(_log_call, db, user.id, "/voiceclone/say", "POST", 0, 200)
     return {
         "success": True,
+        "cloned": not _fell_back,
+        "notice": err.split("(", 1)[1].rstrip(")") if _fell_back and "(" in err else "",
         "audio_base64": base64.b64encode(wav).decode(),
         "audio_format": "wav",
         "chars_spoken": len(body.text),

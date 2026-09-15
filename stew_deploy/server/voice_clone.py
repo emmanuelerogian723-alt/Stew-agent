@@ -247,7 +247,27 @@ async def synthesize_cloned_voice(key: str, gen_text: str) -> tuple[Optional[byt
     await asyncio.to_thread(_write, tmp_path, profile["wav_bytes"])
     try:
         wav, err = await asyncio.to_thread(_clone_sync, tmp_path, ref_text, gen_text)
-        return wav, err
+        if wav:
+            return wav, ""
+        # ── graceful fallback: free ZeroGPU quota exhausted / space down ──
+        # Never leave the user with silence — synthesize with Stew's standard
+        # neural voice and report it honestly via the err/notice string.
+        try:
+            import edge_tts
+            _fb_voice = "en-US-GuyNeural"
+            _com = await edge_tts.Communicate(gen_text[:MAX_GEN_CHARS], _fb_voice)
+            _chunks = b""
+            async for _ch in _com.stream():
+                if _ch["type"] == "audio":
+                    _chunks += _ch["data"]
+            if _chunks:
+                return _chunks, (
+                    "FALLBACK:standard-voice (clone engine unavailable: "
+                    + err[:120] + ")"
+                )
+        except Exception as _fbe:
+            logger.warning(f"voice clone fallback failed: {_fbe}")
+        return None, err
     finally:
         try:
             os.remove(tmp_path)
