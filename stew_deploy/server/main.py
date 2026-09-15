@@ -11354,7 +11354,7 @@ async def api_voiceclone_status(api_key: str = "", db: AsyncSession = Depends(ge
 async def api_generate_podcast(body: PodcastRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Generate a fully-voiced two-host podcast episode (MP3) from any topic.
     Script by Stew's LLM, voices by neural TTS, mixed with FFmpeg."""
-    import asyncio as _asyncio
+    import base64 as _b64
     import server.podcast as _pd
 
     user = await _require_key_and_quota(body.api_key, db, "/generate/podcast")
@@ -11381,7 +11381,7 @@ async def api_generate_podcast(body: PodcastRequest, background_tasks: Backgroun
         "success": True,
         "title": meta.get("title", topic),
         "lines": meta.get("lines"),
-        "audio_base64": base64.b64encode(mp3).decode(),
+        "audio_base64": _b64.b64encode(mp3).decode(),
         "audio_format": "mp3",
     }
 
