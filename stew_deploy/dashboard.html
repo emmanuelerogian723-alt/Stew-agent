@@ -374,6 +374,7 @@ const fbAuth = firebase.auth();
     <button class="tab" onclick="switchTab('imagegen')">Image Gen</button>
     <button class="tab" onclick="switchTab('ocr')">OCR</button>
   <button class="tab" onclick="switchTab('scheduler')">⏰ Scheduler</button>
+  <button class="tab" onclick="switchTab('voicestudio')">🎙 Voice Studio</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -707,7 +708,7 @@ const fbAuth = firebase.auth();
         <div style="flex:1;min-width:140px">
           <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Model</label>
           <select class="auth-input" id="imgModel" style="margin:0;width:100%">
-            <option value="flux">FLUX (Best quality)</option>
+            <option value="flux">FLUX.2 (Cloudflare — best quality)</option>
             <option value="turbo">Turbo (Fast)</option>
           </select>
         </div>
@@ -751,6 +752,57 @@ const fbAuth = firebase.auth();
         <div class="sec-title" style="font-size:14px;margin-bottom:12px">Gallery</div>
         <div id="imgGalleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px"></div>
         <p id="imgGalleryEmpty" style="font-size:12px;color:var(--m);text-align:center;padding:20px 0">No images generated yet. Create your first image above!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voice Studio Tab -->
+  <div class="tab-content" id="tab-voicestudio">
+    <div class="card" style="margin-bottom:24px">
+      <div class="sec-title">🎙️ Voice Clone</div>
+      <p style="font-size:13px;color:var(--m);margin-bottom:16px">Register YOUR voice once (10-20s sample), then generate unlimited voiceovers that sound like you.</p>
+
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <input type="file" id="vcFile" accept="audio/*,.ogg,.mp3,.wav,.webm,.m4a" class="auth-input" style="flex:1;min-width:220px;margin:0" />
+        <button class="pg-btn" id="vcRegBtn" onclick="vcRegister()">1. Register My Voice</button>
+        <span id="vcStatus" style="font-size:12px;color:var(--m)"></span>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="flex:1;min-width:260px">
+          <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Say this in my cloned voice</label>
+          <textarea class="pg-input" id="vcText" placeholder="e.g. 'Welcome to my channel! In today's video we...'" style="min-height:80px"></textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="pg-btn" id="vcSayBtn" onclick="vcSay()">2. Speak It →</button>
+        <span id="vcSayStatus" style="font-size:12px;color:var(--m)"></span>
+      </div>
+      <div id="vcResult" style="display:none;margin-top:18px">
+        <audio id="vcAudio" controls style="width:100%"></audio>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <a id="vcDownload" download="stew-cloned-voice.wav"><button class="pg-btn" style="margin:0;font-size:13px">Download WAV</button></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-title">🎧 AI Podcast</div>
+      <p style="font-size:13px;color:var(--m);margin-bottom:16px">Turn any topic into a two-host podcast episode — fully voiced by Ada (NG) &amp; Zik, mixed and ready to share.</p>
+      <div style="margin-bottom:14px">
+        <label style="font-size:12px;color:var(--m);display:block;margin-bottom:6px">Podcast topic</label>
+        <textarea class="pg-input" id="podTopic" placeholder="e.g. 'How Nigerian students can earn from AI skills'"></textarea>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="pg-btn" id="podBtn" onclick="makePodcast()">🎙️ Create Podcast →</button>
+        <span id="podStatus" style="font-size:12px;color:var(--m)"></span>
+      </div>
+      <div id="podResult" style="display:none;margin-top:18px">
+        <div id="podTitle" style="font-weight:700;margin-bottom:8px"></div>
+        <audio id="podAudio" controls style="width:100%"></audio>
+        <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <a id="podDownload" download="stew-podcast.mp3"><button class="pg-btn" style="margin:0;font-size:13px">Download MP3</button></a>
+        </div>
       </div>
     </div>
   </div>
@@ -1452,6 +1504,101 @@ async function runPlayground(){
 
 // Image Generation
 let imgGalleryArr = [];
+
+// ── Voice Studio ────────────────────────────────────────────────────────────
+async function vcRegister(){
+  const f = document.getElementById('vcFile').files[0];
+  if(!f){ toast('Pick a 10-20s voice recording first'); return; }
+  if(f.size > 8*1024*1024){ toast('File too big (max 8MB)'); return; }
+  const btn = document.getElementById('vcRegBtn');
+  const status = document.getElementById('vcStatus');
+  btn.disabled = true; btn.textContent = 'Registering...';
+  status.textContent = 'Analyzing your voice...';
+  try{
+    const b64 = await fileToB64(f);
+    const resp = await fetch(API+'/voiceclone/register', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ audio_base64: b64, api_key: apiKey })
+    });
+    const data = await resp.json();
+    if(data.success){
+      status.textContent = '✅ Voice registered! "' + (data.transcript||'').slice(0,60) + '…"';
+      toast('Your voice is cloned-ready!');
+    } else {
+      status.textContent = '';
+      toast('Error: ' + (data.detail||'Registration failed'));
+    }
+  }catch(e){ status.textContent=''; toast('Error: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent='1. Register My Voice'; }
+}
+
+async function vcSay(){
+  const text = document.getElementById('vcText').value.trim();
+  if(!text){ toast('Type what I should say'); return; }
+  const btn = document.getElementById('vcSayBtn');
+  const status = document.getElementById('vcSayStatus');
+  btn.disabled = true; btn.textContent = 'Synthesizing...';
+  status.textContent = 'Speaking in your voice (~10-30s)...';
+  document.getElementById('vcResult').style.display='none';
+  try{
+    const resp = await fetch(API+'/voiceclone/say', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text: text, api_key: apiKey })
+    });
+    const data = await resp.json();
+    if(data.success && data.audio_base64){
+      const src = 'data:audio/wav;base64,' + data.audio_base64;
+      document.getElementById('vcAudio').src = src;
+      document.getElementById('vcDownload').href = src;
+      document.getElementById('vcResult').style.display='block';
+      status.textContent = 'Done!';
+      toast('Voiceover ready!');
+    } else {
+      status.textContent='';
+      toast('Error: ' + (data.detail||'Synthesis failed'));
+    }
+  }catch(e){ status.textContent=''; toast('Error: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent='2. Speak It →'; }
+}
+
+async function makePodcast(){
+  const topic = document.getElementById('podTopic').value.trim();
+  if(!topic){ toast('Enter a podcast topic'); return; }
+  const btn = document.getElementById('podBtn');
+  const status = document.getElementById('podStatus');
+  btn.disabled = true; btn.textContent = 'Recording...';
+  status.textContent = 'Writing script, voicing Ada & Zik, mixing (~1 min)...';
+  document.getElementById('podResult').style.display='none';
+  try{
+    const resp = await fetch(API+'/generate/podcast', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ topic: topic, api_key: apiKey })
+    });
+    const data = await resp.json();
+    if(data.success && data.audio_base64){
+      const src = 'data:audio/mpeg;base64,' + data.audio_base64;
+      document.getElementById('podTitle').textContent = '🎙️ ' + (data.title||topic);
+      document.getElementById('podAudio').src = src;
+      document.getElementById('podDownload').href = src;
+      document.getElementById('podResult').style.display='block';
+      status.textContent = 'Done! ' + (data.lines||0) + ' turns';
+      toast('Podcast ready!');
+    } else {
+      status.textContent='';
+      toast('Error: ' + (data.detail||'Podcast failed'));
+    }
+  }catch(e){ status.textContent=''; toast('Error: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent='🎙️ Create Podcast →'; }
+}
+
+async function fileToB64(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(',')[1]);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
 
 async function generateImage(){
   const prompt = document.getElementById('imgPrompt').value.trim();

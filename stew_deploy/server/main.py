@@ -11094,6 +11094,24 @@ class MemeRequest(BM):
     template: str = ""
 
 
+class VoiceCloneRegisterRequest(BM):
+    """Register a creator's voice for cloning (10-20s sample, any common format)."""
+    audio_base64: str
+    api_key: str = ""
+
+
+class VoiceCloneSayRequest(BM):
+    """Speak text in a previously registered (cloned) voice."""
+    text: str
+    api_key: str = ""
+
+
+class PodcastRequest(BM):
+    """Generate a two-host AI podcast episode from a topic."""
+    topic: str
+    api_key: str = ""
+
+
 class CaptionRequest(BM):
     context: str
     api_key: str = ""
@@ -11241,6 +11259,130 @@ async def api_generate_voice(body: VoiceRequest, background_tasks: BackgroundTas
         "voice_name": desc,
         "audio_base64": base64.b64encode(audio_data).decode(),
         "audio_format": "ogg",
+    }
+
+
+# ── S.T.E.W VOICE CLONE (HTTP API — same engine as the Telegram feature) ──────
+
+@app.post("/voiceclone/register")
+async def api_voiceclone_register(body: VoiceCloneRegisterRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Register the caller's voice for cloning.
+    Send a 10-20s voice sample (base64, any common format — OGG/MP3/WAV/WebM).
+    Stew transcribes it (Whisper) and stores the profile (Supabase-backed)."""
+    import base64
+    import server.voice_clone as _vc
+
+    user = await _require_key_and_quota(body.api_key, db, "/voiceclone/register")
+    if not user:
+        return {"success": False, "detail": "A valid api_key is required"}
+
+    try:
+        raw = base64.b64decode(body.audio_base64)
+    except Exception:
+        raise HTTPException(400, "audio_base64 is not valid base64")
+    if len(raw) < 4000:
+        raise HTTPException(400, "Voice sample too short — send 10-20 seconds of clear speech")
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(413, "Voice sample too large (max 8MB)")
+
+    # 1) Transcribe the sample via Whisper (the clone engine needs the transcript)
+    transcript, err = await _transcribe_audio_bytes(raw, "sample.ogg")
+    if err and not transcript:
+        raise HTTPException(503, f"Transcription failed: {err}")
+    if not transcript or len(transcript.strip()) < 15:
+        raise HTTPException(400, "Couldn't hear clear speech in the sample — record 10-20s in a quiet spot and try again")
+
+    # 2) Save the profile (clean WAV + transcript, persisted to Supabase)
+    key = f"api:{user.id}"
+    ok = await _vc.save_profile(key, raw, transcript.strip())
+    if not ok:
+        raise HTTPException(500, "Could not save the voice profile — try again")
+
+    background_tasks.add_task(_log_call, db, user.id, "/voiceclone/register", "POST", 0, 200)
+    return {
+        "success": True,
+        "message": "Voice registered. Now POST text to /voiceclone/say to hear it in YOUR voice.",
+        "transcript": transcript.strip()[:400],
+    }
+
+
+@app.post("/voiceclone/say")
+async def api_voiceclone_say(body: VoiceCloneSayRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate a voiceover in the registered (cloned) voice. Returns base64 WAV."""
+    import base64
+    import server.voice_clone as _vc
+
+    user = await _require_key_and_quota(body.api_key, db, "/voiceclone/say")
+    if not user:
+        return {"success": False, "detail": "A valid api_key is required"}
+
+    if not (body.text or "").strip():
+        raise HTTPException(400, "No text provided")
+
+    key = f"api:{user.id}"
+    if not await _vc.has_profile(key):
+        raise HTTPException(404, "No voice registered yet — POST a 10-20s sample to /voiceclone/register first")
+
+    wav, err = await _vc.synthesize_cloned_voice(key, body.text)
+    if not wav:
+        raise HTTPException(503, f"Voice synthesis failed: {err or 'clone engine busy — retry in a moment'}")
+
+    background_tasks.add_task(_log_call, db, user.id, "/voiceclone/say", "POST", 0, 200)
+    return {
+        "success": True,
+        "audio_base64": base64.b64encode(wav).decode(),
+        "audio_format": "wav",
+        "chars_spoken": len(body.text),
+    }
+
+
+@app.get("/voiceclone/status")
+async def api_voiceclone_status(api_key: str = "", db: AsyncSession = Depends(get_db)):
+    """Has this api_key registered a voice?"""
+    import server.voice_clone as _vc
+    if not api_key:
+        return {"registered": False}
+    user = await _safe_get_user(api_key, db) if api_key else None
+    if not user:
+        return {"registered": False}
+    return {"registered": await _vc.has_profile(f"api:{user.id}")}
+
+
+# ── S.T.E.W AI PODCAST (HTTP API) ──────────────────────────────────────────────
+
+@app.post("/generate/podcast")
+async def api_generate_podcast(body: PodcastRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """Generate a fully-voiced two-host podcast episode (MP3) from any topic.
+    Script by Stew's LLM, voices by neural TTS, mixed with FFmpeg."""
+    import asyncio as _asyncio
+    import server.podcast as _pd
+
+    user = await _require_key_and_quota(body.api_key, db, "/generate/podcast")
+    if not user:
+        return {"success": False, "detail": "A valid api_key is required"}
+
+    topic = (body.topic or "").strip()
+    if not topic:
+        raise HTTPException(400, "No topic provided")
+
+    def _llm_chat(messages, max_tokens=1500):
+        llm = get_llm_client()
+        try:
+            return llm.chat(messages, max_tokens=max_tokens)
+        except Exception:
+            return {"content": llm.complete(messages[-1]["content"], system=messages[0]["content"])}
+
+    mp3, meta = await _pd.generate_podcast(topic, _llm_chat)
+    if not mp3:
+        raise HTTPException(503, f"Podcast generation failed: {meta.get('error', 'unknown')}")
+
+    background_tasks.add_task(_log_call, db, user.id, "/generate/podcast", "POST", 0, 200)
+    return {
+        "success": True,
+        "title": meta.get("title", topic),
+        "lines": meta.get("lines"),
+        "audio_base64": base64.b64encode(mp3).decode(),
+        "audio_format": "mp3",
     }
 
 

@@ -26,10 +26,11 @@ QUALITY_BOOST = (
 )
 
 # Cloudflare Workers AI image engines, best-first
+# (slugs verified against developers.cloudflare.com/workers-ai/models)
 CF_ENGINES = [
-    ("@cf/black-forest-labs/flux-2-klein-9b", "multipart"),   # flagship FLUX-2
-    ("@cf/black-forest-labs/flux-1-schnell", "json"),          # cheap CF tier
-    ("@cf/leonardo/lucid-origin", "json"),
+    ("@cf/black-forest-labs/flux-2-klein-4b", "multipart"),  # FLUX.2 klein — ultra-fast flagship
+    ("@cf/black-forest-labs/flux-2-dev", "multipart"),      # FLUX.2 dev — max quality
+    ("@cf/black-forest-labs/flux-1-schnell", "json"),       # FLUX.1 schnell — cheap tier
 ]
 
 
