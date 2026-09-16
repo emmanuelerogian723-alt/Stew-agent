@@ -10523,8 +10523,10 @@ Requirements:
     # "find AI recent news", "what's happening in tech", etc. must NEVER fall
     # through to bare-LLM chat (which hallucinates pipeline essays instead of news).
     import server.news_engine as _ne
-    if _ne.is_news_intent(user_text):
-        _ne_topic = _ne.extract_news_topic(user_text) or "artificial intelligence"
+
+    async def _serve_news_briefing(_user_text: str) -> bool:
+        """Serve a live news briefing. Returns True if fully handled."""
+        _ne_topic = _ne.extract_news_topic(_user_text) or "artificial intelligence"
         await bot.send_chat_action(chat_id, "typing")
         try:
             await bot.send_message(chat_id, f"📰 Fetching live {_ne_topic} headlines…")
@@ -10546,15 +10548,35 @@ Requirements:
                         _sel_ne(Conversation).where(Conversation.user_id == tg_user.id)
                         .order_by(Conversation.updated_at.desc()).limit(1))).scalar_one_or_none()
                     _conv_ne = _conv_ne or await get_or_create_conversation(db, tg_user.id, None)
-                    await append_message(db, _conv_ne, "user", user_text, platform="telegram")
+                    await append_message(db, _conv_ne, "user", _user_text, platform="telegram")
                     await append_message(db, _conv_ne, "assistant", _ne_reply, platform="telegram")
                 except Exception as _conv_ne_err:
                     logger.debug(f"news conv save skipped: {_conv_ne_err}")
-                return {"ok": True}
+                return True
             # no stories → fall through to web-search path (never bare LLM)
             await bot.send_message(chat_id, "News feeds unreachable — trying web search…")
         except Exception as _ne_err:
             logger.warning(f"news engine error: {_ne_err}")
+        return False
+
+    if _ne.is_news_intent(user_text) and await _serve_news_briefing(user_text):
+        return {"ok": True}
+
+    # ── DEEP INTENT ANALYSIS (reasoning pre-pass) ──────────────────────────────
+    # Fast model pass that understands the FULL intent before the main model
+    # answers: what the user really wants, hidden requirements, tools needed.
+    import server.reasoning as _reasoning
+    _analysis = None
+    _reasoning_ctx = ""
+    if _reasoning.should_analyze(user_text):
+        _analysis = await _reasoning.analyze_intent(user_text, get_llm_client())
+        if _analysis:
+            _reasoning_ctx = _reasoning.build_reasoning_context(_analysis)
+            # The reasoning pass catches news/research requests that keyword
+            # matching missed ("newest AI developments", "dig into X for me").
+            if _analysis.get("intent") == "news" or _analysis.get("needs_tools") == "news":
+                if await _serve_news_briefing(user_text):
+                    return {"ok": True}
 
     # ── REGULAR CHAT WITH SEARCH + RESEARCH ────────────────────────────────────
     llm = get_llm_client()
@@ -10608,6 +10630,13 @@ Requirements:
     tg_research_kw = ["research", "investigate", "look into", "report on", "study", "analyze", "deep dive"]
     needs_research = any(kw in user_lower for kw in tg_research_kw) and not _is_search_status_check
 
+    # Deep-intent analysis routes: trust the reasoning pre-pass over keywords
+    if _analysis:
+        if _analysis.get("needs_tools") == "search" or _analysis.get("intent") == "factual":
+            needs_search = True
+        if _analysis.get("intent") == "research":
+            needs_research = True
+
     if needs_research:
         await bot.send_message(chat_id, f"Starting deep research on: {user_text[:100]}")
         await bot.send_typing(chat_id)
@@ -10649,6 +10678,10 @@ Requirements:
         except Exception as e:
             logger.warning(f"Telegram search failed: {e}")
             # Don't retry — just answer without web context
+
+    # Inject the deep-intent reasoning context (the "understand first" layer)
+    if _reasoning_ctx:
+        system += _reasoning_ctx
 
     # Reuse the most recent conversation for this Telegram user
     from sqlalchemy import select as _sel

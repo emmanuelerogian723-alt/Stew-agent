@@ -57,10 +57,38 @@ def _safe_json(raw: str) -> Optional[dict]:
     m = re.search(r"\{.*\}", raw, re.DOTALL)
     if not m:
         return None
+    blob = m.group(0)
+    # common LLM JSON defects: trailing commas, code fences, smart quotes
+    blob = re.sub(r",\s*([}\]])", r"\1", blob)
+    blob = blob.replace("```json", "").replace("```", "")
     try:
-        return json.loads(m.group(0))
+        return json.loads(blob)
+    except Exception:
+        pass
+    # last resort: fix unescaped newlines inside strings
+    try:
+        import json as _j
+        return _j.loads(blob.replace("\n", " \\n "))
     except Exception:
         return None
+
+
+def _parse_plaintext_script(raw: str) -> Optional[dict]:
+    """Fallback: parse 'Ada: ...' / 'Zik: ...' plain-text scripts if JSON failed."""
+    if not raw:
+        return None
+    lines = []
+    title = None
+    for ln in raw.splitlines():
+        ln = ln.strip()
+        t = re.match(r'^(Ada|Zik)\s*[:\-]\s*(.+)$', ln, re.I)
+        if t:
+            lines.append({"speaker": t.group(1).title(), "line": t.group(2).strip()})
+        elif not title and re.match(r'^(title|podcast title)\s*[:\-]\s*(.+)$', ln, re.I):
+            title = re.sub(r'^(title|podcast title)\s*[:\-]\s*', '', ln, flags=re.I).strip()
+    if len(lines) >= 4:
+        return {"title": title or "Stew Podcast", "lines": lines[:24]}
+    return None
 
 
 async def generate_podcast(topic: str, llm_chat_fn: Callable, voice_pack: str = "naija",
@@ -79,14 +107,39 @@ async def generate_podcast(topic: str, llm_chat_fn: Callable, voice_pack: str = 
 
     await _say("🎙️ Writing your podcast script…")
     script = None
-    try:
-        result = await asyncio.to_thread(llm_chat_fn, _script_prompt(topic), 1500)
-        content = result.get("content") if isinstance(result, dict) else str(result)
-        script = _safe_json(content)
-    except Exception as e:
-        logger.warning(f"podcast script LLM failed: {e}")
+    last_err = None
+    # Attempt 1: JSON format (retry once on transient LLM failure)
+    for _attempt in range(2):
+        try:
+            result = await asyncio.to_thread(llm_chat_fn, _script_prompt(topic), 1500)
+            content = result.get("content") if isinstance(result, dict) else str(result)
+            script = _safe_json(content)
+            if script and script.get("lines"):
+                break
+        except Exception as e:
+            last_err = str(e)[:120]
+            logger.warning(f"podcast script LLM attempt {_attempt+1} failed: {e}")
+    # Attempt 2: plain-text format if JSON kept failing
     if not script or not script.get("lines"):
-        return None, {"error": "could not write a podcast script"}
+        await _say("✍️ Polishing the script…")
+        try:
+            _pt_prompt = [
+                {"role": "system", "content": "You are a podcast scriptwriter."},
+                {"role": "user", "content":
+                    f"Write a punchy two-host podcast episode about: {topic}\n\n"
+                    "Hosts: Ada (warm, curious) and Zik (witty, sharp). Natural banter, hooks, "
+                    "hot takes, a personal angle, memorable closing. 10-16 turns.\n\n"
+                    "Format each line EXACTLY like this (no stage directions, no music notes):\n"
+                    "Title: <episode title>\nAda: <her line>\nZik: <his line>\n..."},
+            ]
+            result = await asyncio.to_thread(llm_chat_fn, _pt_prompt, 1500)
+            content = result.get("content") if isinstance(result, dict) else str(result)
+            script = _parse_plaintext_script(content)
+        except Exception as e:
+            last_err = str(e)[:120]
+            logger.warning(f"podcast plain-text fallback failed: {e}")
+    if not script or not script.get("lines"):
+        return None, {"error": f"could not write a podcast script ({last_err or 'LLM returned no usable script'})"}
 
     _hosts = VOICE_PACKS.get(voice_pack) or VOICE_PACKS["naija"]
     lines = [l for l in script["lines"] if l.get("speaker") in _hosts and l.get("line")]
