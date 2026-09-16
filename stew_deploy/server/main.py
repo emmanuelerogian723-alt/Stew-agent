@@ -2705,7 +2705,9 @@ async def task(
 
 
 
-class NewsRequest(BM):
+from pydantic import BaseModel as _NewsBM
+
+class NewsRequest(_NewsBM):
     """Real, dated news headlines for a topic — Google News RSS + curated feeds."""
     topic: str = ""
     api_key: str = ""
