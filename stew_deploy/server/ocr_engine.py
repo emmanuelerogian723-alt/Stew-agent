@@ -286,34 +286,34 @@ def _group_paragraphs(lines: list) -> list:
 
 # ── PDF Processing ──────────────────────────────────────────────────────────
 
-def _pdf_to_images(content: bytes) -> list:
-    """Convert PDF pages to PIL Images using pymupdf (fitz) or pdf2image."""
-    # Try PyMuPDF first (no system deps)
+def _fitz_open(content: bytes):
+    """Open a PDF with PyMuPDF. Raises RuntimeError if pymupdf is unavailable."""
     try:
         import fitz  # PyMuPDF
-        images = []
-        doc = fitz.open(stream=content, filetype="pdf")
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            mat = fitz.Matrix(200/72, 200/72)
-            pix = page.get_pixmap(matrix=mat)
-            img_data = pix.tobytes("png")
-            images.append(Image.open(io.BytesIO(img_data)))
-        doc.close()
-        return images
-    except ImportError:
-        pass
-
-    # Fallback: pdf2image (needs poppler)
-    try:
-        from pdf2image import convert_from_bytes
-        images = convert_from_bytes(content, dpi=200, fmt="png")
-        return images
     except ImportError:
         raise RuntimeError(
             "PDF processing requires PyMuPDF (pip install pymupdf) or pdf2image+poppler. "
             "Neither is available."
         )
+    return fitz.open(stream=content, filetype="pdf")
+
+
+def _render_page(doc, page_num: int, dpi: int = 150):
+    """Render a PDF page to a PIL Image at the given DPI."""
+    import fitz
+    page = doc[page_num]
+    mat = fitz.Matrix(dpi / 72, dpi / 72)
+    pix = page.get_pixmap(matrix=mat)
+    return Image.open(io.BytesIO(pix.tobytes("png")))
+
+
+def _pdf_to_images(content: bytes) -> list:
+    """Convert PDF pages to PIL Images (via PyMuPDF)."""
+    doc = _fitz_open(content)
+    try:
+        return [_render_page(doc, i) for i in range(len(doc))]
+    finally:
+        doc.close()
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -365,62 +365,87 @@ def _ocr_single_image(content: bytes, filename: str, lang: str,
 
 def _ocr_pdf(content: bytes, filename: str, lang: str,
              include_boxes: bool, include_confidence: bool, max_pages: int) -> dict:
-    """OCR every page of a PDF."""
-    images = _pdf_to_images(content)
+    """OCR every page of a PDF.
 
-    if len(images) > max_pages:
-        images = images[:max_pages]
+    Hybrid strategy (fast + robust):
+    1. Embedded text fast path — most real PDFs (books, slides, lecture notes)
+       already contain extractable text. Pull it directly with PyMuPDF (instant,
+       no OCR needed). Only image-only pages fall through to tesseract.
+    2. OCR fallback — scanned/photo PDFs are rendered at 150 DPI and OCR'd.
 
-    all_pages = []
-    full_text_parts = []
-    all_words = []
-    all_lines = []
-    confidences = []
+    Returns the SAME field set as _ocr_single_image (text, lines, paragraphs,
+    words, avg_confidence, detected_language, word_count, char_count, ...).
+    """
+    doc = _fitz_open(content)
+    try:
+        n_pages = min(len(doc), max_pages)
 
-    for i, img in enumerate(images):
-        page_result = _ocr_image(img, lang, include_boxes, include_confidence)
+        all_pages = []
+        full_text_parts = []
+        all_words = []
+        all_lines = []
+        all_paragraphs = []
+        confidences = []
 
-        page_data = {
-            "page_number": i + 1,
-            "text": page_result["text"],
-            "word_count": page_result["word_count"],
-            "avg_confidence": page_result["avg_confidence"],
-            "lines": page_result["lines"],
-            "paragraphs": page_result["paragraphs"],
+        for i in range(n_pages):
+            # ── fast path: embedded text (no tesseract call) ──
+            embedded = doc[i].get_text().strip()
+            if len(embedded) >= 40:
+                lines = [l.strip() for l in embedded.splitlines() if l.strip()]
+                paragraphs = _group_paragraphs(lines)
+                page_result = {
+                    "text": embedded,
+                    "word_count": len(embedded.split()),
+                    "avg_confidence": 99.0,
+                    "lines": lines,
+                    "paragraphs": paragraphs,
+                    "words": [],
+                }
+            else:
+                # ── OCR path: scanned page — render once at 150 DPI, then OCR ──
+                img = _render_page(doc, i)
+                page_result = _ocr_image(img, lang, include_boxes, include_confidence)
+
+            page_data = {
+                "page_number": i + 1,
+                "text": page_result["text"],
+                "word_count": page_result["word_count"],
+                "avg_confidence": page_result["avg_confidence"],
+                "lines": page_result["lines"],
+                "paragraphs": page_result["paragraphs"],
+            }
+            if include_boxes:
+                page_data["words"] = page_result.get("words", [])
+                all_words.extend(page_result.get("words", []))
+
+            all_pages.append(page_data)
+            full_text_parts.append(page_result["text"])
+            all_lines.extend(page_result["lines"])
+            all_paragraphs.extend(page_result["paragraphs"])
+
+            if page_result["avg_confidence"] > 0:
+                confidences.append(page_result["avg_confidence"])
+
+        full_text = "\n\n--- Page Break ---\n\n".join(full_text_parts)
+        overall_conf = round(sum(confidences) / len(confidences), 2) if confidences else 0.0
+        detected_lang = _detect_language(full_text)
+
+        return {
+            "filename": filename,
+            "file_type": "pdf",
+            "page_count": len(all_pages),
+            "text": full_text,
+            "pages": all_pages,
+            "words": all_words if include_boxes else [],
+            "lines": all_lines,
+            "paragraphs": all_paragraphs,
+            "avg_confidence": overall_conf,
+            "detected_language": detected_lang,
+            "word_count": sum(p["word_count"] for p in all_pages),
+            "char_count": len(full_text),
         }
-
-        if include_boxes:
-            page_data["words"] = page_result.get("words", [])
-
-        all_pages.append(page_data)
-        full_text_parts.append(page_result["text"])
-        all_lines.extend(page_result["lines"])
-
-        if page_result["avg_confidence"] > 0:
-            confidences.append(page_result["avg_confidence"])
-        if include_boxes:
-            all_words.extend(page_result.get("words", []))
-
-    full_text = "\n\n--- Page Break ---\n\n".join(full_text_parts)
-    overall_conf = round(sum(confidences) / len(confidences), 2) if confidences else 0.0
-    detected_lang = _detect_language(full_text)
-
-    return {
-        "filename": filename,
-        "file_type": "pdf",
-        "page_count": len(all_pages),
-        "text": full_text,
-        "pages": all_pages,
-        "words": all_words if include_boxes else [],
-        "lines": all_lines,
-        "avg_confidence": overall_conf,
-        "detected_language": detected_lang,
-        "word_count": sum(p["word_count"] for p in all_pages),
-        "char_count": len(full_text),
-    }
-
-
-# ── Reasoning Integration ────────────────────────────────────────────────────
+    finally:
+        doc.close()
 
 async def ocr_and_reason(
     content: bytes,
