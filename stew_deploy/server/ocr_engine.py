@@ -135,6 +135,14 @@ def _preprocess_image(img: Image.Image) -> Image.Image:
         scale = max(2, 1000 // w)
         gray = gray.resize((w * scale, h * scale), Image.Resampling.LANCZOS)
 
+    # Downscale large images: camera photos are 3000-4000px wide, which makes Tesseract
+    # take MINUTES per page (and often lowers accuracy). OCR works best around
+    # ~300 DPI ≈ 1000-1600px for a page, so cap wide images at 1600px.
+    w, h = gray.size
+    if w > 1600:
+        scale = 1600 / w
+        gray = gray.resize((1600, round(h * scale)), Image.Resampling.LANCZOS)
+
     # Slight sharpening
     gray = gray.filter(ImageFilter.SHARPEN)
 
