@@ -137,11 +137,11 @@ def _preprocess_image(img: Image.Image) -> Image.Image:
 
     # Downscale large images: camera photos are 3000-4000px wide, which makes Tesseract
     # take MINUTES per page (and often lowers accuracy). OCR works best around
-    # ~300 DPI ≈ 1000-1600px for a page, so cap wide images at 1600px.
+    # ~300 DPI ≈ 1000-1200px for a page, so cap wide images at 1200px.
     w, h = gray.size
-    if w > 1600:
-        scale = 1600 / w
-        gray = gray.resize((1600, round(h * scale)), Image.Resampling.LANCZOS)
+    if w > 1200:
+        scale = 1200 / w
+        gray = gray.resize((1200, round(h * scale)), Image.Resampling.LANCZOS)
 
     # Slight sharpening
     gray = gray.filter(ImageFilter.SHARPEN)
@@ -187,10 +187,10 @@ def _ocr_image(img: Image.Image, lang: str = "eng",
     """
     processed = _preprocess_image(img)
 
-    # Get the raw text
-    text = pytesseract.image_to_string(processed, lang=lang).strip()
-
-    # Get detailed data with bounding boxes and confidence
+    # SINGLE OCR pass (image_to_data only) and reconstruct the plain text from it.
+    # Previously this ran Tesseract twice (image_to_string + image_to_data), which
+    # doubled the processing time — a real problem on a shared-CPU web instance where
+    # one pass on a large photo can take tens of seconds.
     data = pytesseract.image_to_data(
         processed, lang=lang, output_type=pytesseract.Output.DICT
     )
@@ -239,6 +239,9 @@ def _ocr_image(img: Image.Image, lang: str = "eng",
 
     if current_line_words:
         lines.append(" ".join(current_line_words))
+
+    # Reconstruct plain text from the single OCR pass
+    text = "\n".join(lines).strip()
 
     # Group lines into paragraphs
     paragraphs = _group_paragraphs(lines)
