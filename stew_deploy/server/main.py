@@ -2705,6 +2705,49 @@ async def task(
 
 
 
+class NewsRequest(BM):
+    """Real, dated news headlines for a topic — Google News RSS + curated feeds."""
+    topic: str = ""
+    api_key: str = ""
+    days: int = 7
+
+
+@app.post("/news")
+async def api_news(body: NewsRequest, db: AsyncSession = Depends(get_db)):
+    """Live news briefing: fetches REAL dated headlines, then summarizes with a
+    strict no-invention prompt. Never returns a 'how to build a pipeline' essay."""
+    import server.news_engine as _ne
+    user = await _safe_get_user(body.api_key, db) if body.api_key else None
+    if user:
+        allowed, used, limit = await _check_quota(user, db)
+        if not allowed:
+            raise _quota_exceeded(user, used, limit)
+    topic = _ne.extract_news_topic(body.topic) if body.topic else ""
+    topic = topic or "artificial intelligence"
+    stories = await _ne.fetch_topic_news(topic, days=max(1, min(body.days, 30)), max_items=15)
+    if not stories:
+        raise HTTPException(503, "News feeds unreachable right now — please try again in a moment.")
+    llm = get_llm_client()
+    messages = [
+        {"role": "system", "content": _ne.NEWS_SYSTEM_PROMPT},
+        {"role": "user", "content": f"News topic: {topic}\n\n{_ne.format_news_for_llm(stories)}"},
+    ]
+    result = await asyncio.to_thread(llm.chat, messages, max_tokens=700)
+    if user:
+        from server.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            session.add(APICall(user_id=user.id, endpoint="/news", method="POST",
+                                tokens_used=0, status_code=200))
+            await session.commit()
+    return {
+        "success": True,
+        "topic": topic,
+        "briefing": clean_response(result["content"]),
+        "stories": stories[:10],
+        "count": len(stories),
+    }
+
+
 @app.post("/search")
 async def search_web(body: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     """Web search endpoint with DuckDuckGo fallback."""
@@ -8210,25 +8253,25 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # ── /news COMMAND ───────────────────────────────────────────────────────────
     if user_text.startswith("/news"):
+        import server.news_engine as _ne
         topic = user_text[6:].strip()
         await bot.send_chat_action(chat_id, "typing")
         try:
             llm = get_llm_client()
-            search_query = f"latest news today {topic}" if topic else "top news headlines today August 2026"
-            searcher = get_searcher()
-            search_results = await asyncio.to_thread(searcher.search, search_query, 5)
-            if search_results.get("grounded"):
-                context = searcher.format_results_for_llm(search_results)
-                system = STEW_MASTER_PROMPT + "\n\nSummarize the latest news in a brief, easy-to-read format. Top 5 stories with 1-2 sentences each."
+            _ne_topic = _ne.extract_news_topic(topic) if topic else "artificial intelligence"
+            stories = await _ne.fetch_topic_news(_ne_topic, days=7, max_items=15)
+            if stories:
+                context = _ne.format_news_for_llm(stories)
                 messages = [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": f"Latest news{' about ' + topic if topic else ''}:\n\n{context}"},
+                    {"role": "system", "content": _ne.NEWS_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"News topic: {_ne_topic}\n\n{context}"},
                 ]
-                result = await asyncio.to_thread(llm.chat, messages, max_tokens=800)
-                await bot.send_message(chat_id, f"📰 Today's News{' — ' + topic if topic else ''}\n\n" + clean_response(result["content"]))
+                result = await asyncio.to_thread(llm.chat, messages, max_tokens=700)
+                await bot.send_message(chat_id, f"📰 Latest: {_ne_topic}\n\n" + clean_response(result["content"]))
             else:
-                await bot.send_message(chat_id, "Couldn't fetch news right now. Try again later.")
+                await bot.send_message(chat_id, "Couldn't reach the news feeds right now. Try again in a moment.")
         except Exception as e:
+            logger.warning(f"/news error: {e}")
             await bot.send_message(chat_id, "Could not fetch news. Please try again later.")
         return {"ok": True}
 
@@ -10474,6 +10517,43 @@ Requirements:
         except Exception as _mood_err:
             logger.debug(f"Mood tracking skipped: {_mood_err}")
 
+    # ── NEWS INTENT → dedicated live-news engine (real headlines only) ─────────
+    # "find AI recent news", "what's happening in tech", etc. must NEVER fall
+    # through to bare-LLM chat (which hallucinates pipeline essays instead of news).
+    import server.news_engine as _ne
+    if _ne.is_news_intent(user_text):
+        _ne_topic = _ne.extract_news_topic(user_text) or "artificial intelligence"
+        await bot.send_chat_action(chat_id, "typing")
+        try:
+            await bot.send_message(chat_id, f"📰 Fetching live {_ne_topic} headlines…")
+            _ne_stories = await _ne.fetch_topic_news(_ne_topic, days=7, max_items=15)
+            if _ne_stories:
+                _llm_ne = get_llm_client()
+                _ne_ctx = _ne.format_news_for_llm(_ne_stories)
+                _ne_msgs = [
+                    {"role": "system", "content": _ne.NEWS_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"News topic: {_ne_topic}\n\n{_ne_ctx}"},
+                ]
+                _ne_res = await asyncio.to_thread(_llm_ne.chat, _ne_msgs, max_tokens=700)
+                _ne_reply = clean_response(_ne_res["content"])
+                await bot.send_message(chat_id, _ne_reply)
+                # persist so follow-ups ("expand story 2") have context
+                try:
+                    from sqlalchemy import select as _sel_ne
+                    _conv_ne = (await db.execute(
+                        _sel_ne(Conversation).where(Conversation.user_id == tg_user.id)
+                        .order_by(Conversation.updated_at.desc()).limit(1))).scalar_one_or_none()
+                    _conv_ne = _conv_ne or await get_or_create_conversation(db, tg_user.id, None)
+                    await append_message(db, _conv_ne, "user", user_text, platform="telegram")
+                    await append_message(db, _conv_ne, "assistant", _ne_reply, platform="telegram")
+                except Exception as _conv_ne_err:
+                    logger.debug(f"news conv save skipped: {_conv_ne_err}")
+                return {"ok": True}
+            # no stories → fall through to web-search path (never bare LLM)
+            await bot.send_message(chat_id, "News feeds unreachable — trying web search…")
+        except Exception as _ne_err:
+            logger.warning(f"news engine error: {_ne_err}")
+
     # ── REGULAR CHAT WITH SEARCH + RESEARCH ────────────────────────────────────
     llm = get_llm_client()
     searcher = get_searcher()
@@ -10483,6 +10563,9 @@ Requirements:
     _mood_insights = await _get_mood_insights(db, tg_user_early.id) if tg_user_early else {}
     _mood_prompt = await _get_mood_adaptive_system_prompt(_mood_insights, STEW_MASTER_PROMPT)
     system = _mood_prompt + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
+    system += ("\n\nIMPORTANT: If asked about news, current events, or recent developments and NO web context was provided, "
+               "say you can\'t fetch live news right now. NEVER invent stories, dates, sources, agent reports, or describe "
+               "how to build a news pipeline/system — the user wants actual news, not a tutorial.")
 
     # Detect if search is needed
     needs_search = any(kw in user_lower for kw in [
