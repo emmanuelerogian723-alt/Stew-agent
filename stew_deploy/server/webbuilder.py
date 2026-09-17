@@ -13,6 +13,7 @@ import re
 import urllib.parse
 
 from server.llm_client import get_llm_client
+from server.pexels_client import build_photo_kit, format_photo_kit_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,7 @@ Every website you build should feel like it cost $10,000+ to make. You achieve t
 - A clear visual story from top to bottom — hero sets the mood, features build trust, CTA converts
 
 QUALITY BAR — BE UNIQUE EVERY SINGLE TIME:
-Your work must stand alongside top Dribbble shots and sites from Lovable or Base44 — sites people
-assume took a designer weeks. Two sites you generate for the same type of business must NEVER look
+Your work must stand alongside top Dribbble shots, sites from Lovable or Base44, and premium SaaS landing pages (cinematic hero, alternating light/dark bands, oversized display type, real photography) — sites people assume took a designer weeks. Two sites you generate for the same type of business must NEVER look
 like twins. For EVERY site, actively rotate:
 - LAYOUT STRUCTURE: asymmetric split heroes, centered typographic heroes, full-bleed photo heroes,
   bento-grid feature sections, horizontal marquee strips, alternating zig-zag rows, oversized display
@@ -126,7 +126,8 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - Use font-weight variations (400, 500, 600, 700, 800) for hierarchy
 
 11. REAL PHOTOGRAPHY — every site MUST look complete with real photos:
-   - Use Pollinations image URLs ONLY (always valid, free, no key). EXACT format:
+   - IF real Pexels photo URLs are supplied to you in the brief below, COPY THEM EXACTLY into your <img> tags and CSS background-image values — these are genuine licensed photographs and always look more premium and trustworthy than AI-generated images. Never alter, re-encode, or guess at a Pexels URL.
+   - Only when you need MORE photos than were supplied (or none were supplied), use Pollinations image URLs (always valid, free, no key). EXACT format:
      https://image.pollinations.ai/prompt/<url-encoded-description>?width=W&height=H&seed=N&nologo=true
    - The prompt part must describe REAL PHOTOGRAPHY matching the business, e.g.
      photorealistic%20modern%20coffee%20shop%20interior%20in%20lagos%2C%20warm%20evening%20light%2C%20happy%20customers
@@ -150,6 +151,7 @@ except Google Fonts <link> and optionally a CDN icon script tag (lucide icons vi
    - Never use mailto:, action="#", or placeholder alert() — the form must actually deliver.
 
 12. ADVANCED TECHNIQUES (use 3+ per site):
+   - ALTERNATING BACKGROUND BANDS: give consecutive sections different background tones (e.g. dark hero -> cream/off-white band -> dark band -> white) to create strong visual rhythm as the user scrolls, the way top-tier SaaS landing pages do — this alone makes a page feel far more premium and less like a flat template.
    - CSS conic-gradient for unique patterns
    - backdrop-filter: blur for glassmorphism
    - clip-path for unique section shapes (diagonal cuts, waves)
@@ -342,7 +344,18 @@ async def build_motion_website(description: str, style: str = "auto") -> dict:
     llm = get_llm_client()
     design_hints = _extract_design_keywords(description)
 
+    # ── Fetch real Pexels photography for this business, if a key is configured ──
+    try:
+        photo_kit = await build_photo_kit(description)
+    except Exception as e:
+        logger.warning(f"Pexels photo kit failed, falling back to Pollinations only: {e}")
+        photo_kit = {"available": False, "hero": None, "gallery": [], "portraits": []}
+
     parts = [f"Build a motion-design landing page for: {description}\n"]
+
+    photo_kit_text = format_photo_kit_for_prompt(photo_kit)
+    if photo_kit_text:
+        parts.append(photo_kit_text + "\n")
 
     if design_hints["colors"]:
         parts.append(f"COLORS DETECTED IN REQUEST: {', '.join(design_hints['colors'])} - use these colors prominently in the design.\n")
