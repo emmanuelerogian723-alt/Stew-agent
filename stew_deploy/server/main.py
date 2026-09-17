@@ -4825,6 +4825,87 @@ async def _read_video(video_bytes: bytes, filename: str, user_question: str = ""
             pass
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# S.T.E.W IMAGE STUDIO WORKERS (photo editing + Canva-style design)
+# ═══════════════════════════════════════════════════════════════════════════════
+async def _handle_tg_image_edit(chat_id: int, file_id: str, instruction: str):
+    """Background: download the user's photo, AI-edit it, send it back."""
+    from server.telegram_bot import TelegramBot
+    import server.image_studio as _ist
+    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+    try:
+        img = await bot.download_file(file_id)
+        if not img:
+            await bot.send_message(chat_id, "⚠️ I couldn't download that photo — please send it again.")
+            return
+        await bot.send_chat_action(chat_id, "upload_photo")
+        result = await asyncio.to_thread(_ist.edit_image, img, instruction)
+        if result.get("ok") and result.get("image"):
+            await bot.send_photo(
+                chat_id, result["image"],
+                caption=f"✨ Edited with {result['engine']} — {instruction[:80]}",
+            )
+        else:
+            await bot.send_message(chat_id, f"⚠️ {(result.get('error') or 'The edit failed')[:220]}")
+    except Exception as e:
+        logger.error(f"image edit error: {e}", exc_info=True)
+        try:
+            await bot.send_message(chat_id, "⚠️ Photo edit hit an error — please try again.")
+        except Exception:
+            pass
+
+
+async def _handle_tg_poster(chat_id: int, kind: str, brief: str):
+    """Background: design a poster/banner/flyer from a plain-English brief."""
+    from server.telegram_bot import TelegramBot
+    import server.image_studio as _ist
+    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+
+    def _spec_llm(b):
+        """Art-director brain: brief → design spec JSON (headline, palette, copy)."""
+        try:
+            import json as _json
+            llm = get_llm_client()
+            sysmsg = (
+                "You are a world-class advertising art director for Nigerian and African brands. "
+                "Turn the user's brief into a poster design spec. Reply with ONLY a JSON object "
+                "with these keys: "
+                '{"headline": "<max 6 punchy words>", '
+                '"subheadline": "<max 12 words supporting line>", '
+                '"cta": "<3-5 word call to action>", '
+                '"contact": "<one short line: handle, phone or site>", '
+                '"style_prompt": "<visual style for the background image, 10-20 words>", '
+                '"palette": ["#textcolor", "#accentcolor", "#bordercolor"]}'
+            )
+            r = llm.chat([{"role": "system", "content": sysmsg},
+                          {"role": "user", "content": b}])
+            m = re.search(r"\{.*\}", r.get("content", ""), re.S)
+            return _json.loads(m.group(0)) if m else None
+        except Exception:
+            return None
+
+    try:
+        await bot.send_chat_action(chat_id, "upload_photo")
+        result = await asyncio.to_thread(_ist.create_poster, brief, kind, _spec_llm)
+        if result.get("ok"):
+            meta = result["meta"]
+            await bot.send_photo(
+                chat_id, result["image"],
+                caption=(f"🎨 {meta['kind']} • {meta['canvas']} • {meta['engine']}\n"
+                         f"{meta['headline']}\n\nWant a different vibe? Just say: "
+                         f"make it brighter / change the colors / try a new style"),
+            )
+        else:
+            await bot.send_message(chat_id, f"⚠️ {(result.get('error') or 'Design failed')[:220]}")
+    except Exception as e:
+        logger.error(f"poster design error: {e}", exc_info=True)
+        try:
+            await bot.send_message(chat_id, "⚠️ Poster design hit an error — please try again.")
+        except Exception:
+            pass
+
+
 async def _handle_tg_video_edit(chat_id: int, vid_path: str, text: str, user_id: Optional[str]):
     """S.T.E.W Video Editor worker (Telegram): runs the requested edits on a
     previously uploaded video and sends the result. Runs detached with its own
@@ -5082,6 +5163,111 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             asyncio.create_task(_handle_tg_video_edit(chat_id, _ve_pending["path"], _raw_text_early,
                                                       tg_user_early.id if tg_user_early else None))
             return {"ok": True}
+
+    # ── STEW IMAGE STUDIO (photo editing + Canva-style posters) ────────────────
+    import server.image_studio as _ist
+    _ist_key = f"tg:{chat_id}"
+
+    # 1) A photo arrives with an EDIT instruction as the caption → edit it.
+    #    A bare photo → arm a pending session and fall through to the normal
+    #    vision/OCR describe flow; the user can then just SAY the edit.
+    if msg.get("has_photo") and msg.get("file_id") and not _is_callback_early:
+        _ph_cap = (msg.get("caption") or "").strip()
+        if _ist.is_image_edit_intent(_ph_cap):
+            if tg_user_early is not None:
+                _ie_ok, _ie_used, _ie_limit = await _check_quota(tg_user_early, db, "image")
+                if not _ie_ok:
+                    await bot.send_message(chat_id, f"Monthly image limit reached ({_ie_used}/{_ie_limit}). Use /upgrade to continue.")
+                    return {"ok": True}
+            await bot.send_message(chat_id, f"🎨 On it — editing your photo: {_ph_cap[:80]}")
+            asyncio.create_task(_handle_tg_image_edit(chat_id, msg["file_id"], _ph_cap))
+            return {"ok": True}
+        if not _ph_cap:
+            # remember the photo so a follow-up instruction can edit it
+            _ist.arm_pending(_ist_key, msg["file_id"])
+            # fall through: the existing vision flow still describes the image,
+            # then the user can reply with the edit they want.
+
+    # 2) /imageedit — explicit edit command (uses the pending photo)
+    if _raw_text_early.startswith("/imageedit"):
+        _instr = _raw_text_early[len("/imageedit"):].strip()
+        _pend = _ist.get_pending(_ist_key)
+        if not _instr:
+            await bot.send_message(
+                chat_id,
+                "✏️ *Image Editor*\n\nFastest way: send your photo with the instruction "
+                "as the caption, e.g. *remove the background*.\n\nOr send a photo first, "
+                "then /imageedit make it golden hour\n\nI can remove backgrounds, change "
+                "styles, brighten, restore, restyle to anime, add effects and more.",
+                parse_mode="Markdown",
+            )
+            return {"ok": True}
+        if not _pend:
+            await bot.send_message(chat_id, "Send me a photo first, then tell me the edit. 📸")
+            return {"ok": True}
+        if tg_user_early is not None:
+            _ie_ok, _ie_used, _ie_limit = await _check_quota(tg_user_early, db, "image")
+            if not _ie_ok:
+                await bot.send_message(chat_id, f"Monthly image limit reached ({_ie_used}/{_ie_limit}). Use /upgrade to continue.")
+                return {"ok": True}
+        _ist.clear_pending(_ist_key)
+        await bot.send_message(chat_id, f"🎨 Editing your photo: {_instr[:80]}")
+        asyncio.create_task(_handle_tg_image_edit(chat_id, _pend["file_id"], _instr))
+        return {"ok": True}
+
+    # 3) Pending photo + natural-language edit intent ("remove the background")
+    if not _raw_text_early.startswith("/") and not _is_callback_early:
+        _pend_img = _ist.get_pending(_ist_key)
+        if _pend_img and _ist.is_image_edit_intent(_raw_text_early):
+            if tg_user_early is not None:
+                _ie_ok, _ie_used, _ie_limit = await _check_quota(tg_user_early, db, "image")
+                if not _ie_ok:
+                    await bot.send_message(chat_id, f"Monthly image limit reached ({_ie_used}/{_ie_limit}). Use /upgrade to continue.")
+                    return {"ok": True}
+            _ist.clear_pending(_ist_key)
+            await bot.send_message(chat_id, f"🎨 Editing your photo: {_raw_text_early[:80]}")
+            asyncio.create_task(_handle_tg_image_edit(chat_id, _pend_img["file_id"], _raw_text_early))
+            return {"ok": True}
+
+    # 4) Design Studio — /poster /banner /flyer /storyposter + natural language
+    _ps_kind, _ps_brief = None, ""
+    for _ps_cmd, _ps_kind_cand in (
+        ("/poster", "poster"), ("/banner", "banner"),
+        ("/flyer", "flyer"), ("/storyposter", "story"),
+    ):
+        if _raw_text_early.startswith(_ps_cmd):
+            _ps_kind, _ps_brief = _ps_kind_cand, _raw_text_early[len(_ps_cmd):].strip()
+            break
+    if not _ps_kind and not _raw_text_early.startswith("/") and not _is_callback_early:
+        _ps_nl = _ist.is_poster_intent(_raw_text_early)
+        if _ps_nl:
+            _ps_kind, _ps_brief = _ps_nl
+    if _ps_kind:
+        if not _ps_brief:
+            await bot.send_message(
+                chat_id,
+                "🎨 *S.T.E.W Design Studio*\n\nTell me what to design:\n"
+                "/poster for a Lagos tech meetup on Oct 5 with free jollof rice\n"
+                "/banner for my hair business 30% off weekend sale\n"
+                "/flyer for a church youth concert featuring DJ Praise\n"
+                "/storyposter for a Friday night lounge party\n\n"
+                "_Poster 1080×1350 • Flyer 1080×1080 • Banner 1500×500 • Story 1080×1920_",
+                parse_mode="Markdown",
+            )
+            return {"ok": True}
+        if tg_user_early is not None:
+            _ps_ok, _ps_used, _ps_limit = await _check_quota(tg_user_early, db, "image")
+            if not _ps_ok:
+                await bot.send_message(chat_id, f"Monthly image limit reached ({_ps_used}/{_ps_limit}). Use /upgrade to continue.")
+                return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        await bot.send_message(
+            chat_id,
+            f"🎨 *Designing your {_ps_kind}* — {_ps_brief[:70]}\n_About 30–90 seconds._",
+            parse_mode="Markdown",
+        )
+        asyncio.create_task(_handle_tg_poster(chat_id, _ps_kind, _ps_brief))
+        return {"ok": True}
 
     # ── STEW VOICE CLONER (content creators) ────────────────────────────────
     # /voiceclone arms a session; the next voice note is captured as the
