@@ -68,10 +68,14 @@ NVIDIA_FALLBACKS = [
 # containing "image") and https://openrouter.ai/api/v1/models (architecture.
 # input_modalities containing "image", pricing 0 or id ending ":free").
 VISION_MODELS = {
-    "openrouter": ["google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-nano-12b-v2-vl:free", "google/gemma-4-31b-it:free"],
-    "groq":       ["qwen/qwen3.6-27b"],  # reasoning model — emits <think> blocks, stripped in vision_chat
-    "nvidia":     ["meta/llama-3.2-90b-vision-instruct"],
-    "openai":     ["gpt-4o-mini"],
+    # Verified working 2026-09-20 with live API tests. Groq first (own key, no shared-pool 429s).
+    "groq":       ["qwen/qwen3.8-27b"],
+    "openrouter": [
+        "inclusionai/ling-3.0-flash-vl:free",                 # verified vision OK
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",  # verified vision OK, reasoning blocks get stripped
+        "google/gemma-4-26b-a4b-it:free",                      # often 429 shared pool, last resort
+        "google/gemma-4-31b-it:free",                          # often 429 shared pool, last resort
+    ],
 }
 
 
