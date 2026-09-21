@@ -7489,10 +7489,18 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "🔗 *Connect Your YouTube Channel*\n\n"
             "Tap the link below, sign in with the Google account that owns your channel, and "
             "approve access. Stew will then be able to show YOUR channel's stats — with your "
-            "permission only, and only to you.\n\n"
-            f"{_auth_url}\n\n"
-            "After you approve, come back here and send /ytstats.",
+            "permission only, and only to you.",
         )
+        # Sent as its own plain-text message (no parse_mode). The auth URL has
+        # several underscores (client_id, redirect_uri, response_type,
+        # access_type, include_granted_scopes) and Telegram's legacy Markdown
+        # (parse_mode="Markdown") reads single underscores as italic markers -
+        # it silently pairs them up and strips them from the delivered text,
+        # which mangles "response_type" into "responsetype" etc. Google then
+        # rejects the request with "Required parameter is missing: response_type".
+        # Plain text lets Telegram auto-link the URL without touching its content.
+        await bot.send_message(chat_id, _auth_url)
+        await bot.send_message(chat_id, "After you approve, come back here and send /ytstats.")
         return {"ok": True}
 
     # /ytstats — pull the connected channel's stats + last-28-days analytics
