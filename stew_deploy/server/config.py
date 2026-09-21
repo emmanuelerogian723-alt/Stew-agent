@@ -4,6 +4,7 @@ Updated: Added Mistral AI provider + fine-tune persona support.
 """
 import os
 from functools import lru_cache
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -70,7 +71,10 @@ class Settings(BaseSettings):
     WHATSAPP_APP_SECRET: str = ""       # App secret → verifies X-Hub-Signature-256 on webhooks
 
 
-    # App URL
+    # App URL — used to build the YouTube OAuth redirect_uri. Google rejects a
+    # relative/blank redirect_uri with a generic "Error 400: invalid_request",
+    # so this always resolves to an absolute https URL: an explicit APP_BASE_URL
+    # wins, otherwise it falls back to Render's auto-injected RENDER_EXTERNAL_URL.
     APP_BASE_URL: str = ""
 
     # Admin
@@ -157,6 +161,15 @@ class Settings(BaseSettings):
             "customer_support": "You are S.T.E.W, a customer support AI. Respond to customer queries with empathy, resolve issues efficiently, escalate complex cases, and maintain a professional yet warm tone.",
         }
 
+
+    @model_validator(mode="after")
+    def _resolve_app_base_url(self) -> "Settings":
+        """Fill in APP_BASE_URL from Render's own external URL if it was never
+        set explicitly, and always strip a trailing slash so redirect_uri
+        construction (f"{APP_BASE_URL}/oauth/...") never doubles up."""
+        base = (self.APP_BASE_URL or os.getenv("RENDER_EXTERNAL_URL", "")).strip()
+        self.APP_BASE_URL = base.rstrip("/")
+        return self
 
 @lru_cache()
 def get_settings() -> Settings:

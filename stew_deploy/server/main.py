@@ -7475,7 +7475,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # /ytconnect — link your own YouTube channel (OAuth, explicit permission)
     if user_text.startswith("/ytconnect") or (_yl_connect_intent and not _yl_stats_intent):
         _yl_cid = settings.GOOGLE_YOUTUBE_CLIENT_ID
-        if not _yl_cid:
+        if not _yl_cid or not settings.APP_BASE_URL:
+            logger.warning(
+                "YouTube connect misconfigured: GOOGLE_YOUTUBE_CLIENT_ID=%s APP_BASE_URL=%s",
+                bool(_yl_cid), settings.APP_BASE_URL or "(empty)",
+            )
             await bot.send_message(chat_id, "YouTube connect isn't configured yet. Ask the admin to set it up.")
             return {"ok": True}
         _redirect = f"{settings.APP_BASE_URL}/oauth/youtube/callback"
