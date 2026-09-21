@@ -427,3 +427,25 @@ async def admin_delete_memory(memory_id: str, token: str, db: AsyncSession = Dep
     await db.delete(mem)
     await db.commit()
     return {"ok": True}
+
+
+@router.get("/quotes/test")
+async def admin_quotes_test(token: str, chat_id: int = 0):
+    """Preview the daily Morning Motivation: generates today's quote card and
+    sends it to the owner's Telegram (or to the given chat_id). Quota-free."""
+    admin = _verify_admin(token)
+    if not chat_id:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                select(User.email).where(
+                    User.email.like("tg_%@telegram.stew"),
+                    User.plan == "owner",
+                )
+            )
+            email = row.scalar()
+            if not email:
+                raise HTTPException(status_code=404, detail="No owner Telegram account found")
+            chat_id = int(email[3:].split("@")[0])
+    from server.morning_quotes import send_morning_quotes
+    result = await send_morning_quotes(chat_ids=[chat_id])
+    return result

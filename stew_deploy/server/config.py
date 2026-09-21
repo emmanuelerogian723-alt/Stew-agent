@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: str = ""
     MISTRAL_API_KEY: str = ""          # NEW: Mistral AI
 
+    # ── YouTube (OAuth "Connect Your Channel" + Data/Analytics APIs) ──
+    GOOGLE_YOUTUBE_CLIENT_ID: str = ""      # OAuth 2.0 Client ID (Google Cloud Console)
+    GOOGLE_YOUTUBE_CLIENT_SECRET: str = ""  # OAuth 2.0 Client Secret
+    YOUTUBE_API_KEY: str = ""               # YouTube Data API v3 key (public video lookups)
+
     # Music Generation (Suno-quality)
     GEMINI_API_KEY: str = ""           # Google Gemini API — powers Lyria 3 music gen
     AIMUSIC_API_KEY: str = ""          # aimusicapi.ai — Suno V5-style generation (30 free credits)

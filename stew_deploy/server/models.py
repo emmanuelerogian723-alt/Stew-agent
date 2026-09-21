@@ -215,6 +215,22 @@ class AccessPass(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class YoutubeAccount(Base):
+    """A Telegram user's connected YouTube channel (OAuth). One row per chat_id."""
+    __tablename__ = "youtube_accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    chat_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    channel_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    channel_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    connected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class UserMemory(Base):
     """Persistent key-fact memory stored in PostgreSQL — survives Render restarts."""
     __tablename__ = "user_memories"

@@ -84,8 +84,10 @@ def clear_pending(key: str) -> None:
 # INTENT DETECTION
 # ════════════════════════════════════════════════════════════════════════════
 _EDIT_RE = re.compile(
-    r"\b(edit|retouch|photoshop|remove|erase|delete|brighten|darken|enhance|fix|"
-    r"clear up|sharpen|restore|colorise|colorize|blur|crop|swap|replace|change)\b",
+    r"\b(edit|retouch|photoshop|remove|erase|delete|brighten|darken|enhance|fix|polish|improve|"
+    r"upgrade|recreate|refine|beautify|upscale|touch up|make over|redo|regenerate|restyle|modernize|"
+    r"clear up|sharpen|restore|colorise|colorize|blur|crop|swap|replace|change|"
+    r"similar|like this|look better|look nicer|more beautiful|more professional)\b",
     re.IGNORECASE,
 )
 _IMG_WORD_RE = re.compile(r"\b(photo|image|picture|pic|it|this)\b", re.IGNORECASE)
@@ -573,3 +575,77 @@ def create_poster(
             "engine": engine,
         },
     }
+
+# ════════════════════════════════════════════════════════════════════════════
+# MORNING MOTIVATION QUOTE CARD
+# ════════════════════════════════════════════════════════════════════════════
+
+def render_quote_image(quote: str, author: str = "Stew Daily Boost") -> bytes:
+    """Motivational quote card: AI sunrise background + centered typography.
+    Returns JPEG bytes (1080x1080). Falls back to a gradient if AI is down."""
+    W = H = 1080
+
+    bg = None
+    try:
+        bg = pollinations_image(
+            "breathtaking golden sunrise over african savanna, warm orange and "
+            "deep purple sky, acacia tree silhouettes, soft morning mist, "
+            "cinematic, serene, photorealistic, no text", 1080, 1080)
+    except Exception:
+        bg = None
+
+    if bg:
+        img = Image.open(io.BytesIO(bg)).convert("RGB")
+        img = _fit_bg(img, W, H)
+    else:
+        grad = Image.new("RGB", (1, H))
+        top, bottom = (36, 22, 66), (255, 138, 40)
+        for y in range(H):
+            t = y / H
+            grad.putpixel((0, y), tuple(int(a + (b - a) * t) for a, b in zip(top, bottom)))
+        img = grad.resize((W, H))
+
+    # dark veil so text pops on any background
+    veil = Image.new("RGBA", (W, H), (10, 8, 20, 118))
+    img = Image.composite(Image.new("RGB", (W, H), (10, 8, 20)), img,
+                          veil.convert("L")).convert("RGB")
+
+    draw = ImageDraw.Draw(img)
+    draw.fontmode = "L"
+
+    gold = (255, 204, 120)
+    white = (255, 255, 255)
+
+    # top label
+    label = "STEW  DAILY  BOOST"
+    draw.text((W // 2, 96), label, font=_font(30, bold=True), fill=gold, anchor="ma")
+    lw = draw.textlength(label, font=_font(30, bold=True))
+    draw.line([(W - lw) // 2, 128, (W + lw) // 2, 128], fill=gold, width=2)
+
+    # big quote mark
+    draw.text((W // 2, 268), '"', font=_font(150, bold=True), fill=gold, anchor="ma")
+
+    # quote text — auto-fit size
+    qfont = None
+    for size in (58, 52, 46, 40, 34):
+        qfont = _font(size, bold=True)
+        lines = _wrap(draw, quote, qfont, 830)
+        if len(lines) <= 7:
+            break
+    line_h = qfont.size + 18
+    total_h = line_h * len(lines)
+    y = (H - total_h) // 2 + 30
+    for line in lines:
+        draw.text((W // 2, y), line, font=qfont, fill=white, anchor="ma")
+        y += line_h
+
+    # author line
+    draw.text((W // 2, H - 250), f"- {author}", font=_font(34, bold=False), fill=gold, anchor="ma")
+
+    # footer
+    draw.text((W // 2, H - 120), "S.T.E.W  •  your AI hustle partner", font=_font(24, bold=False),
+              fill=(210, 210, 220), anchor="ma")
+
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=90)
+    return out.getvalue()

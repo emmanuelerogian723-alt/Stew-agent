@@ -22,7 +22,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 import asyncio
 import time
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, delete
 
 from server.auth import (
     create_access_token, generate_api_key, get_current_user_jwt,
@@ -56,6 +56,7 @@ from server.memory import (
 )
 from server.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from server.models import APICall, Conversation, DeviceFingerprint, Document, MoodEntry, PaymentTransaction, SecurityEvent, User, UserMemory, FeatureRequest, AdCampaign, GeneratedWebsite, AccessPass, WebsiteVersion, WebsiteLead, LocationPing
+from server.models import YoutubeAccount
 from server.security_guard import (
     compute_fingerprint, check_vpn_proxy, assess_registration_risk,
     record_device_fingerprint, log_security_event, get_security_dashboard,
@@ -102,6 +103,7 @@ from server.email_service import send_welcome_email, send_password_reset_email, 
 from server.auth import create_reset_token, consume_reset_token
 from server.keepalive import start_keepalive, stop_keepalive
 from server.bot_stats import start_bot_stats, stop_bot_stats
+from server.morning_quotes import start_morning_quotes, stop_morning_quotes
 from server.skills_engine import run_skill, list_skills as get_skills_list
 
 
@@ -127,6 +129,7 @@ async def lifespan(app: FastAPI):
     os.makedirs("output", exist_ok=True)
     start_keepalive()
     start_bot_stats()
+    start_morning_quotes()
 
     # Register bot commands on Telegram (includes new /webbuild, /meme, /caption)
     try:
@@ -180,6 +183,7 @@ async def lifespan(app: FastAPI):
     yield
     stop_keepalive()
     stop_bot_stats()
+    stop_morning_quotes()
     # Stop the scheduler
     try:
         from server.scheduler import stop_scheduler
@@ -950,6 +954,77 @@ async def _safe_get_user(api_key: str, db: AsyncSession) -> Optional[User]:
         return user
     except Exception:
         return None
+
+
+# ── YouTube OAuth callback (the redirect URI registered in Google Cloud) ──
+@app.get("/oauth/youtube/callback", include_in_schema=False)
+async def youtube_oauth_callback(code: str = "", state: str = "", error: str = ""):
+    from fastapi.responses import HTMLResponse
+    import server.youtube_learn as _yl
+    from server.telegram_bot import TelegramBot
+    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+
+    def _page(title: str, body: str) -> HTMLResponse:
+        return HTMLResponse(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title><style>body{{font-family:-apple-system,sans-serif;background:#0b0b12;
+color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;
+padding:24px;text-align:center}}h1{{color:#ffcc78}}a{{color:#ffcc78}}</style></head>
+<body><div><h1>{title}</h1><p>{body}</p><p><a href="https://t.me/StewAgent_bot">Return to Stew on Telegram</a></p></div></body></html>""")
+
+    if error or not code or not state:
+        return _page("Connection cancelled", "You can try again anytime with /ytconnect on Telegram.")
+
+    chat_id = state
+    redirect_uri = f"{settings.APP_BASE_URL}/oauth/youtube/callback"
+    tok = await _yl.exchange_code(code, redirect_uri, settings.GOOGLE_YOUTUBE_CLIENT_ID, settings.GOOGLE_YOUTUBE_CLIENT_SECRET)
+    if not tok.get("ok"):
+        try:
+            await bot.send_message(int(chat_id), f"⚠️ YouTube connection failed: {tok.get('error', '')[:150]}\n\nTry /ytconnect again.")
+        except Exception:
+            pass
+        return _page("Connection failed", tok.get("error", "Please try again.")[:200])
+
+    ch = await _yl.get_my_channel(tok["access_token"])
+    from server.database import AsyncSessionLocal
+    from server.models import YoutubeAccount
+    from sqlalchemy import select as _select
+    async with AsyncSessionLocal() as db:
+        existing = (await db.execute(_select(YoutubeAccount).where(YoutubeAccount.chat_id == str(chat_id)))).scalar_one_or_none()
+        expires_at = datetime.utcnow() + timedelta(seconds=tok.get("expires_in", 3600))
+        if existing:
+            existing.access_token = tok["access_token"]
+            if tok.get("refresh_token"):
+                existing.refresh_token = tok["refresh_token"]
+            existing.token_expires_at = expires_at
+            existing.channel_id = ch.get("channel_id")
+            existing.channel_title = ch.get("title")
+            existing.scope = tok.get("scope", "")
+        else:
+            db.add(YoutubeAccount(
+                chat_id=str(chat_id), access_token=tok["access_token"],
+                refresh_token=tok.get("refresh_token"), token_expires_at=expires_at,
+                channel_id=ch.get("channel_id"), channel_title=ch.get("title"),
+                scope=tok.get("scope", ""),
+            ))
+        await db.commit()
+
+    try:
+        if ch.get("ok"):
+            _ok_r = await bot.send_message(int(chat_id),
+                f"✅ Connected: *{ch.get('title')}*\n"
+                f"Subscribers: {ch.get('subscribers', '—')} | Total views: {ch.get('views', '—')}\n\n"
+                f"Send /ytstats anytime for your latest analytics.", parse_mode="Markdown")
+            if not _ok_r.get("ok"):
+                await bot.send_message(int(chat_id),
+                    f"✅ Connected: {ch.get('title')}\n"
+                    f"Subscribers: {ch.get('subscribers', '—')} | Total views: {ch.get('views', '—')}\n\n"
+                    f"Send /ytstats anytime for your latest analytics.")
+        else:
+            await bot.send_message(int(chat_id), "✅ YouTube connected. Send /ytstats to see your analytics.")
+    except Exception:
+        pass
+    return _page("YouTube connected! ✅", "Head back to Telegram — Stew just sent you your channel stats.")
 
 
 @app.get("/heartbeat")
@@ -5173,7 +5248,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     #    vision/OCR describe flow; the user can then just SAY the edit.
     if msg.get("has_photo") and msg.get("file_id") and not _is_callback_early:
         _ph_cap = (msg.get("caption") or "").strip()
-        if _ist.is_image_edit_intent(_ph_cap):
+        # Any caption on a photo = EDIT instruction ("polish it", "make a similar
+        # AI image", "recreate this"...) unless it's clearly a question about the
+        # image (vision flow) or an explicit design command (poster/banner/...).
+        _ph_low = _ph_cap.lower()
+        _is_question = bool(re.search(
+            r"\b(what|who|whom|whose|where|when|why|how|which|is|are|was|were|do|does|did|"
+            r"can|could|should|describe|read|explain|tell me|identify|translate|ocr)\b",
+            _ph_low)) if _ph_cap else False
+        _is_design = bool(_ist.is_poster_intent(_ph_cap)) or _ph_low.startswith(
+            ("/poster", "/banner", "/flyer", "/story", "/thumbnail"))
+        if _ph_cap and not _is_question and not _is_design:
             if tg_user_early is not None:
                 _ie_ok, _ie_used, _ie_limit = await _check_quota(tg_user_early, db, "image")
                 if not _ie_ok:
@@ -5700,7 +5785,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users",
                           "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote", "/background", "/map", "/satmap", "/nearby", "/findme", "/track", "/trackmap", "/trackstatus", "/stoptrack",
                           "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news",
-                          "/credits", "/topup", "/coins")
+                          "/credits", "/topup", "/coins", "/ytconnect", "/ytstats", "/ytdisconnect",
+                          "/learn", "/ytnotes", "/ytquiz")
 
     _premium_cmd_prefixes = ("/song", "/book", "/meme", "/caption", "/webbuild", "/edit", "/versions", "/rollback",
                              "/pdf ", "/docx ", "/xlsx ", "/pptx ", "/slides ",
@@ -6180,7 +6266,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         }
         action = callback_map.get(callback_data, "")
         if action == "students":
-            await bot.send_message(chat_id, "Student Tools: /quiz /flashcards /studyguide /summarize /translate /solve /code /cite\n\nExample: /quiz photosynthesis\nExample: /cite APA - Book: Things Fall Apart, Author: Chinua Achebe, Year: 1958")
+            await bot.send_message(chat_id, "Student Tools: /quiz /flashcards /studyguide /summarize /translate /solve /code /cite\n\n📺 YouTube: /learn <link> (lesson from any video) | /ytnotes | /ytquiz | /ytconnect (your channel stats)\n\nExample: /quiz photosynthesis\nExample: /cite APA - Book: Things Fall Apart, Author: Chinua Achebe, Year: 1958")
         elif action == "lecturers":
             await bot.send_message(chat_id, "Lecturer Tools: /lessonplan /rubric /grade /quiz /pptx\n\nExample: /lessonplan Intro to Calculus for 100 level")
         elif action == "companies":
@@ -6218,7 +6304,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 "🎬 /smartclip /createvideo — AI video tools\n"
                 "🎙️ /voice — Voice notes (36 accents)\n"
                 "🧾 /invoice — Invoice generation\n"
-                "🎓 /quiz /flashcards /studyguide — Student tools\n\n"
+                "🎓 /quiz /flashcards /studyguide — Student tools\n"
+                "📺 /learn <youtube link> — turn any video into a lesson, /ytconnect — link your channel\n\n"
                 "Type /upgrade to unlock premium features\n"
                 "Type /plan to see pricing"
             )
@@ -6795,6 +6882,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             "For Students:\n"
             "8. /quiz - Generate quiz questions\n"
             "9. /flashcards - Create flashcards\n"
+            "10. /learn <youtube link> - Turn any video into a lesson\n"
+            "11. /ytconnect - Link your YouTube channel for stats\n"
             "10. /studyguide - Study guide with PDF\n"
             "11. /solve - Solve math problems\n\n"
             "For Lecturers:\n"
@@ -7361,6 +7450,142 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         except Exception as e:
             await bot.send_message(chat_id, "Something went wrong. Please try again or rephrase your request.")
         return {"ok": True}
+
+    # ── YOUTUBE LEARN + CONNECT ─────────────────────────────────────────────────
+    import server.youtube_learn as _yl
+    _yl_key = f"tg:{chat_id}"
+
+    async def _yl_send_md(chat_id: int, text: str):
+        """Send with Markdown; if Telegram rejects it, fall back to plain text."""
+        r = await bot.send_message(chat_id, text, parse_mode="Markdown")
+        if not r.get("ok"):
+            await bot.send_message(chat_id, text)
+
+    # /ytconnect — link your own YouTube channel (OAuth, explicit permission)
+    if user_text.startswith("/ytconnect"):
+        _yl_cid = settings.GOOGLE_YOUTUBE_CLIENT_ID
+        if not _yl_cid:
+            await bot.send_message(chat_id, "YouTube connect isn't configured yet. Ask the admin to set it up.")
+            return {"ok": True}
+        _redirect = f"{settings.APP_BASE_URL}/oauth/youtube/callback"
+        _auth_url = _yl.build_auth_url(chat_id, _redirect, _yl_cid)
+        await _yl_send_md(
+            chat_id,
+            "🔗 *Connect Your YouTube Channel*\n\n"
+            "Tap the link below, sign in with the Google account that owns your channel, and "
+            "approve access. Stew will then be able to show YOUR channel's stats — with your "
+            "permission only, and only to you.\n\n"
+            f"{_auth_url}\n\n"
+            "After you approve, come back here and send /ytstats.",
+        )
+        return {"ok": True}
+
+    # /ytstats — pull the connected channel's stats + last-28-days analytics
+    if user_text.startswith("/ytstats"):
+        _yl_row = (await db.execute(select(YoutubeAccount).where(YoutubeAccount.chat_id == str(chat_id)))).scalar_one_or_none()
+        if not _yl_row:
+            await bot.send_message(chat_id, "You haven't connected a YouTube channel yet. Send /ytconnect first.")
+            return {"ok": True}
+        await bot.send_chat_action(chat_id, "typing")
+        _yl_token = _yl_row.access_token
+        if _yl_row.token_expires_at and _yl_row.token_expires_at <= datetime.utcnow():
+            _yl_ref = await _yl.refresh_access_token(_yl_row.refresh_token, settings.GOOGLE_YOUTUBE_CLIENT_ID, settings.GOOGLE_YOUTUBE_CLIENT_SECRET)
+            if _yl_ref.get("ok"):
+                _yl_token = _yl_ref["access_token"]
+                await db.execute(update(YoutubeAccount).where(YoutubeAccount.id == _yl_row.id).values(
+                    access_token=_yl_token,
+                    token_expires_at=datetime.utcnow() + timedelta(seconds=_yl_ref.get("expires_in", 3600)),
+                ))
+                await db.commit()
+            else:
+                await bot.send_message(chat_id, "Your YouTube connection expired. Send /ytconnect to reconnect.")
+                return {"ok": True}
+        _yl_ana = await _yl.get_channel_analytics(_yl_token)
+        if not _yl_ana.get("ok"):
+            await bot.send_message(chat_id, f"Couldn't fetch analytics: {_yl_ana.get('error', 'unknown error')[:150]}")
+            return {"ok": True}
+        _yl_msg = (
+            f"📊 *{_yl_row.channel_title or 'Your Channel'} — last {_yl_ana['days']} days*\n\n"
+            f"Views: {_yl_ana['views']:,}\n"
+            f"Watch time: {_yl_ana['minutes_watched']:,} minutes\n"
+            f"Subscribers gained: {_yl_ana['subs_gained']:,}\n"
+            f"Likes: {_yl_ana['likes']:,}\n"
+            f"Comments: {_yl_ana['comments']:,}"
+        )
+        await _yl_send_md(chat_id, _yl_msg)
+        return {"ok": True}
+
+    # /ytdisconnect — revoke and forget the stored connection
+    if user_text.startswith("/ytdisconnect"):
+        await db.execute(delete(YoutubeAccount).where(YoutubeAccount.chat_id == str(chat_id)))
+        await db.commit()
+        await bot.send_message(chat_id, "Disconnected. Stew no longer has access to your YouTube channel.")
+        return {"ok": True}
+
+    # /learn, /ytnotes, /ytquiz — turn any public YouTube video into a lesson
+    _yl_cmd = None
+    for _pfx in ("/learn", "/ytnotes", "/ytquiz"):
+        if user_text.startswith(_pfx):
+            _yl_cmd = _pfx
+            break
+    _yl_url_in_text = _yl.extract_youtube_url(user_text)
+    _yl_natural = (not user_text.startswith("/")) and _yl_url_in_text and re.search(
+        r"\b(learn|teach|explain|summarize|summarise|understand|study|what is this about)\b", user_text.lower())
+    if _yl_cmd or _yl_natural:
+        _yl_url = _yl_url_in_text or _yl.extract_youtube_url(user_text)
+        if not _yl_url:
+            await bot.send_message(chat_id,
+                "📺 *Learn from any YouTube video*\n\n"
+                "Send: /learn <youtube link>\n"
+                "Or just paste a link and say \"teach me this\"\n\n"
+                "Other options once loaded: /ytnotes (bullet notes) and /ytquiz (5-question quiz).")
+            return {"ok": True}
+        allowed, used, limit = await _check_quota(tg_user, db)
+        if not allowed:
+            await bot.send_message(chat_id, f"Monthly limit reached ({used}/{limit}). Use /upgrade to continue.")
+            return {"ok": True}
+        await bot.send_message(chat_id, "📺 Reading this video's captions...")
+        await bot.send_chat_action(chat_id, "typing")
+        _yl_tr = await asyncio.to_thread(_yl.fetch_transcript, _yl_url)
+        if not _yl_tr.get("ok"):
+            await bot.send_message(chat_id, f"⚠️ {_yl_tr.get('error', 'Could not read this video')[:200]}")
+            return {"ok": True}
+        _yl_title = _yl_tr.get("title") or "this video"
+        _yl.arm_active_video(_yl_key, _yl_title, _yl_tr["text"], _yl_url)
+        try:
+            if _yl_cmd == "/ytnotes":
+                out = await asyncio.to_thread(_yl.build_notes, _yl_tr["text"], _yl_title)
+            elif _yl_cmd == "/ytquiz":
+                out = await asyncio.to_thread(_yl.build_video_quiz, _yl_tr["text"], _yl_title)
+            else:
+                out = await asyncio.to_thread(_yl.build_lesson, _yl_tr["text"], _yl_title)
+            await _yl_send_md(chat_id, clean_response(out)[:3800])
+            await bot.send_message(chat_id,
+                "💬 Ask me anything about this video, or try /ytnotes and /ytquiz.")
+        except Exception as e:
+            logger.error(f"learn mode error: {e}")
+            await bot.send_message(chat_id, "Something went wrong summarizing that video. Please try again.")
+        return {"ok": True}
+
+    # Plain-text follow-up question about the last video the user loaded.
+    # Conservative trigger: only question-like messages (or ones that mention the
+    # video), so ordinary chat is NOT hijacked for hours after a /learn session.
+    if not user_text.startswith("/"):
+        _yl_active = _yl.get_active_video(_yl_key)
+        _yl_is_followup = _yl_active and (
+            user_text.rstrip().endswith("?")
+            or re.search(r"\b(video|videos|transcript|he said|she said|said|mentioned|creator|channel)\b", user_text.lower())
+        )
+        if _yl_is_followup:
+            await bot.send_chat_action(chat_id, "typing")
+            try:
+                _yl_answer = await asyncio.to_thread(
+                    _yl.answer_from_video, user_text, _yl_active["text"], _yl_active["title"])
+                await bot.send_message(chat_id, clean_response(_yl_answer)[:3800])
+            except Exception as e:
+                logger.error(f"video Q&A error: {e}")
+                await bot.send_message(chat_id, "Something went wrong. Please try again.")
+            return {"ok": True}
 
     # ── /solve COMMAND (Math) ──────────────────────────────────────────────────
     if user_text.startswith("/solve"):
