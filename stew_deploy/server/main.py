@@ -7461,8 +7461,19 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         if not r.get("ok"):
             await bot.send_message(chat_id, text)
 
+    # Natural-language YouTube intent: users shouldn't need to know the slash
+    # commands. "check my youtube analytics" / "how's my channel doing" etc.
+    # route to the same real feature as /ytstats and /ytconnect.
+    _yl_text_lc = user_text.lower()
+    _yl_mentions_channel = bool(re.search(r"\b(youtube|my channel|yt channel)\b", _yl_text_lc))
+    _yl_stats_intent = (not user_text.startswith("/")) and _yl_mentions_channel and bool(re.search(
+        r"\b(analytic|stats?|statistics|performance|subscriber|views?|watch\s?time)\b|how('?s| is| are) (my|the) (channel|youtube) doing",
+        _yl_text_lc))
+    _yl_connect_intent = (not user_text.startswith("/")) and bool(re.search(
+        r"\b(connect|link|hook up|sync)\b.*\b(youtube|channel)\b", _yl_text_lc))
+
     # /ytconnect — link your own YouTube channel (OAuth, explicit permission)
-    if user_text.startswith("/ytconnect"):
+    if user_text.startswith("/ytconnect") or (_yl_connect_intent and not _yl_stats_intent):
         _yl_cid = settings.GOOGLE_YOUTUBE_CLIENT_ID
         if not _yl_cid:
             await bot.send_message(chat_id, "YouTube connect isn't configured yet. Ask the admin to set it up.")
@@ -7481,7 +7492,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         return {"ok": True}
 
     # /ytstats — pull the connected channel's stats + last-28-days analytics
-    if user_text.startswith("/ytstats"):
+    if user_text.startswith("/ytstats") or _yl_stats_intent:
         _yl_row = (await db.execute(select(YoutubeAccount).where(YoutubeAccount.chat_id == str(chat_id)))).scalar_one_or_none()
         if not _yl_row:
             await bot.send_message(chat_id, "You haven't connected a YouTube channel yet. Send /ytconnect first.")
