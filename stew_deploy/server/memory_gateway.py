@@ -110,17 +110,24 @@ async def _mem0_add(user_key: str, messages: List[Dict[str, str]],
         return False
 
 
-async def _mem0_search(user_key: str, query: str, top_k: int = 8) -> List[str]:
+async def _mem0_search(user_key: str, query: str, top_k: int = 8,
+                       mem_types: Optional[List[str]] = None) -> List[str]:
+    """Search Mem0. mem_types (e.g. ["preference","fact"]) applies a metadata
+    filter so retrieval stays precise as the memory store grows, instead of
+    pulling back everything vaguely related."""
     global _mem0_disabled_until
     key = _mem0_key()
     if not key or time.time() < _mem0_disabled_until:
         return []
     try:
+        filters: Dict[str, Any] = {"user_id": _safe_key(user_key)}
+        if mem_types:
+            filters["metadata"] = {"memory_type": {"in": mem_types}}
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(
                 f"{MEM0_BASE}/v3/memories/search/",
                 headers={"Authorization": f"Token {key}", "Content-Type": "application/json"},
-                json={"query": query[:500], "filters": {"user_id": _safe_key(user_key)},
+                json={"query": query[:500], "filters": filters,
                       "top_k": max(1, min(top_k, 20))},
             )
         if r.status_code in (401, 402, 403, 429):
@@ -273,24 +280,36 @@ async def save_conversation_turn(user_key: str, user_text: str, assistant_text: 
         logger.debug(f"save_conversation_turn skipped: {e}")
 
 
-async def recall(user_key: str, query: str, top_k: int = 8) -> Dict[str, Any]:
-    """Recall memories for a query. Tries Mem0 first; falls back to the Letta
+async def recall(user_key: str, query: str, top_k: int = 8,
+                 mem_types: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Recall memories for a query. Tries Mem0 first (optionally scoped to
+    mem_types via metadata filter for precision), falls back to the Letta
     block (keyword-scored). Returns {'memories': [...], 'provider': str}."""
-    mem0_hits = await _mem0_search(user_key, query, top_k)
+    mem0_hits = await _mem0_search(user_key, query, top_k, mem_types=mem_types)
     if mem0_hits:
         return {"memories": mem0_hits, "provider": "mem0"}
     profile = await letta_profile(user_key)
     if profile:
+        # Local keyword recall can also respect mem_types since we tag every
+        # line with "(mem_type)" when we write it.
+        if mem_types:
+            profile = "\n".join(
+                l for l in profile.splitlines()
+                if any(f"({mt})" in l for mt in mem_types)
+            ) or profile
         hits = _letta_keyword_recall(profile, query)
         if hits:
             return {"memories": hits, "provider": "letta"}
     return {"memories": [], "provider": "none"}
 
 
-async def build_recall_context(user_key: str, query: str, top_k: int = 8) -> str:
-    """Ready-to-inject LONG-TERM MEMORY context block for the system prompt."""
+async def build_recall_context(user_key: str, query: str, top_k: int = 8,
+                               mem_types: Optional[List[str]] = None) -> str:
+    """Ready-to-inject LONG-TERM MEMORY context block for the system prompt.
+    Pass mem_types (e.g. ["preference","fact"]) to keep retrieval tight and
+    skip noisy conversation-log memories when they're not what's needed."""
     try:
-        res = await recall(user_key, query, top_k)
+        res = await recall(user_key, query, top_k, mem_types=mem_types)
         if not res["memories"]:
             return ""
         lines = [f"- {m[:300]}" for m in res["memories"][:10]]

@@ -11483,7 +11483,10 @@ Requirements:
         _gw_banner = WorkingBanner(bot, chat_id, "🧠 Remembering & thinking")
         await _gw_banner.start()
         await _gw_banner.update("📚 Recalling your long-term memory…")
-        _mem_ctx = await build_recall_context(_gw_user_key, user_text) or ""
+        _mem_ctx = await build_recall_context(
+            _gw_user_key, user_text,
+            mem_types=["preference", "fact", "intent", "activity"],
+        ) or ""
         _prof_ctx = await full_profile_context(_gw_user_key) or ""
         _apps_list = await _pw.get_connected_apps(str(tg_user.telegram_id))
         if _apps_list:
