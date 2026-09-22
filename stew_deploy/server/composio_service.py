@@ -172,7 +172,7 @@ async def list_connections(
 
     def _list() -> Any:
         return session.toolkits(
-            toolkits=(toolkits or None),
+            toolkits=([re.sub(r"[^a-z0-9_-]", "", str(x).lower()) for x in toolkits[:50]] if toolkits else None),
             limit=max(1, min(int(limit or 50), 50)),
             next_cursor=(next_cursor or None),
             search=(search or None),
@@ -206,7 +206,10 @@ async def execute_action(
     stable_user_id = str(user_id or "anonymous")
     if is_write_action(slug) and not approved:
         pending = await queue_approval(stable_user_id, slug, arguments, account)
-        await record_activity(stable_user_id, slug, "awaiting_approval", arguments, approval_required=True)
+        try:
+            await record_activity(stable_user_id, slug, "awaiting_approval", arguments, approval_required=True)
+        except Exception as audit_exc:
+            logger.warning("Approval audit write failed: %s", audit_exc)
         return {
             "success": False,
             "approval_required": True,
@@ -236,10 +239,18 @@ async def execute_action(
             "log_id": log_id,
             "tool_slug": slug,
         }
-        await record_activity(stable_user_id, slug, "failed" if error else "completed", arguments, result.get("data"), log_id=log_id)
+        try:
+            await record_activity(stable_user_id, slug, "failed" if error else "completed", arguments, result.get("data"), log_id=log_id)
+        except Exception as audit_exc:
+            # Never turn a successful external action into an apparent failure,
+            # because an automatic retry could duplicate an email or post.
+            logger.warning("Completed action audit write failed: %s", audit_exc)
         return result
     except Exception as exc:
-        await record_activity(stable_user_id, slug, "failed", arguments, {"error": str(exc)})
+        try:
+            await record_activity(stable_user_id, slug, "failed", arguments, {"error": str(exc)})
+        except Exception as audit_exc:
+            logger.warning("Failed action audit write also failed: %s", audit_exc)
         raise
 
 
@@ -249,10 +260,17 @@ async def approve_pending_action(user_id: str | int, action_id: Optional[str] = 
     pending = await get_pending(str(user_id), action_id)
     if not pending:
         return {"success": False, "error": "No unexpired action is waiting for approval."}
-    result = await execute_action(
-        str(user_id), pending.tool_slug, pending.arguments or {},
-        account=pending.account, approved=True,
-    )
+    # Claim before execution. If recording the final state ever fails after the
+    # provider succeeds, a second APPROVE cannot execute the same action twice.
+    await decide_pending(str(user_id), pending.id, "executing")
+    try:
+        result = await execute_action(
+            str(user_id), pending.tool_slug, pending.arguments or {},
+            account=pending.account, approved=True,
+        )
+    except Exception:
+        await decide_pending(str(user_id), pending.id, "failed")
+        raise
     await decide_pending(str(user_id), pending.id, "completed" if result.get("success") else "failed")
     return {**result, "approval_id": pending.id, "approved": True}
 
