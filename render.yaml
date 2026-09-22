@@ -21,6 +21,8 @@ services:
         sync: false
       - key: PEXELS_API_KEY
         sync: false
+      - key: COMPOSIO_API_KEY
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: PAYSTACK_SECRET_KEY

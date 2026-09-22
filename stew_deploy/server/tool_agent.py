@@ -21,6 +21,10 @@ Tools available:
   13. shorten_url(url)                — Shorten a long URL
   14. generate_image(prompt)          — Generate a logo/graphic/image (pollinations.ai FLUX)
   15. build_website(description)      — Build a real, live, shareable landing page/website
+  16. composio_search_tools(query)    — Discover app tools for Gmail, Calendar, Slack, Notion, GitHub, etc.
+  17. composio_connect(toolkit)       — Give this user a secure OAuth Connect Link
+  18. composio_list_connections()    — Show this user's connected apps
+  19. composio_execute(tool_slug, arguments) — Execute a discovered app action
 """
 import json
 import re
@@ -64,6 +68,10 @@ TOOL_CALL: {"tool": "generate_qr_code", "args": {"text": "https://t.me/StewAgent
 TOOL_CALL: {"tool": "shorten_url", "args": {"url": "https://example.com/very/long/link"}}
 TOOL_CALL: {"tool": "generate_image", "args": {"prompt": "a minimalist black-and-gold fintech logo, letter N monogram, luxury brand mark, vector style"}}
 TOOL_CALL: {"tool": "build_website", "args": {"description": "a premium black-and-gold fintech landing page for NovaPay, instant cross-border payments", "style": "premium-dark"}}
+TOOL_CALL: {"tool": "composio_search_tools", "args": {"query": "find my latest unread Gmail emails"}}
+TOOL_CALL: {"tool": "composio_connect", "args": {"toolkit": "gmail"}}
+TOOL_CALL: {"tool": "composio_list_connections", "args": {}}
+TOOL_CALL: {"tool": "composio_execute", "args": {"tool_slug": "EXACT_DISCOVERED_TOOL_SLUG", "arguments": {}}}
 
 Rules:
 1. You can call MULTIPLE tools in sequence — wait for each result before deciding the next step.
@@ -88,6 +96,11 @@ Rules:
 16. NEVER call browse_url more than ONCE per conversation.
 17. For open-ended, multi-step or research-heavy goals, break the goal into smaller steps and chain multiple DIFFERENT tools in sequence (e.g. web_search to find facts, then run_python_code to compute something, then generate_document to produce a deliverable). Think like an autonomous agent completing a real task end-to-end, not a one-shot Q&A bot.
 18. For unknown facts, historical/biographical info, or general knowledge lookups — prefer wikipedia_search over web_search (faster, more reliable for encyclopedic facts). Use web_search only for time-sensitive or very recent info.
+
+18b. CONNECTED APPS (COMPOSIO): For Gmail, Google Calendar, Drive, Sheets, Slack, Notion, GitHub, LinkedIn and other app requests, first call composio_search_tools with the user's exact goal. Use ONLY tool slugs and argument schemas returned by that search. Never invent a slug. If the app is not connected, call composio_connect with the discovered toolkit slug and return the Connect Link. After the user connects, search again and execute.
+18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
+18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, delete data, send messages, publish content, create purchases, or perform financial actions unless explicitly requested. For ambiguous or destructive actions, ask one concise confirmation question instead of executing.
+18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 
 TOOL_CALL: {"tool": "run_shell", "args": {"command": "pip install sympy && python3 -c 'import sympy; print(sympy.sqrt(8))'"}}
 TOOL_CALL: {"tool": "run_terminal_code", "args": {"code": "import requests\nr = requests.get('https://api.github.com')\nprint(r.json())"}}
@@ -584,6 +597,75 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
             return {"tool": tool, "success": False, "error": str(e)}
 
     # ── TERMINAL SANDBOX TOOLS (owner/admin only) ──────────────────────────────
+    elif tool == "composio_search_tools":
+        from server.composio_service import search_tools
+        query = args.get("query", "")
+        try:
+            data = await search_tools(tg_user_id or chat_id, query)
+            return {
+                "tool": tool,
+                "success": data.get("success", False),
+                "output": json.dumps(data, ensure_ascii=False, default=str)[:30000],
+                "data": data,
+            }
+        except Exception as exc:
+            logger.warning("Composio tool search failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"Composio search failed: {exc}"}
+
+    elif tool == "composio_connect":
+        from server.composio_service import connect_app
+        toolkit = args.get("toolkit", "")
+        try:
+            data = await connect_app(tg_user_id or chat_id, toolkit)
+            url = data.get("connect_url")
+            output = (
+                f"Connect {data.get('toolkit', toolkit)} securely here: {url}"
+                if url else json.dumps(data, ensure_ascii=False, default=str)
+            )
+            return {"tool": tool, "success": data.get("success", False), "output": output, "data": data}
+        except Exception as exc:
+            logger.warning("Composio connection failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"Could not start app connection: {exc}"}
+
+    elif tool == "composio_list_connections":
+        from server.composio_service import list_connections
+        try:
+            data = await list_connections(
+                tg_user_id or chat_id,
+                search=args.get("search"),
+                connected_only=bool(args.get("connected_only", False)),
+            )
+            return {
+                "tool": tool,
+                "success": True,
+                "output": json.dumps(data, ensure_ascii=False, default=str)[:20000],
+                "data": data,
+            }
+        except Exception as exc:
+            logger.warning("Composio connection listing failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"Could not list app connections: {exc}"}
+
+    elif tool == "composio_execute":
+        from server.composio_service import execute_action
+        slug = args.get("tool_slug", "")
+        arguments = args.get("arguments", {})
+        try:
+            data = await execute_action(
+                tg_user_id or chat_id,
+                slug,
+                arguments,
+                account=args.get("account"),
+            )
+            return {
+                "tool": tool,
+                "success": data.get("success", False),
+                "output": json.dumps(data, ensure_ascii=False, default=str)[:30000],
+                "data": data,
+            }
+        except Exception as exc:
+            logger.warning("Composio execution failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"Connected-app action failed: {exc}"}
+
     elif tool == "run_shell":
         command = args.get("command", "")
         if not command:

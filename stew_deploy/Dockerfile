@@ -26,6 +26,7 @@ COPY landing.html .
 COPY playground.html .
 COPY plugins.html .
 COPY admin.html .
+COPY apps_mini.html .
 COPY robots.txt .
 COPY sitemap.xml .
 COPY migrations/ ./migrations/

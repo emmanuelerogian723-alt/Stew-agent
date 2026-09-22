@@ -160,6 +160,9 @@ async def lifespan(app: FastAPI):
             {"command": "vote", "description": "Vote for a feature request"},
             {"command": "sponsor", "description": "Sponsor an ad on Stew"},
             {"command": "agent", "description": "Supercomputer Agent Mode - multi-step tool use"},
+            {"command": "apps", "description": "Open the Connected Apps Mini App"},
+            {"command": "connect", "description": "Connect an app, e.g. /connect gmail"},
+            {"command": "connections", "description": "View your connected apps"},
             {"command": "admin", "description": "Admin access (owner only)"},
             {"command": "pass", "description": "Access pass system (owner: create/list/revoke, users: redeem)"},
         ]
@@ -167,6 +170,11 @@ async def lifespan(app: FastAPI):
             await _client.post(
                 f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setMyCommands",
                 json={"commands": _cmds},
+            )
+            _mini_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + "/apps-mini"
+            await _client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setChatMenuButton",
+                json={"menu_button": {"type": "web_app", "text": "Apps", "web_app": {"url": _mini_url}}},
             )
         logger.info(f"Registered {len(_cmds)} Telegram bot commands")
     except Exception as _cmd_err:
@@ -205,7 +213,7 @@ _IS_PROD = (
 app = FastAPI(
     title="S.T.E.W Agent API",
     description="Structured Task Execution Workflow — AI Agent Backend v5.0",
-    version="6.0.0",
+    version="6.1.0",
     lifespan=lifespan,
     docs_url=None if _IS_PROD else "/docs",
     redoc_url=None if _IS_PROD else "/redoc",
@@ -1043,6 +1051,79 @@ async def heartbeat():
             "image_generation": "operational",
         },
     }
+
+
+@app.get("/apps-mini", response_class=HTMLResponse, include_in_schema=False)
+async def composio_mini_app():
+    """Telegram Mini App UI for connecting user-owned services."""
+    path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "apps_mini.html"))
+    if not os.path.exists(path):
+        raise HTTPException(404, "Connected Apps Mini App is unavailable")
+    with open(path, "r", encoding="utf-8") as handle:
+        return HTMLResponse(handle.read())
+
+
+async def _verified_mini_app_user(request: Request) -> tuple[dict, dict]:
+    """Read JSON and authenticate the Telegram Mini App user via initData HMAC."""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "Invalid request") from exc
+    from server.composio_service import verify_telegram_init_data
+    try:
+        tg_user = verify_telegram_init_data(
+            str(payload.get("init_data", "")),
+            settings.TELEGRAM_BOT_TOKEN,
+        )
+    except ValueError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    return payload, tg_user
+
+
+@app.post("/api/composio/connections", include_in_schema=False)
+async def composio_mini_connections(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.composio_service import list_connections
+    try:
+        return await list_connections(
+            str(tg_user["id"]),
+            search=payload.get("search"),
+            connected_only=bool(payload.get("connected_only", False)),
+        )
+    except Exception as exc:
+        logger.error("Mini App connection listing failed: %s", exc)
+        raise HTTPException(502, "Could not load app connections") from exc
+
+
+@app.post("/api/composio/connect", include_in_schema=False)
+async def composio_mini_connect(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    toolkit = re.sub(r"[^a-z0-9_-]", "", str(payload.get("toolkit", "")).strip().lower())
+    if not toolkit:
+        raise HTTPException(400, "Choose an app to connect")
+    from server.composio_service import connect_app
+    try:
+        callback_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + f"/apps-mini?connected={toolkit}"
+        return await connect_app(str(tg_user["id"]), toolkit, callback_url=callback_url)
+    except Exception as exc:
+        logger.error("Mini App connection start failed for %s: %s", toolkit, exc)
+        raise HTTPException(502, "Could not start this app connection") from exc
+
+
+@app.post("/api/composio/youtube/analytics", include_in_schema=False)
+async def composio_youtube_analytics(request: Request):
+    """Return read-only channel and recent-video analytics for the Mini App."""
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.composio_service import get_youtube_analytics
+    try:
+        return await get_youtube_analytics(
+            str(tg_user["id"]),
+            max_videos=int(payload.get("max_videos", 10) or 10),
+        )
+    except Exception as exc:
+        logger.error("YouTube analytics failed: %s", exc)
+        detail = "Connect YouTube first, then refresh analytics."
+        raise HTTPException(502, detail) from exc
 
 
 @app.get("/site/{site_id}", response_class=HTMLResponse, include_in_schema=False)
@@ -10860,6 +10941,58 @@ Requirements:
             await bot.send_message(chat_id, "Couldn't fetch the exchange rate right now. Try again in a moment.")
         return {"ok": True}
 
+    # ── CONNECTED APPS (Composio Platform) ─────────────────────────────────────
+    # Fast, deterministic commands avoid spending an LLM call merely to create
+    # an OAuth link or display connection status. Every session is scoped to the
+    # stable Telegram user ID, so accounts and data can never leak across users.
+    if user_lower == "/apps" or user_lower == "/connections":
+        await bot.send_typing(chat_id)
+        try:
+            from server.composio_service import list_connections
+            connection_data = await list_connections(str(tg_user.telegram_id), connected_only=True)
+            active = []
+            for item in connection_data.get("items", []):
+                connection = item.get("connection") or {}
+                if item.get("is_no_auth") or connection.get("is_active"):
+                    active.append(item.get("name") or item.get("slug"))
+            app_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + "/apps-mini"
+            status_text = (
+                "Connected apps:\n" + "\n".join(f"• {name}" for name in active)
+                if active else
+                "No apps connected yet. Open Connected Apps to choose one."
+            )
+            await bot.send_inline_keyboard(
+                chat_id,
+                status_text,
+                [[{"text": "Open Connected Apps", "web_app": {"url": app_url}}]],
+            )
+        except Exception as exc:
+            logger.error("Composio connections command failed: %s", exc)
+            await bot.send_message(chat_id, "Connected apps are temporarily unavailable. Please try again shortly.")
+        return {"ok": True}
+
+    if user_lower == "/connect" or user_lower.startswith("/connect "):
+        toolkit = user_text.partition(" ")[2].strip().lower()
+        if not toolkit:
+            await bot.send_message(chat_id, "Use /connect followed by an app name, for example: /connect gmail")
+            return {"ok": True}
+        await bot.send_typing(chat_id)
+        try:
+            from server.composio_service import connect_app
+            connection = await connect_app(str(tg_user.telegram_id), toolkit)
+            connect_url = connection.get("connect_url")
+            if connect_url:
+                await bot.send_message(
+                    chat_id,
+                    f"Connect {toolkit.title()} securely here:\n{connect_url}\n\nAfter connecting, return and tell me what you want done.",
+                )
+            else:
+                await bot.send_message(chat_id, f"I couldn't create a {toolkit.title()} connection link. Check the app name and try again.")
+        except Exception as exc:
+            logger.error("Composio connect command failed: %s", exc)
+            await bot.send_message(chat_id, "I couldn't start that app connection. Check the app name and try again.")
+        return {"ok": True}
+
     # ── TOOL-CALLING AGENT (Kimi-style) ─────────────────────────────────────────
     # Detect requests that need tool calling: code, math, data analysis, documents
     needs_tools = any(kw in user_lower for kw in [
@@ -10886,13 +11019,20 @@ Requirements:
         "write a proposal", "write a letter", "write an essay",
         "help me write", "prepare a report", "prepare a document",
         "build a spreadsheet", "create an excel",
+        # Connected-app and agentic action triggers (also work after voice transcription)
+        "gmail", "google calendar", "calendar event", "google drive", "google sheets",
+        "google docs", "slack", "notion", "github", "linear", "trello", "asana",
+        "dropbox", "hubspot", "salesforce", "linkedin", "youtube", "youtube analytics",
+        "channel analytics", "video analytics", "send email", "check email",
+        "read my email", "schedule a meeting", "book a meeting", "create event",
+        "connected app", "connect my", "connect to", "post on", "publish to",
     ])
 
     if needs_tools:
         await bot.send_typing(chat_id)
         try:
             from server.tool_agent import run_agent_loop
-            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5)
+            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5, tg_user_id=str(tg_user.telegram_id))
 
             # Send any generated figures (matplotlib charts, QR codes, etc.)
             if agent_result.get("figures"):
