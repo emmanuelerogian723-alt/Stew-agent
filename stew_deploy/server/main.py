@@ -1123,14 +1123,17 @@ async def composio_app_dashboard(request: Request):
     toolkit = re.sub(r"[^a-z0-9_-]", "", str(payload.get("toolkit", "")).lower())
     if not toolkit:
         raise HTTPException(400, "Choose an app")
-    from server.composio_service import list_connections
+    from server.composio_service import list_connections, list_app_actions
     from server.agent_activity import activity_dashboard
     catalog = await list_connections(str(tg_user["id"]), search=toolkit, limit=20)
     exact = next((x for x in catalog.get("items", []) if str(x.get("slug", "")).lower() == toolkit), None)
     if not exact:
         raise HTTPException(404, "App not found in the current Composio catalog")
-    activity = await activity_dashboard(str(tg_user["id"]), toolkit=toolkit, limit=50)
-    return {"success": True, "app": exact, "activity": activity}
+    activity, actions = await asyncio.gather(
+        activity_dashboard(str(tg_user["id"]), toolkit=toolkit, limit=50),
+        list_app_actions(toolkit, limit=500),
+    )
+    return {"success": True, "app": exact, "activity": activity, "actions": actions}
 
 
 @app.post("/api/composio/activities", include_in_schema=False)

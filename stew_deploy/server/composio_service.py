@@ -394,3 +394,60 @@ async def get_youtube_analytics(
             if isinstance(part, dict) and part.get("log_id")
         ],
     }
+
+
+async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
+    """Return the provider's current actions with explicit permission behavior.
+
+    Permission labels use Composio's official MCP behavior tags when present.
+    Unknown or mutating actions default to human approval.
+    """
+    toolkit = re.sub(r"[^a-z0-9_-]", "", (toolkit or "").lower())
+    if not toolkit:
+        return {"success": False, "items": [], "error": "Toolkit is required"}
+
+    def _list() -> Any:
+        return _get_client().tools.get_raw_composio_tools(
+            toolkits=[toolkit], limit=max(1, min(int(limit or 500), 500))
+        )
+
+    raw = await asyncio.to_thread(_list)
+    from server.agent_activity import is_write_action
+    items = []
+    for tool in raw:
+        data = _plain(tool)
+        if not isinstance(data, dict):
+            continue
+        tags = [str(x) for x in (data.get("tags") or [])]
+        slug = str(data.get("slug") or "")
+        if "destructiveHint" in tags:
+            permission = "approval_destructive"
+            permission_label = "Approval required · destructive"
+        elif any(x in tags for x in ("createHint", "updateHint")) or is_write_action(slug):
+            permission = "approval_required"
+            permission_label = "Approval required"
+        else:
+            permission = "read_only"
+            permission_label = "Runs automatically · read-only"
+        schema = data.get("input_parameters") or {}
+        required = schema.get("required", []) if isinstance(schema, dict) else []
+        items.append({
+            "slug": slug,
+            "name": data.get("name") or slug.replace("_", " ").title(),
+            "description": data.get("description") or "",
+            "permission": permission,
+            "permission_label": permission_label,
+            "tags": tags,
+            "required_fields": required,
+            "deprecated": bool(data.get("is_deprecated")),
+            "version": data.get("version"),
+        })
+    items.sort(key=lambda x: (x["deprecated"], x["permission"] != "read_only", x["name"]))
+    return {
+        "success": True,
+        "toolkit": toolkit,
+        "total": len(items),
+        "read_only": sum(x["permission"] == "read_only" for x in items),
+        "approval_required": sum(x["permission"] != "read_only" for x in items),
+        "items": items,
+    }
