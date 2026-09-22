@@ -155,6 +155,18 @@ class TelegramBot:
             resp = await client.get(f"{self.base}/getMe")
             return resp.json()
 
+    async def edit_message(self, chat_id: int, message_id: int, text: str) -> dict:
+        """Edit a previously sent message (for live status motion)."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{self.base}/editMessageText",
+                    json={"chat_id": chat_id, "message_id": message_id, "text": text},
+                )
+                return resp.json()
+        except Exception:
+            return {}
+
     async def send_typing(self, chat_id: int):
         """Show typing indicator."""
         async with httpx.AsyncClient(timeout=5) as client:

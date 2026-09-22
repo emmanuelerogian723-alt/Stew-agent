@@ -104,6 +104,7 @@ Rules:
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, delete data, send messages, publish content, create purchases, or perform financial actions unless explicitly requested. For ambiguous or destructive actions, ask one concise confirmation question instead of executing.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
+18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools. Posting remains pending until the user approves it.
 18h. Read-only app actions may execute immediately. Any send, reply, post, publish, create, update, upload, delete, payment, booking, or similar external change is intercepted by STEW's approval gateway. Clearly show the prepared action and ask the user to reply APPROVE or CANCEL; never claim it ran before approval.
 
@@ -656,10 +657,30 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         except Exception as exc:
             logger.warning("Composio tool search failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"Composio search failed: {exc}"}
-
     elif tool == "composio_connect":
         from server.composio_service import connect_app
         toolkit = args.get("toolkit", "")
+
+        # Paywall v3: free users can connect at most 7 apps (paid: more)
+        try:
+            from server.paywall import check_connect_allowed
+            from server.database import AsyncSessionLocal
+            from server.models import User as _PUser
+            from sqlalchemy import select as _psel
+            _pw_tgnum = re.sub(r"^tg_", "", str(tg_user_id or chat_id or ""))
+            if _pw_tgnum.isdigit():
+                async with AsyncSessionLocal() as _pdb:
+                    _pu = (await _pdb.execute(_psel(_PUser).where(
+                        _PUser.email == f"tg_{_pw_tgnum}@telegram.stew"))).scalar_one_or_none()
+                    if _pu:
+                        _pw_allowed, _pw_cur, _pw_limit, _pw_msg = await check_connect_allowed(
+                            _pu.plan, _pw_tgnum)
+                        if not _pw_allowed:
+                            return {"tool": tool, "success": False,
+                                    "error": _pw_msg, "output": _pw_msg}
+        except Exception as _pw_exc:
+            logger.warning("Connect paywall check skipped: %s", _pw_exc)
+
         try:
             data = await connect_app(tg_user_id or chat_id, toolkit)
             url = data.get("connect_url")

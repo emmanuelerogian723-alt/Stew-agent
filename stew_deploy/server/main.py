@@ -145,6 +145,10 @@ async def lifespan(app: FastAPI):
             {"command": "clip", "description": "Clip a video segment from URL"},
             {"command": "smartclip", "description": "AI smart clips with captions"},
             {"command": "createvideo", "description": "AI video with images + voiceover"},
+            {"command": "aivideo", "description": "REAL AI video from text (LTX-Video)"},            {"command": "apps", "description": "Your connected apps & what I can do with them"},
+            {"command": "connect", "description": "Connect an app (gmail, youtube, higgsfield…)"},
+            {"command": "memstats", "description": "Your Stew memory system status"},
+            {"command": "unlock", "description": "Redeem an upgrade pass code"},
             {"command": "aivideo", "description": "REAL AI video from text (LTX-Video)"},
             {"command": "aivideos", "description": "Multi-scene AI video with narration"},
             {"command": "webbuild", "description": "Build a motion-design website (Kimi style)"},
@@ -1108,6 +1112,22 @@ async def composio_mini_connect(request: Request):
     if not toolkit:
         raise HTTPException(400, "Choose an app to connect")
     from server.composio_service import connect_app
+    # Paywall v3: free users can connect at most 7 apps
+    try:
+        import server.paywall as _pw
+        from server.database import AsyncSessionLocal as _MiniDB
+        from sqlalchemy import select as _msel
+        async with _MiniDB() as _mdb:
+            _mu = (await _mdb.execute(_msel(User).where(
+                User.email == f"tg_{tg_user['id']}@telegram.stew"))).scalar_one_or_none()
+            _mplan = _mu.plan if _mu else "free"
+        _ok, _cur, _lim, _msg = await _pw.check_connect_allowed(_mplan, str(tg_user["id"]))
+        if not _ok:
+            raise HTTPException(402, _msg)
+    except HTTPException:
+        raise
+    except Exception as _pw_exc:
+        logger.warning("Mini app paywall check skipped: %s", _pw_exc)
     try:
         callback_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + f"/apps-mini?connected={toolkit}"
         return await connect_app(str(tg_user["id"]), toolkit, callback_url=callback_url)
@@ -5914,7 +5934,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     _free_cmd_prefixes = ("/start", "/menu", "/help", "/upgrade", "/usage", "/plan", "/users",
                           "/mood", "/about", "/owner", "/weather", "/qr", "/joke", "/quote", "/background", "/map", "/satmap", "/nearby", "/findme", "/track", "/trackmap", "/trackstatus", "/stoptrack",
                           "/define", "/wiki", "/wikipedia", "/shorten", "/math", "/currency", "/news",
-                          "/credits", "/topup", "/coins", "/ytconnect", "/ytstats", "/ytdisconnect",
+                          "/credits", "/topup", "/coins", "/ytconnect", "/ytstats", "/ytdisconnect",                          "/credits", "/topup", "/coins", "/ytconnect", "/ytstats", "/ytdisconnect",
+                          "/apps", "/connect", "/memstats", "/unlock", "/passcode", "/broadcast",
                           "/learn", "/ytnotes", "/ytquiz")
 
     _premium_cmd_prefixes = ("/song", "/book", "/meme", "/caption", "/webbuild", "/edit", "/versions", "/rollback",
@@ -6712,6 +6733,158 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         )
         return {"ok": True}
 
+
+    # ══ /apps — connected apps overview ═════════════════════════════════════
+    if user_text.strip() in ("/apps", "/connections", "/connectapps"):
+        try:
+            import server.paywall as _pw
+            _apps_l = await _pw.get_connected_apps(str(tg_user.telegram_id))
+            _limit = _pw.app_limit_for(tg_user.plan)
+            if not _apps_l:
+                await bot.send_message(
+                    chat_id,
+                    "🔌 Connected apps: 0\n\nYou haven't connected any apps yet.\n\n"
+                    f"Send /connect <app> to connect one (e.g. /connect gmail, /connect youtube, "
+                    f"/connect higgsfield, /connect notion).\n\n"
+                    f"Your plan ({tg_user.plan.upper()}) allows {_limit} apps.")
+                return {"ok": True}
+            _lines = "\n".join(f"{i}. {a['name'] or a['slug']}" for i, a in enumerate(_apps_l, 1))
+            await bot.send_message(
+                chat_id,
+                f"🔌 Connected apps: {len(_apps_l)}/{_limit} ({tg_user.plan.upper()} plan)\n\n{_lines}\n\n"
+                "Ask me to do things with them ('check my gmail', 'post to my youtube') or connect more with /connect <app>.")
+        except Exception as _apps_err:
+            logger.warning(f"/apps error: {_apps_err}")
+            await bot.send_message(chat_id, "Couldn't load your connected apps right now.")
+        return {"ok": True}
+
+    # ══ /connect <app> — connect any app (paywalled) ════════════════════════
+    if user_text.startswith("/connect"):
+        _conn_app = user_text[8:].strip().lower()
+        if not _conn_app:
+            await bot.send_message(
+                chat_id,
+                "🔌 Connect an app to your Stew account:\n\n"
+                "/connect gmail\n/connect youtube\n/connect higgsfield\n"
+                "/connect notion — /connect slack — /connect github\n\n"
+                "I'll send you a secure connection link. Use /apps to see what's connected.")
+            return {"ok": True}
+        try:
+            import server.paywall as _pw
+            from server.composio_service import connect_app as _comp_connect
+            _allowed, _cur, _limit, _deny_msg = await _pw.check_connect_allowed(
+                tg_user.plan, str(tg_user.telegram_id))
+            if not _allowed:
+                await bot.send_message(chat_id, _deny_msg)
+                return {"ok": True}
+            _res = await _comp_connect(str(tg_user.telegram_id), _conn_app)
+            if _res.get("success") and _res.get("connect_url"):
+                await bot.send_message(
+                    chat_id,
+                    f"🔗 Connect {(_conn_app or '').title()} — tap the link below and approve access.\n"
+                    f"Connected apps: {_cur}/{_limit}.")
+                await bot.send_message(chat_id, _res["connect_url"])
+                await bot.send_message(chat_id, "Once you approve, send /apps to confirm — then just ask me to use it.")
+            else:
+                await bot.send_message(chat_id, f"Couldn't start that connection: {(_res.get('error') or _conn_app)}. Try /apps.")
+        except Exception as _conn_err:
+            logger.warning(f"/connect error: {_conn_err}")
+            await bot.send_message(chat_id, "Connection setup failed — that app may not be available yet. Try /apps.")
+        return {"ok": True}
+
+    # ══ /memstats — memory system status ════════════════════════════════════
+    if user_text.strip() == "/memstats":
+        try:
+            from server.memory_gateway import memory_status, letta_profile
+            _st = memory_status()
+            _prof = await letta_profile(f"tg_{tg_user.telegram_id}")
+            _n_lines = len([l for l in _prof.splitlines() if l.strip()]) if _prof else 0
+            _m0 = "🟢 active" if _st["mem0"]["active"] else ("🔴 limits hit" if _st["mem0"]["configured"] else "⚪ not set")
+            _lt = "🟢 active" if _st["letta"]["active"] else ("🔴 limits hit" if _st["letta"]["configured"] else "⚪ not set")
+            await bot.send_message(
+                chat_id,
+                f"🧠 Stew Memory System\n\n"
+                f"Mem0 semantic memory: {_m0}\n"
+                f"Letta durable memory: {_lt} ({_n_lines} stored memories)\n"
+                f"Local conversation memory: 🟢 always on\n\n"
+                "I remember your preferences, files, videos, activities, thoughts and conversations "
+                "across every chat — with automatic failover between memory providers.")
+        except Exception as _ms_err:
+            logger.warning(f"/memstats error: {_ms_err}")
+            await bot.send_message(chat_id, "Memory status unavailable right now.")
+        return {"ok": True}
+
+    # ══ /unlock <code> — redeem a pass code ══════════════════════════════════
+    if user_text.startswith("/unlock"):
+        _code = user_text[7:].strip()
+        try:
+            import server.paywall as _pw
+            _res = await _pw.redeem_pass_code(db, _code, tg_user)
+            await bot.send_message(chat_id, _res.get("message") or _res.get("error", "Could not redeem that code."))
+        except Exception as _ul_err:
+            logger.warning(f"/unlock error: {_ul_err}")
+            await bot.send_message(chat_id, "Could not redeem that code right now.")
+        return {"ok": True}
+
+    # ══ /passcode <plan> — ADMIN: mint upgrade pass codes ══════════════════
+    if user_text.startswith("/passcode"):
+        _is_admin_tg = (str(tg_user.telegram_id) == "5547996257") or (tg_user.plan == "owner")
+        if not _is_admin_tg:
+            await bot.send_message(chat_id, "🚫 Admin only command.")
+            return {"ok": True}
+        _pc_plan = user_text[10:].strip().lower() or "pro"
+        try:
+            import server.paywall as _pw
+            _res = await _pw.create_pass_code(db, _pc_plan, tg_user.email)
+            await bot.send_message(chat_id, _res.get("message") or _res.get("error", "Could not create pass code."))
+        except Exception as _pc_err:
+            logger.warning(f"/passcode error: {_pc_err}")
+            await bot.send_message(chat_id, "Could not create a pass code right now.")
+        return {"ok": True}
+
+    # ══ /broadcast <msg> — ADMIN: announce to ALL Telegram users ════════════
+    if user_text.startswith("/broadcast") or user_text.startswith("/announce"):
+        _is_admin_bc = (str(tg_user.telegram_id) == "5547996257") or (tg_user.plan == "owner")
+        if not _is_admin_bc:
+            await bot.send_message(chat_id, "🚫 Admin only command.")
+            return {"ok": True}
+        _bc_msg = user_text.split(" ", 1)[1].strip() if " " in user_text else ""
+        if not _bc_msg:
+            await bot.send_message(chat_id, "📣 Broadcast an announcement to all users:\n\n/broadcast Stew v6 is live — AI video, Higgsfield and dual memory! 🎉")
+            return {"ok": True}
+        try:
+            from server.database import AsyncSessionLocal as _BC_DB
+            _sent, _failed = 0, 0
+            _bc_banner = None
+            try:
+                from server.live_motion import WorkingBanner
+                _bc_banner = WorkingBanner(bot, chat_id, "📣 Broadcasting announcement")
+                await _bc_banner.start()
+                await _bc_banner.update("📡 Sending to all Telegram users…")
+            except Exception:
+                pass
+            async with _BC_DB() as _bcdb:
+                _bc_users = (await _bcdb.execute(
+                    select(User).where(User.email.like("tg_%@telegram.stew"), User.is_active == True)
+                )).scalars().all()
+            _bc_text = f"📣 *S.T.E.W Announcement*\n\n{_bc_msg}\n\n— Stew HQ"
+            for _u in _bc_users:
+                _tgnum = getattr(_u, "telegram_id", None) or str(_u.email).split("_")[1].split("@")[0]
+                try:
+                    await bot.send_message(int(_tgnum), _bc_text, parse_mode="")
+                    _sent += 1
+                except Exception:
+                    _failed += 1
+                await asyncio.sleep(0.12)  # stay under Telegram rate limits
+            if _bc_banner:
+                await _bc_banner.finish(f"✅ Sent to {_sent} users" + (f" ({_failed} failed)" if _failed else ""))
+            else:
+                await bot.send_message(chat_id, f"✅ Announcement sent to {_sent} users" + (f" ({_failed} failed)" if _failed else ""))
+        except Exception as _bc_err:
+            logger.error(f"/broadcast error: {_bc_err}", exc_info=True)
+            await bot.send_message(chat_id, "Broadcast failed — check the logs.")
+        return {"ok": True}
+
     # /meme — AI Meme Generator (trending feature)
     if user_text.startswith("/meme"):
         _meme_text = user_text.strip()[5:].strip()
@@ -7408,7 +7581,13 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             # Also save to Supabase for persistent storage (survives redeploy)
             if supabase_configured():
                 await supa_save_memory(str(tg_user.telegram_id), category, memory_text, category)
-            await bot.send_message(chat_id, f"Got it. I'll remember: {memory_text[:200]}\n\nCategory: {category}\nThis is stored permanently.")
+            try:
+                from server.memory_gateway import save_memory as _gw_save
+                asyncio.create_task(_gw_save(f"tg_{tg_user.telegram_id}", memory_text, category,
+                                              metadata={"platform": "telegram", "command": "/remember"}))
+            except Exception:
+                pass
+            await bot.send_message(chat_id, f"Got it. I'll remember: {memory_text[:200]}\n\nCategory: {category}\nThis is stored permanently — in my dual long-term memory (it survives everything).")
         except Exception as e:
             logger.error(f"Memory store error: {e}")
             await bot.send_message(chat_id, "Couldn't save that memory. Please try again.")
@@ -11114,11 +11293,32 @@ Requirements:
         "connected app", "connect my", "connect to", "post on", "publish to",
     ])
 
+    _agent_extra_triggers = (
+        "higgsfield", "generate a video with", "make a video with",
+        "create a video with", "upload my video", "upload the video",
+        "upload to youtube", "upload to tiktok", "upload to instagram",
+        "post my video", "post the video", "post the reel",
+        "share to instagram", "instagram reel", "tiktok",
+    )
+    if any(k in user_lower for k in _agent_extra_triggers):
+        needs_tools = True
+
+
     if needs_tools:
         await bot.send_typing(chat_id)
+        _ta_banner = None
+        try:
+            from server.live_motion import WorkingBanner
+            _ta_banner = WorkingBanner(bot, chat_id, "⚡ Stew is on it")
+            await _ta_banner.start()
+            await _ta_banner.update("🧠 Planning the steps…")
+        except Exception:
+            pass
         try:
             from server.tool_agent import run_agent_loop
             agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5, tg_user_id=str(tg_user.telegram_id))
+            if _ta_banner:
+                await _ta_banner.update("🔧 Working with your connected apps…")
 
             # Send any generated figures (matplotlib charts, QR codes, etc.)
             if agent_result.get("figures"):
@@ -11160,6 +11360,32 @@ Requirements:
                 await bot.send_message(chat_id, "Done! Your file is ready above.")
             else:
                 await bot.send_message(chat_id, "Task completed.")
+
+            # Log
+            if tg_user:
+                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
+
+            return {"ok": True}            # ── Deliver any generated videos (Higgsfield/other app results) in-chat ──
+            try:
+                import re as _vidre
+                import json as _vidjson
+                _vid_blob = _vidjson.dumps(agent_result, ensure_ascii=False, default=str)
+                _vid_urls = list(dict.fromkeys(
+                    u for u in _vidre.findall(r"https?://[^\s\"]+?\.mp4(?:\?[^\s\"]*)?", _vid_blob)
+                ))[:3]
+                for _vu in _vid_urls:
+                    try:
+                        if _ta_banner:
+                            await _ta_banner.update("🎬 Fetching your generated video…")
+                        _vresp = await asyncio.to_thread(http_requests.get, _vu, timeout=60)
+                        if _vresp.status_code == 200 and len(_vresp.content) > 1000:
+                            await bot.send_video(chat_id, _vresp.content, caption="🎬 Your AI-generated video — by Stew")
+                    except Exception as _vid_err:
+                        logger.warning(f"video delivery failed: {_vid_err}")
+            except Exception as _vid_err:
+                logger.debug(f"video scan skipped: {_vid_err}")
+            if _ta_banner:
+                await _ta_banner.finish("✅ Done ✨")
 
             # Log
             if tg_user:
@@ -11247,6 +11473,30 @@ Requirements:
     _mood_insights = await _get_mood_insights(db, tg_user_early.id) if tg_user_early else {}
     _mood_prompt = await _get_mood_adaptive_system_prompt(_mood_insights, STEW_MASTER_PROMPT)
     system = _mood_prompt + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
+    # ── MEMORY GATEWAY (Mem0 + Letta dual memory) + CONNECTED APPS AWARENESS ──
+    _gw_user_key = f"tg_{tg_user.telegram_id}"
+    _gw_banner = None
+    try:
+        import server.paywall as _pw
+        from server.live_motion import WorkingBanner
+        from server.memory_gateway import build_recall_context, full_profile_context
+        _gw_banner = WorkingBanner(bot, chat_id, "🧠 Remembering & thinking")
+        await _gw_banner.start()
+        await _gw_banner.update("📚 Recalling your long-term memory…")
+        _mem_ctx = await build_recall_context(_gw_user_key, user_text) or ""
+        _prof_ctx = await full_profile_context(_gw_user_key) or ""
+        _apps_list = await _pw.get_connected_apps(str(tg_user.telegram_id))
+        if _apps_list:
+            _app_names = ", ".join(a["name"] or a["slug"] for a in _apps_list[:20])
+            system += (f"\n\nCONNECTED APPS ({len(_apps_list)} apps): {_app_names}. "
+                       f"The user has connected these apps. When they ask you to do something "
+                       f"with one of these apps, confirm it's in the list above and guide them "
+                       f"through it (actions run through your app-tool routing).")
+        system += _mem_ctx + _prof_ctx
+        await _gw_banner.update(f"🧩 {len(_apps_list)} apps connected · memory loaded")
+    except Exception as _gw_err:
+        logger.debug(f"memory gateway context skipped: {_gw_err}")
+
     system += ("\n\nIMPORTANT: If asked about news, current events, or recent developments and NO web context was provided, "
                "say you can\'t fetch live news right now. NEVER invent stories, dates, sources, agent reports, or describe "
                "how to build a news pipeline/system — the user wants actual news, not a tutorial.")
@@ -11409,6 +11659,20 @@ Requirements:
                     logger.warning(f"Memory extraction failed (non-fatal): {me}")
 
         asyncio.create_task(_extract_memories_safe(tg_user.id, user_text, reply, conv.id))
+
+        # ── MEMORY GATEWAY: mirror this turn to Mem0 + Letta (dual-provider) ──
+        try:
+            from server.memory_gateway import save_conversation_turn
+            asyncio.create_task(save_conversation_turn(_gw_user_key, user_text, reply, "telegram"))
+        except Exception as _gw_save_err:
+            logger.debug(f"gateway save skipped: {_gw_save_err}")
+        # Finish the live working banner
+        if _gw_banner:
+            try:
+                await _gw_banner.finish("✅ Reply ready — I remembered this conversation")
+            except Exception:
+                pass
+
 
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")

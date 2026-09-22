@@ -403,3 +403,18 @@ class PendingAgentAction(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class PassCode(Base):
+    """Admin-minted upgrade codes: /unlock STEW-XXXX-XXXX-XXXX → instant plan."""
+    __tablename__ = "pass_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    plan: Mapped[str] = mapped_column(String(20), default="pro", nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    used_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
