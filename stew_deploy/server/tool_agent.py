@@ -25,6 +25,7 @@ Tools available:
   17. composio_connect(toolkit)       — Give this user a secure OAuth Connect Link
   18. composio_list_connections()    — Show this user's connected apps
   19. composio_execute(tool_slug, arguments) — Execute a discovered app action
+  20. prepare_social_video(video_url) — Add burned captions and create a public posting URL
 """
 import json
 import re
@@ -72,6 +73,7 @@ TOOL_CALL: {"tool": "composio_search_tools", "args": {"query": "find my latest u
 TOOL_CALL: {"tool": "composio_connect", "args": {"toolkit": "gmail"}}
 TOOL_CALL: {"tool": "composio_list_connections", "args": {}}
 TOOL_CALL: {"tool": "composio_execute", "args": {"tool_slug": "EXACT_DISCOVERED_TOOL_SLUG", "arguments": {}}}
+TOOL_CALL: {"tool": "prepare_social_video", "args": {"video_url": "https://example.com/video.mp4", "aspect_ratio": "9:16"}}
 
 Rules:
 1. You can call MULTIPLE tools in sequence — wait for each result before deciding the next step.
@@ -101,6 +103,9 @@ Rules:
 18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, delete data, send messages, publish content, create purchases, or perform financial actions unless explicitly requested. For ambiguous or destructive actions, ask one concise confirmation question instead of executing.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
+18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
+18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools. Posting remains pending until the user approves it.
+18h. Read-only app actions may execute immediately. Any send, reply, post, publish, create, update, upload, delete, payment, booking, or similar external change is intercepted by STEW's approval gateway. Clearly show the prepared action and ask the user to reply APPROVE or CANCEL; never claim it ran before approval.
 
 TOOL_CALL: {"tool": "run_shell", "args": {"command": "pip install sympy && python3 -c 'import sympy; print(sympy.sqrt(8))'"}}
 TOOL_CALL: {"tool": "run_terminal_code", "args": {"code": "import requests\nr = requests.get('https://api.github.com')\nprint(r.json())"}}
@@ -547,10 +552,22 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                         break
                 if not content:
                     return {"tool": tool, "success": False, "output": "Image generation failed after retries."}
+                public_url = img_url
+                try:
+                    from server.persistent_memory import upload_file as _upload_agent_media
+                    import uuid as _uuid_agent_media
+                    stored = await _upload_agent_media(
+                        content, f"{_uuid_agent_media.uuid4().hex}.jpg", "image/jpeg", "agent-media"
+                    )
+                    if stored:
+                        public_url = stored
+                except Exception as _upload_exc:
+                    logger.warning("Agent image public upload fallback: %s", _upload_exc)
                 return {
                     "tool": tool,
                     "success": True,
-                    "output": f"Image generated for: {prompt[:100]}",
+                    "output": f"Image generated for: {prompt[:100]}\nPublic media URL for connected-app posting: {public_url}",
+                    "public_url": public_url,
                     "figures": [{"base64": _b64_img.b64encode(content).decode()}],
                 }
         except Exception as e:
@@ -596,7 +613,35 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         except Exception as e:
             return {"tool": tool, "success": False, "error": str(e)}
 
-    # ── TERMINAL SANDBOX TOOLS (owner/admin only) ──────────────────────────────
+    elif tool == "prepare_social_video":
+        video_url = args.get("video_url", "")
+        if not str(video_url).startswith(("https://", "http://")):
+            return {"tool": tool, "success": False, "error": "A public video URL is required."}
+        try:
+            import base64 as _video_b64
+            from server.video_tools import smart_clips as _smart_clips
+            prepared = await _smart_clips(
+                video_url, num_clips=1,
+                clip_duration=min(max(int(args.get("clip_duration", 30)), 10), 60),
+                aspect_ratio=args.get("aspect_ratio", "9:16"),
+            )
+            if not prepared.get("success") or not prepared.get("clips"):
+                return {"tool": tool, "success": False, "error": prepared.get("error", "Video preparation failed")}
+            clip = prepared["clips"][0]
+            raw = _video_b64.b64decode(clip["file"])
+            from server.persistent_memory import upload_file as _upload_agent_video
+            public_url = await _upload_agent_video(raw, clip["filename"], "video/mp4", "agent-media")
+            if not public_url:
+                return {"tool": tool, "success": False, "error": "Captioned video was created but public media storage is unavailable."}
+            return {
+                "tool": tool, "success": True, "public_url": public_url,
+                "output": f"Captioned social video is ready. Public media URL for the posting tool: {public_url}",
+                "files": [{"base64": clip["file"], "filename": clip["filename"], "mime_type": "video/mp4"}],
+            }
+        except Exception as exc:
+            return {"tool": tool, "success": False, "error": str(exc)}
+
+    # ── CONNECTED APP TOOLS ────────────────────────────────────────────────────
     elif tool == "composio_search_tools":
         from server.composio_service import search_tools
         query = args.get("query", "")

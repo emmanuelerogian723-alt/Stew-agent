@@ -163,6 +163,9 @@ async def lifespan(app: FastAPI):
             {"command": "apps", "description": "Open the Connected Apps Mini App"},
             {"command": "connect", "description": "Connect an app, e.g. /connect gmail"},
             {"command": "connections", "description": "View your connected apps"},
+            {"command": "approve", "description": "Approve a prepared app action"},
+            {"command": "cancel", "description": "Cancel a prepared app action"},
+            {"command": "guide", "description": "Learn how to use STEW Agent"},
             {"command": "admin", "description": "Admin access (owner only)"},
             {"command": "pass", "description": "Access pass system (owner: create/list/revoke, users: redeem)"},
         ]
@@ -1089,6 +1092,9 @@ async def composio_mini_connections(request: Request):
             str(tg_user["id"]),
             search=payload.get("search"),
             connected_only=bool(payload.get("connected_only", False)),
+            next_cursor=payload.get("next_cursor"),
+            limit=int(payload.get("limit", 50) or 50),
+            toolkits=payload.get("toolkits") if isinstance(payload.get("toolkits"), list) else None,
         )
     except Exception as exc:
         logger.error("Mini App connection listing failed: %s", exc)
@@ -1108,6 +1114,45 @@ async def composio_mini_connect(request: Request):
     except Exception as exc:
         logger.error("Mini App connection start failed for %s: %s", toolkit, exc)
         raise HTTPException(502, "Could not start this app connection") from exc
+
+
+@app.post("/api/composio/app", include_in_schema=False)
+async def composio_app_dashboard(request: Request):
+    """Connection truth, usage analytics, and activity for one toolkit."""
+    payload, tg_user = await _verified_mini_app_user(request)
+    toolkit = re.sub(r"[^a-z0-9_-]", "", str(payload.get("toolkit", "")).lower())
+    if not toolkit:
+        raise HTTPException(400, "Choose an app")
+    from server.composio_service import list_connections
+    from server.agent_activity import activity_dashboard
+    catalog = await list_connections(str(tg_user["id"]), search=toolkit, limit=20)
+    exact = next((x for x in catalog.get("items", []) if str(x.get("slug", "")).lower() == toolkit), None)
+    if not exact:
+        raise HTTPException(404, "App not found in the current Composio catalog")
+    activity = await activity_dashboard(str(tg_user["id"]), toolkit=toolkit, limit=50)
+    return {"success": True, "app": exact, "activity": activity}
+
+
+@app.post("/api/composio/activities", include_in_schema=False)
+async def composio_activities(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.agent_activity import activity_dashboard
+    return await activity_dashboard(
+        str(tg_user["id"]), toolkit=payload.get("toolkit"), limit=int(payload.get("limit", 50) or 50)
+    )
+
+
+@app.post("/api/composio/approval", include_in_schema=False)
+async def composio_approval(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    decision = str(payload.get("decision", "")).lower()
+    action_id = payload.get("action_id")
+    from server.composio_service import approve_pending_action, cancel_pending_action
+    if decision == "approve":
+        return await approve_pending_action(str(tg_user["id"]), action_id)
+    if decision == "cancel":
+        return await cancel_pending_action(str(tg_user["id"]), action_id)
+    raise HTTPException(400, "Decision must be approve or cancel")
 
 
 @app.post("/api/composio/youtube/analytics", include_in_schema=False)
@@ -10941,11 +10986,49 @@ Requirements:
             await bot.send_message(chat_id, "Couldn't fetch the exchange rate right now. Try again in a moment.")
         return {"ok": True}
 
+    # ── HUMAN APPROVAL FOR EXTERNAL APP ACTIONS ────────────────────────────────
+    _approval_words = {"approve", "approved", "confirm", "yes approve", "go ahead", "do it"}
+    _cancel_words = {"cancel", "cancel it", "do not do it", "don't do it", "reject"}
+    if user_lower.startswith("/approve") or user_lower in _approval_words:
+        from server.composio_service import approve_pending_action
+        action_id = user_text.partition(" ")[2].strip() or None
+        result = await approve_pending_action(str(tg_user.telegram_id), action_id)
+        if result.get("success"):
+            await bot.send_message(chat_id, f"Approved and completed: {result.get('tool_slug', 'app action')}\nLog ID: {result.get('log_id') or 'recorded in Activity'}")
+        else:
+            await bot.send_message(chat_id, result.get("error", "The action could not be completed."))
+        return {"ok": True}
+    if user_lower.startswith("/cancel") or user_lower in _cancel_words:
+        from server.composio_service import cancel_pending_action
+        action_id = user_text.partition(" ")[2].strip() or None
+        result = await cancel_pending_action(str(tg_user.telegram_id), action_id)
+        await bot.send_message(chat_id, "Cancelled. Nothing was sent or changed." if result.get("success") else result.get("error", "Nothing is waiting for cancellation."))
+        return {"ok": True}
+
+    if user_lower == "/guide" or user_lower.startswith("how do i use stew") or user_lower.startswith("how to use stew"):
+        app_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + "/apps-mini"
+        guide = (
+            "How to use STEW Agent:\n\n"
+            "1. Open Connected Apps and connect the service you need.\n"
+            "2. Return here and ask naturally, for example: ‘Check my important unread Gmail messages.’\n"
+            "3. STEW verifies the live connection, discovers the correct app tool, and prepares the work.\n"
+            "4. Read-only requests run immediately. Sending, posting, editing, deleting, booking, or payment actions wait for your approval.\n"
+            "5. Reply APPROVE to execute exactly the prepared action, or CANCEL to discard it.\n\n"
+            "Try: ‘Create an image for my product and prepare it for Instagram’ or ‘Show my latest YouTube channel performance.’"
+        )
+        await bot.send_inline_keyboard(chat_id, guide, [[{"text": "Open Connected Apps", "web_app": {"url": app_url}}]])
+        return {"ok": True}
+
     # ── CONNECTED APPS (Composio Platform) ─────────────────────────────────────
     # Fast, deterministic commands avoid spending an LLM call merely to create
     # an OAuth link or display connection status. Every session is scoped to the
     # stable Telegram user ID, so accounts and data can never leak across users.
-    if user_lower == "/apps" or user_lower == "/connections":
+    _connection_status_phrases = (
+        "which apps are connected", "what apps are connected", "show my connected apps",
+        "list my connected apps", "which app is connected", "what is connected",
+        "my app connections", "check my connections",
+    )
+    if user_lower in {"/apps", "/connections"} or any(p in user_lower for p in _connection_status_phrases):
         await bot.send_typing(chat_id)
         try:
             from server.composio_service import list_connections

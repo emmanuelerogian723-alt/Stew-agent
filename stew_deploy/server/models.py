@@ -368,3 +368,38 @@ class LocationPing(Base):
     is_live: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AgentActivity(Base):
+    """Auditable record of connected-app work performed or prepared by STEW."""
+    __tablename__ = "agent_activities"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    toolkit: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    tool_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="completed", nullable=False, index=True)
+    read_only: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    approval_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    log_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    arguments: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_preview: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class PendingAgentAction(Base):
+    """Human-in-the-loop approval queue for external connected-app actions."""
+    __tablename__ = "pending_agent_actions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    toolkit: Mapped[str] = mapped_column(String(100), nullable=False)
+    tool_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    arguments: Mapped[dict] = mapped_column(JSON, default=dict)
+    account: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

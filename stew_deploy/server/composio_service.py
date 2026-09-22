@@ -163,13 +163,18 @@ async def list_connections(
     user_id: str | int | None,
     search: Optional[str] = None,
     connected_only: bool = False,
+    next_cursor: Optional[str] = None,
+    limit: int = 50,
+    toolkits: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     """List app connection states for one S.T.E.W user."""
     session = await get_session(user_id)
 
     def _list() -> Any:
         return session.toolkits(
-            limit=50,
+            toolkits=(toolkits or None),
+            limit=max(1, min(int(limit or 50), 50)),
+            next_cursor=(next_cursor or None),
             search=(search or None),
             is_connected=True if connected_only else None,
         )
@@ -188,6 +193,7 @@ async def execute_action(
     tool_slug: str,
     arguments: Optional[Dict[str, Any]] = None,
     account: Optional[str] = None,
+    approved: bool = False,
 ) -> Dict[str, Any]:
     """Execute a discovered Composio tool in the current user's session."""
     slug = (tool_slug or "").strip().upper()
@@ -195,6 +201,20 @@ async def execute_action(
         return {"success": False, "error": "A Composio tool slug is required."}
     if not isinstance(arguments, dict):
         return {"success": False, "error": "Tool arguments must be a JSON object."}
+
+    from server.agent_activity import is_write_action, queue_approval, record_activity
+    stable_user_id = str(user_id or "anonymous")
+    if is_write_action(slug) and not approved:
+        pending = await queue_approval(stable_user_id, slug, arguments, account)
+        await record_activity(stable_user_id, slug, "awaiting_approval", arguments, approval_required=True)
+        return {
+            "success": False,
+            "approval_required": True,
+            "approval_id": pending.id,
+            "tool_slug": slug,
+            "summary": pending.summary,
+            "message": "I prepared this action but have not executed it. Reply APPROVE to continue or CANCEL to discard it.",
+        }
 
     session = await get_session(user_id)
 
@@ -204,16 +224,46 @@ async def execute_action(
             kwargs["account"] = account
         return session.execute(slug, **kwargs)
 
-    response = await asyncio.to_thread(_execute)
-    data = _plain(response)
-    error = data.get("error") if isinstance(data, dict) else None
-    return {
-        "success": not bool(error),
-        "data": data.get("data") if isinstance(data, dict) else data,
-        "error": error,
-        "log_id": data.get("log_id") if isinstance(data, dict) else None,
-        "tool_slug": slug,
-    }
+    try:
+        response = await asyncio.to_thread(_execute)
+        data = _plain(response)
+        error = data.get("error") if isinstance(data, dict) else None
+        log_id = data.get("log_id") if isinstance(data, dict) else None
+        result = {
+            "success": not bool(error),
+            "data": data.get("data") if isinstance(data, dict) else data,
+            "error": error,
+            "log_id": log_id,
+            "tool_slug": slug,
+        }
+        await record_activity(stable_user_id, slug, "failed" if error else "completed", arguments, result.get("data"), log_id=log_id)
+        return result
+    except Exception as exc:
+        await record_activity(stable_user_id, slug, "failed", arguments, {"error": str(exc)})
+        raise
+
+
+async def approve_pending_action(user_id: str | int, action_id: Optional[str] = None) -> Dict[str, Any]:
+    """Execute exactly one previously prepared external action after approval."""
+    from server.agent_activity import get_pending, decide_pending
+    pending = await get_pending(str(user_id), action_id)
+    if not pending:
+        return {"success": False, "error": "No unexpired action is waiting for approval."}
+    result = await execute_action(
+        str(user_id), pending.tool_slug, pending.arguments or {},
+        account=pending.account, approved=True,
+    )
+    await decide_pending(str(user_id), pending.id, "completed" if result.get("success") else "failed")
+    return {**result, "approval_id": pending.id, "approved": True}
+
+
+async def cancel_pending_action(user_id: str | int, action_id: Optional[str] = None) -> Dict[str, Any]:
+    from server.agent_activity import get_pending, decide_pending
+    pending = await get_pending(str(user_id), action_id)
+    if not pending:
+        return {"success": False, "error": "No unexpired action is waiting for approval."}
+    await decide_pending(str(user_id), pending.id, "cancelled")
+    return {"success": True, "cancelled": True, "approval_id": pending.id, "tool_slug": pending.tool_slug}
 
 
 def verify_telegram_init_data(
