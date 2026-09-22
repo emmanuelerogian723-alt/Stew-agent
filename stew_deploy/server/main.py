@@ -6738,7 +6738,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if user_text.strip() in ("/apps", "/connections", "/connectapps"):
         try:
             import server.paywall as _pw
-            _apps_l = await _pw.get_connected_apps(str(tg_user.telegram_id))
+            _apps_l = await _pw.get_connected_apps(str(msg['user_id']))
             _limit = _pw.app_limit_for(tg_user.plan)
             if not _apps_l:
                 await bot.send_message(
@@ -6773,11 +6773,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             import server.paywall as _pw
             from server.composio_service import connect_app as _comp_connect
             _allowed, _cur, _limit, _deny_msg = await _pw.check_connect_allowed(
-                tg_user.plan, str(tg_user.telegram_id))
+                tg_user.plan, str(msg['user_id']))
             if not _allowed:
                 await bot.send_message(chat_id, _deny_msg)
                 return {"ok": True}
-            _res = await _comp_connect(str(tg_user.telegram_id), _conn_app)
+            _res = await _comp_connect(str(msg['user_id']), _conn_app)
             if _res.get("success") and _res.get("connect_url"):
                 await bot.send_message(
                     chat_id,
@@ -6797,7 +6797,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         try:
             from server.memory_gateway import memory_status, letta_profile
             _st = memory_status()
-            _prof = await letta_profile(f"tg_{tg_user.telegram_id}")
+            _prof = await letta_profile(f"tg_{msg['user_id']}")
             _n_lines = len([l for l in _prof.splitlines() if l.strip()]) if _prof else 0
             _m0 = "🟢 active" if _st["mem0"]["active"] else ("🔴 limits hit" if _st["mem0"]["configured"] else "⚪ not set")
             _lt = "🟢 active" if _st["letta"]["active"] else ("🔴 limits hit" if _st["letta"]["configured"] else "⚪ not set")
@@ -6828,7 +6828,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # ══ /passcode <plan> — ADMIN: mint upgrade pass codes ══════════════════
     if user_text.startswith("/passcode"):
-        _is_admin_tg = (str(tg_user.telegram_id) == "5547996257") or (tg_user.plan == "owner")
+        _is_admin_tg = (str(msg['user_id']) == "5547996257") or (tg_user.plan == "owner")
         if not _is_admin_tg:
             await bot.send_message(chat_id, "🚫 Admin only command.")
             return {"ok": True}
@@ -6844,7 +6844,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     # ══ /broadcast <msg> — ADMIN: announce to ALL Telegram users ════════════
     if user_text.startswith("/broadcast") or user_text.startswith("/announce"):
-        _is_admin_bc = (str(tg_user.telegram_id) == "5547996257") or (tg_user.plan == "owner")
+        _is_admin_bc = (str(msg['user_id']) == "5547996257") or (tg_user.plan == "owner")
         if not _is_admin_bc:
             await bot.send_message(chat_id, "🚫 Admin only command.")
             return {"ok": True}
@@ -7580,10 +7580,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await store_user_memory(db, tg_user.id, category, memory_text, importance=8, platform="telegram")
             # Also save to Supabase for persistent storage (survives redeploy)
             if supabase_configured():
-                await supa_save_memory(str(tg_user.telegram_id), category, memory_text, category)
+                await supa_save_memory(str(msg['user_id']), category, memory_text, category)
             try:
                 from server.memory_gateway import save_memory as _gw_save
-                asyncio.create_task(_gw_save(f"tg_{tg_user.telegram_id}", memory_text, category,
+                asyncio.create_task(_gw_save(f"tg_{msg['user_id']}", memory_text, category,
                                               metadata={"platform": "telegram", "command": "/remember"}))
             except Exception:
                 pass
@@ -7623,7 +7623,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             )
             # Also clear from Supabase
             if supabase_configured():
-                await supa_clear(str(tg_user.telegram_id))
+                await supa_clear(str(msg['user_id']))
             await bot.send_message(chat_id,
                 "I've cleared all your memories.\n\n"
                 "I won't remember anything from our past conversations anymore. "
@@ -11174,7 +11174,7 @@ Requirements:
     if user_lower.startswith("/approve") or user_lower in _approval_words:
         from server.composio_service import approve_pending_action
         action_id = user_text.partition(" ")[2].strip() or None
-        result = await approve_pending_action(str(tg_user.telegram_id), action_id)
+        result = await approve_pending_action(str(msg['user_id']), action_id)
         if result.get("success"):
             await bot.send_message(chat_id, f"Approved and completed: {result.get('tool_slug', 'app action')}\nLog ID: {result.get('log_id') or 'recorded in Activity'}")
         else:
@@ -11183,7 +11183,7 @@ Requirements:
     if user_lower.startswith("/cancel") or user_lower in _cancel_words:
         from server.composio_service import cancel_pending_action
         action_id = user_text.partition(" ")[2].strip() or None
-        result = await cancel_pending_action(str(tg_user.telegram_id), action_id)
+        result = await cancel_pending_action(str(msg['user_id']), action_id)
         await bot.send_message(chat_id, "Cancelled. Nothing was sent or changed." if result.get("success") else result.get("error", "Nothing is waiting for cancellation."))
         return {"ok": True}
 
@@ -11214,7 +11214,7 @@ Requirements:
         await bot.send_typing(chat_id)
         try:
             from server.composio_service import list_connections
-            connection_data = await list_connections(str(tg_user.telegram_id), connected_only=True)
+            connection_data = await list_connections(str(msg['user_id']), connected_only=True)
             active = []
             for item in connection_data.get("items", []):
                 connection = item.get("connection") or {}
@@ -11244,7 +11244,7 @@ Requirements:
         await bot.send_typing(chat_id)
         try:
             from server.composio_service import connect_app
-            connection = await connect_app(str(tg_user.telegram_id), toolkit)
+            connection = await connect_app(str(msg['user_id']), toolkit)
             connect_url = connection.get("connect_url")
             if connect_url:
                 await bot.send_message(
@@ -11316,7 +11316,7 @@ Requirements:
             pass
         try:
             from server.tool_agent import run_agent_loop
-            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5, tg_user_id=str(tg_user.telegram_id))
+            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5, tg_user_id=str(msg['user_id']))
             if _ta_banner:
                 await _ta_banner.update("🔧 Working with your connected apps…")
 
@@ -11474,7 +11474,7 @@ Requirements:
     _mood_prompt = await _get_mood_adaptive_system_prompt(_mood_insights, STEW_MASTER_PROMPT)
     system = _mood_prompt + "\n\nYou are responding via Telegram. Keep answers concise and well-formatted for mobile. Use plain text, avoid complex markdown."
     # ── MEMORY GATEWAY (Mem0 + Letta dual memory) + CONNECTED APPS AWARENESS ──
-    _gw_user_key = f"tg_{tg_user.telegram_id}"
+    _gw_user_key = f"tg_{msg['user_id']}"
     _gw_banner = None
     try:
         import server.paywall as _pw
@@ -11488,7 +11488,7 @@ Requirements:
             mem_types=["preference", "fact", "intent", "activity"],
         ) or ""
         _prof_ctx = await full_profile_context(_gw_user_key) or ""
-        _apps_list = await _pw.get_connected_apps(str(tg_user.telegram_id))
+        _apps_list = await _pw.get_connected_apps(str(msg['user_id']))
         if _apps_list:
             _app_names = ", ".join(a["name"] or a["slug"] for a in _apps_list[:20])
             system += (f"\n\nCONNECTED APPS ({len(_apps_list)} apps): {_app_names}. "
@@ -11617,8 +11617,8 @@ Requirements:
 
         # Save conversation to Supabase for persistent history (survives redeploy)
         if supabase_configured():
-            asyncio.create_task(supa_save_conv(str(tg_user.telegram_id), "user", user_text))
-            asyncio.create_task(supa_save_conv(str(tg_user.telegram_id), "assistant", reply))
+            asyncio.create_task(supa_save_conv(str(msg['user_id']), "user", user_text))
+            asyncio.create_task(supa_save_conv(str(msg['user_id']), "assistant", reply))
 
         # If user has voice replies enabled, send as voice note
         if getattr(tg_user, "voice_enabled", False):
