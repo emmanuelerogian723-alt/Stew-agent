@@ -979,6 +979,7 @@ async def run_agent_loop(
     # answers "I don't have access to your apps" from blind memory, and
     # routing to the right Composio connector is grounded in reality.
     system_prompt = TOOL_SYSTEM_PROMPT
+    _connected_app_task = False
     if tg_user_id:
         try:
             from server.composio_service import list_connections
@@ -989,6 +990,12 @@ async def run_agent_loop(
                 if _conn.get("is_active"):
                     _active_apps.append(_item.get("name") or _item.get("slug"))
             if _active_apps:
+                # An app-specific request must produce a real connector trace;
+                # a free-form answer alone is not proof that it ran.
+                _connected_app_task = any(
+                    re.search(r"(?<!\w)" + re.escape(str(name).lower()) + r"(?!\w)", user_text.lower())
+                    for name in _active_apps if name
+                ) and bool(re.search(r"\b(check|read|find|show|search|summarize|analy[sz]e|create|send|post|publish|update|delete|upload|download|schedule|list|fetch)\b", user_text.lower()))
                 system_prompt = (
                     system_prompt
                     + f"\n\nCONNECTED APPS RIGHT NOW for this user: {', '.join(_active_apps)}. "
@@ -1019,6 +1026,11 @@ async def run_agent_loop(
 
     async def _finish_agent(text: str, history: list, files: list, figures: list) -> dict:
         verified = _verified_app_response(text, history)
+        if _connected_app_task and not any(
+            x.get("call", {}).get("tool", "").startswith("composio_") for x in history
+        ):
+            verified = ("I haven't run a connected-app action for that request, so I can't "
+                        "claim a result. Please try the request again, or send /apps to check the connection.")
         # Persist the conversation text, not provider payloads or attachments.
         # Keep this best-effort so memory outages cannot erase a completed action.
         if tg_user_id:
