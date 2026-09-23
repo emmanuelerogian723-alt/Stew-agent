@@ -11298,12 +11298,28 @@ Requirements:
     # Fast, deterministic commands avoid spending an LLM call merely to create
     # an OAuth link or display connection status. Every session is scoped to the
     # stable Telegram user ID, so accounts and data can never leak across users.
+    # Capability questions ("do you have app connectors?", "what integrations do
+    # you support?") must NEVER fall through to web search — that made the bot
+    # answer from generic VPN/security-connector web results instead of its own
+    # real Composio app-connector feature. Route these the same deterministic
+    # path as the "which apps are connected" status check.
+    _connection_capability_phrases = (
+        "do you have app connector", "do you have a connector", "do you have connectors",
+        "do you have connections", "do you have integrations", "do you support connectors",
+        "do you support integrations", "do you support apps", "what connectors",
+        "what integrations", "which connectors", "which integrations",
+        "can you connect to apps", "can you connect apps", "can you connect to my",
+        "what apps can you connect", "which apps can you connect", "app connectors",
+        "app connector", "have connectors", "have integrations", "connect to my apps",
+        "connect my apps", "do you have plugins", "do you have skills",
+    )
     _connection_status_phrases = (
         "which apps are connected", "what apps are connected", "show my connected apps",
         "list my connected apps", "which app is connected", "what is connected",
         "my app connections", "check my connections",
     )
-    if user_lower in {"/apps", "/connections"} or any(p in user_lower for p in _connection_status_phrases):
+    _is_capability_q = any(p in user_lower for p in _connection_capability_phrases)
+    if user_lower in {"/apps", "/connections"} or _is_capability_q or any(p in user_lower for p in _connection_status_phrases):
         await bot.send_typing(chat_id)
         try:
             from server.composio_service import list_connections
@@ -11317,11 +11333,17 @@ Requirements:
                     if str(item.get("slug", "")).lower() == "youtube":
                         has_youtube = True
             app_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + "/apps-mini"
-            status_text = (
-                "Connected apps:\n" + "\n".join(f"• {name}" for name in active)
-                if active else
-                "No apps connected yet. Open Connected Apps to choose one."
-            )
+            if active:
+                status_text = "Connected apps:\n" + "\n".join(f"• {name}" for name in active)
+            elif _is_capability_q:
+                status_text = (
+                    "Yes — I can connect to real apps and act on them for you: Gmail, "
+                    "Google Calendar, Google Drive, Slack, Notion, GitHub, YouTube, "
+                    "Instagram, and more.\n\nYou don't have any connected yet. Open "
+                    "Connected Apps below to link one, then just ask me naturally."
+                )
+            else:
+                status_text = "No apps connected yet. Open Connected Apps to choose one."
             if has_youtube:
                 # This is the general Composio YouTube connection, not the
                 # separate personal-channel OAuth link needed for view/subscriber
