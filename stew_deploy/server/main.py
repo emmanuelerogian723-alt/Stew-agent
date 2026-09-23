@@ -11309,16 +11309,26 @@ Requirements:
             from server.composio_service import list_connections
             connection_data = await list_connections(str(msg['user_id']), connected_only=True)
             active = []
+            has_youtube = False
             for item in connection_data.get("items", []):
                 connection = item.get("connection") or {}
                 if item.get("is_no_auth") or connection.get("is_active"):
                     active.append(item.get("name") or item.get("slug"))
+                    if str(item.get("slug", "")).lower() == "youtube":
+                        has_youtube = True
             app_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + "/apps-mini"
             status_text = (
                 "Connected apps:\n" + "\n".join(f"• {name}" for name in active)
                 if active else
                 "No apps connected yet. Open Connected Apps to choose one."
             )
+            if has_youtube:
+                # This is the general Composio YouTube connection, not the
+                # separate personal-channel OAuth link needed for view/subscriber
+                # analytics — the two are easy to confuse, so say so up front.
+                _yt_linked = (await db.execute(select(YoutubeAccount).where(YoutubeAccount.chat_id == str(chat_id)))).scalar_one_or_none()
+                if not _yt_linked:
+                    status_text += "\n\nNote: YouTube here covers general actions. For your own channel's views/subscribers, send /ytconnect."
             await bot.send_inline_keyboard(
                 chat_id,
                 status_text,
@@ -11354,7 +11364,7 @@ Requirements:
     # Schedule/cross-app outcomes enter the durable engine even without /goal.
     # Avoid capturing ordinary chat: require a clear app plus task verb and either
     # an explicit future-time cue or a named cross-app transfer.
-    _app_terms = ("gmail", "instagram", "tiktok", "youtube", "slack", "notion", "google drive", "google calendar", "dropbox", "github", "outlook", "sheets")
+    _app_terms = ("gmail", "instagram", "tiktok", "youtube", "slack", "notion", "google drive", "google calendar", "dropbox", "github", "outlook", "sheets", "facebook", "twitter", "pinterest", "reddit", "discord", "shopify", "stripe", "airtable", "twitch", "whatsapp business", "wordpress", "medium", "google ads", "google analytics", "canva", "zoom", "calendly", "mailchimp", "monday", "clickup", "jira")
     _action_terms = ("post", "publish", "send", "reply", "upload", "save", "move", "schedule", "create", "transfer", "summarize")
     _timed = bool(re.search(r"\b(tomorrow|next week|next month|at \d{1,2}(?::\d{2})?\s*(?:am|pm)|schedule (?:it|this|the))\b",user_lower))
     _cross_app = sum(bool(re.search(r"\b"+re.escape(app)+r"\b",user_lower)) for app in _app_terms) >= 2
@@ -11401,6 +11411,19 @@ Requirements:
         "channel analytics", "video analytics", "send email", "check email",
         "read my email", "schedule a meeting", "book a meeting", "create event",
         "connected app", "connect my", "connect to", "post on", "publish to",
+        # More connected-app names STEW supports via Composio (previously
+        # missing here meant these fell through to plain chat instead of
+        # actually checking the connection and pulling real data).
+        "facebook", "twitter", "pinterest", "reddit", "discord", "shopify",
+        "stripe", "airtable", "twitch", "whatsapp business", "wordpress",
+        "medium", "google ads", "google analytics", "canva", "zoom",
+        "calendly", "mailchimp", "monday.com", "clickup", "jira",
+        # Generic "check my performance on a connected app" phrasing, so an
+        # app STEW hasn't named yet still gets a real tool lookup instead of
+        # a generic apology.
+        "how many views", "how many followers", "how many subscribers",
+        "how many likes", "my engagement", "my impressions", "my analytics",
+        "check my page", "check my account", "my page insights",
     ])
 
     _agent_extra_triggers = (
