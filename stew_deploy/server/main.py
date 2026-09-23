@@ -8135,7 +8135,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "Task completed.")
 
             if tg_user:
-                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/agent", "POST", 0, 200)
+                await _log_call(db, tg_user.id, "/telegram/agent", "POST", 0, 200)
         except Exception as e:
             logger.error(f"/agent error: {e}", exc_info=True)
             await bot.send_message(chat_id, "Agent hit an error working on that. Try rephrasing the goal or break it into smaller steps.")
@@ -11519,7 +11519,7 @@ Requirements:
 
             # Log
             if tg_user:
-                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
+                await _log_call(db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
 
             return {"ok": True}            # ── Deliver any generated videos (Higgsfield/other app results) in-chat ──
             try:
@@ -11545,7 +11545,7 @@ Requirements:
 
             # Log
             if tg_user:
-                background_tasks.add_task(_log_call, db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
+                await _log_call(db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
 
             return {"ok": True}
         except Exception as e:
