@@ -182,9 +182,18 @@ async def advance_goal(goal_id: str) -> dict:
             if step['status']!='pending':
                 return {'status':row.status,'progress':row.progress}
             due=parse_due_at(step.get('due_at')) if step.get('due_at') and datetime.fromisoformat(step['due_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None)>now() else None
-            if due and due>now():
+            if due and due>now() and (not step['approval_required'] or step.get('approved')):
                 await db.execute(update(AutomationGoal).where(AutomationGoal.id==goal_id).values(status='scheduled',next_run_at=due));await db.commit()
                 return {'status':'scheduled','progress':row.progress,'message':'Next step scheduled for '+step['due_at']}
+            # Do not publish long after a missed deadline, even if approved.
+            if step.get('approved') and step.get('due_at'):
+                deadline=datetime.fromisoformat(step['due_at'].replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None)
+                if now()>deadline+timedelta(minutes=5):
+                    steps[idx]['status']='needs_review';steps[idx]['error']='Scheduled time was missed; nothing was published.'
+                    await db.execute(update(AutomationGoal).where(AutomationGoal.id==goal_id)
+                        .values(status='needs_review',steps=steps,next_run_at=None,error=steps[idx]['error']))
+                    await db.commit()
+                    return {'status':'needs_review','progress':row.progress,'message':steps[idx]['error']}
             claimed=await db.execute(update(AutomationGoal).where(AutomationGoal.id==goal_id,
                 AutomationGoal.status.in_(['ready','scheduled','blocked_connection']), AutomationGoal.cursor==idx)
                 .values(status='executing',next_run_at=None,lease_until=now()+timedelta(minutes=5)))
@@ -208,8 +217,8 @@ async def advance_goal(goal_id: str) -> dict:
                 return {'status':'blocked_connection','progress':int(idx*100/len(steps)),
                         'message':'Connect '+step['toolkit']+' first: '+str(link or 'use /connect '+step['toolkit'])+'\nThen use /goals resume '+goal_id}
             results={s['id']:s['result'] for s in steps[:idx] if s['status']=='completed'}
-            args=resolve_args(step['arguments'],results)
-            if step['approval_required']:
+            args=step.get('approved_arguments') if step.get('approved') else resolve_args(step['arguments'],results)
+            if step['approval_required'] and not step.get('approved'):
                 result=await execute_action(uid,step['tool_slug'],args)
                 if not result.get('approval_required'):
                     raise ValueError(result.get('error') or 'Approval was not created')
@@ -219,18 +228,25 @@ async def advance_goal(goal_id: str) -> dict:
                                  lease_until=None,error=None)
                 return {'status':'awaiting_approval','progress':int(idx*100/len(steps)),
                         'message':result.get('summary','Action prepared')+'\nReply /approve '+result['approval_id']+' or /cancel '+result['approval_id']}
-            result=None
-            for attempt in range(2):
-                try:
-                    result=await execute_action(uid,step['tool_slug'],args)
-                    if result.get('success'):
-                        break
-                except Exception as read_exc:
-                    result={'success':False,'error':str(read_exc)}
-                if attempt==0:
-                    await asyncio.sleep(1)
-            if not result or not result.get('success'):
-                raise ValueError(str((result or {}).get('error') or 'Provider returned an unsuccessful result'))
+            if step.get('approved'):
+                # Exactly one execution after a user-approved future action.
+                # Any uncertain outcome goes to review rather than replay.
+                result=await execute_action(uid,step['tool_slug'],args,approved=True)
+                if not result.get('success'):
+                    raise ValueError(str(result.get('error') or 'Provider reported a failure; verify before retrying'))
+            else:
+                result=None
+                for attempt in range(2):
+                    try:
+                        result=await execute_action(uid,step['tool_slug'],args)
+                        if result.get('success'):
+                            break
+                    except Exception as read_exc:
+                        result={'success':False,'error':str(read_exc)}
+                    if attempt==0:
+                        await asyncio.sleep(1)
+                if not result or not result.get('success'):
+                    raise ValueError(str((result or {}).get('error') or 'Provider returned an unsuccessful result'))
             steps[idx]['status']='completed';steps[idx]['finished_at']=now().isoformat()+'Z';steps[idx]['result']={'data':result.get('data'),'log_id':result.get('log_id')}
             progress=int((idx+1)*100/len(steps))
             await _set_state(goal_id,steps=steps,cursor=idx+1,status='ready',progress=progress,
@@ -247,6 +263,15 @@ async def advance_goal(goal_id: str) -> dict:
     return {'status':'ready','progress':100}
 
 
+async def scheduled_approval(user_id: str, approval_id: str) -> bool:
+    """Whether the approval belongs to a future scheduled goal write."""
+    async with AsyncSessionLocal() as db:
+        row=(await db.execute(select(AutomationGoal).where(
+            AutomationGoal.telegram_user_id==str(user_id), AutomationGoal.approval_id==approval_id,
+            AutomationGoal.status=='awaiting_approval'))).scalar_one_or_none()
+        return bool(row and row.cursor<len(row.steps) and row.steps[row.cursor].get('due_at'))
+
+
 async def on_approval(user_id: str, approval_id: str, result: dict) -> dict | None:
     async with AsyncSessionLocal() as db:
         row=(await db.execute(select(AutomationGoal).where(AutomationGoal.telegram_user_id==str(user_id),
@@ -257,6 +282,20 @@ async def on_approval(user_id: str, approval_id: str, result: dict) -> dict | No
             steps[idx]['status']='needs_review';steps[idx]['error']=str(result.get('error'))[:500]
             await _set_state(goal_id,steps=steps,status='needs_review',approval_id=None,error=steps[idx]['error'])
             return {'status':'needs_review','goal_id':goal_id}
+        if result.get('scheduled_only'):
+            planned=steps[idx].get('due_at')
+            due=datetime.fromisoformat(planned.replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None)
+            if due<=now():
+                steps[idx]['status']='needs_review';steps[idx]['error']='Approval arrived after the scheduled time; nothing was published.'
+                await _set_state(goal_id,steps=steps,status='needs_review',approval_id=None,
+                                 next_run_at=None,error=steps[idx]['error'])
+                return {'goal_id':goal_id,'status':'needs_review','progress':row.progress,'message':steps[idx]['error']}
+            steps[idx]['status']='pending';steps[idx]['approved']=True
+            steps[idx]['approved_arguments']=result.get('approved_arguments') or {}
+            await _set_state(goal_id,steps=steps,status='scheduled',approval_id=None,
+                             next_run_at=due,error=None)
+            return {'goal_id':goal_id,'status':'scheduled','progress':row.progress,
+                    'message':'Approved for '+planned+'. Not published yet.'}
         steps[idx]['status']='completed';steps[idx]['finished_at']=now().isoformat()+'Z';steps[idx]['result']={'data':result.get('data'),'log_id':result.get('log_id')}
         await _set_state(goal_id,steps=steps,cursor=idx+1,approval_id=None,status='ready',
                          progress=int((idx+1)*100/len(steps)),next_run_at=now(),error=None)
@@ -332,6 +371,23 @@ async def resume_connected_goals(user_id: str) -> list[dict]:
 
 
 async def tick_goals() -> None:
+    # Expired approval is a stopped goal, not a successful or infinitely waiting one.
+    async with AsyncSessionLocal() as db:
+        expired=(await db.execute(select(AutomationGoal.id,AutomationGoal.chat_id)
+            .join(PendingAgentAction,AutomationGoal.approval_id==PendingAgentAction.id)
+            .where(AutomationGoal.status=='awaiting_approval',
+                   PendingAgentAction.status=='pending',PendingAgentAction.expires_at<=now())
+            .limit(10))).all()
+    for goal_id, chat in expired:
+        await _set_state(goal_id,status='needs_review',approval_id=None,next_run_at=None,
+                         error='Approval expired; no write action was executed.')
+        try:
+            from server.telegram_bot import TelegramBot
+            from server.config import get_settings
+            await TelegramBot(get_settings().TELEGRAM_BOT_TOKEN).send_message(
+                chat,f'STEW goal {goal_id}: approval expired. Nothing was sent or posted.')
+        except Exception as exc:
+            log.warning('Expired approval notice failed: %s',exc)
     async with AsyncSessionLocal() as db:
         rows=(await db.execute(select(AutomationGoal.id,AutomationGoal.telegram_user_id,AutomationGoal.chat_id,AutomationGoal.status)
             .where(AutomationGoal.status.in_(['ready','scheduled','blocked_connection']),AutomationGoal.next_run_at<=now())

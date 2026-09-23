@@ -279,6 +279,8 @@ async def approve_pending_action(user_id: str | int, action_id: Optional[str] = 
     pending = await get_pending(str(user_id), action_id)
     if not pending:
         return {"success": False, "error": "No unexpired action is waiting for approval."}
+    from server.automation_engine import scheduled_approval
+    scheduled = await scheduled_approval(str(user_id), pending.id)
     async with AsyncSessionLocal() as db:
         claim = await db.execute(update(PendingAgentAction).where(
             PendingAgentAction.id == pending.id, PendingAgentAction.telegram_user_id == str(user_id),
@@ -287,19 +289,26 @@ async def approve_pending_action(user_id: str | int, action_id: Optional[str] = 
         await db.commit()
         if claim.rowcount != 1:
             return {"success": False, "error": "This action was already claimed; check Activities."}
-    try:
-        result = await execute_action(
-            str(user_id), pending.tool_slug, pending.arguments or {},
-            account=pending.account, approved=True,
-        )
-    except Exception as exc:
-        result = {"success": False, "error": f"Outcome is uncertain: {exc}. Check the provider before trying again."}
+    if scheduled:
+        result = {"success": True, "scheduled_only": True, "approved_arguments": pending.arguments or {},
+                  "tool_slug": pending.tool_slug, "message": "Approved for the scheduled time; not executed yet."}
+    else:
+        try:
+            result = await execute_action(
+                str(user_id), pending.tool_slug, pending.arguments or {},
+                account=pending.account, approved=True,
+            )
+        except Exception as exc:
+            result = {"success": False, "error": f"Outcome is uncertain: {exc}. Check the provider before trying again."}
     await decide_pending(str(user_id), pending.id, "completed" if result.get("success") else "needs_review")
     try:
         from server.automation_engine import on_approval
         goal_result = await on_approval(str(user_id), pending.id, result)
         if goal_result:
             result["goal"] = goal_result
+            if result.get("scheduled_only") and goal_result.get("status") == "needs_review":
+                result["success"] = False
+                result["error"] = goal_result.get("message") or "The scheduled time was missed; nothing was published."
     except Exception as exc:
         logger.warning("Goal resumption failed after approval; durable goal remains: %s", exc)
     return {**result, "approval_id": pending.id, "approved": True}

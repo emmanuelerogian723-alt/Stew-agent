@@ -11269,7 +11269,7 @@ Requirements:
         if result.get("success"):
             goal=result.get("goal") or {}
             suffix=f"\nGoal: {goal.get('status')} ({goal.get('progress',0)}%). {goal.get('message','')}" if goal else ""
-            await bot.send_message(chat_id, f"Approved and completed: {result.get('tool_slug', 'app action')}\nLog ID: {result.get('log_id') or 'recorded in Activity'}{suffix}")
+            await bot.send_message(chat_id, f"{('Approved and scheduled (not published)' if result.get('scheduled_only') else 'Approved and completed')}: {result.get('tool_slug', 'app action')}\n{('Scheduled in Goals' if result.get('scheduled_only') else 'Log ID: '+str(result.get('log_id') or 'recorded in Activity'))}{suffix}")
         else:
             await bot.send_message(chat_id, result.get("error", "The action could not be completed."))
         return {"ok": True}
