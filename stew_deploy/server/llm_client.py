@@ -183,7 +183,24 @@ class LLMClient:
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
-                content = response.choices[0].message.content
+                content = response.choices[0].message.content or ""
+                if not content.strip():
+                    # Groq's reasoning models (gpt-oss, qwen3) sometimes put
+                    # the ENTIRE answer — including TOOL_CALL directives the
+                    # agent depends on — in the `reasoning` channel and return
+                    # an EMPTY final content with finish_reason=stop. Upstream
+                    # this made every connected-app request look like silence:
+                    # the agent loop got "", extracted no tools, and Stew fell
+                    # through as if no apps existed. An empty reply is a dead
+                    # reply anyway, so recover whatever the model produced in
+                    # its reasoning channel instead of discarding it.
+                    reasoning = getattr(response.choices[0].message, "reasoning", None)
+                    if not reasoning and hasattr(response.choices[0].message, "model_extra") and response.choices[0].message.model_extra:
+                        reasoning = response.choices[0].message.model_extra.get("reasoning")
+                    reasoning = reasoning or ""
+                    if reasoning.strip():
+                        logger.info(f"Groq {model}: empty content, recovering {len(reasoning)} chars from reasoning channel")
+                        content = reasoning
                 usage = response.usage
                 logger.info(f"Groq success with model: {model}")
                 return {

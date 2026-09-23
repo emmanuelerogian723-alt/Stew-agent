@@ -11424,6 +11424,29 @@ Requirements:
         "how many views", "how many followers", "how many subscribers",
         "how many likes", "my engagement", "my impressions", "my analytics",
         "check my page", "check my account", "my page insights",
+        # Email task phrasing that previously missed the agent entirely and
+        # fell through to plain chat ("Read my unread emails" contains none
+        # of the earlier keywords as substrings — it silently became a
+        # knowledge answer about how to read email).
+        "unread", "inbox", "my emails", "read my emails", "my mail",
+        "email inbox", "summarize my inbox", "summarize today's inbox",
+        "reply to my emails", "draft a reply", "email attachment",
+        # More app-task phrasings from real usage.
+        "pull request", "my pull requests", "merge the pr", "my repo",
+        "my repository", "github issue", "my commits",
+        "my calendar", "what's on today", "whats on today", "today's calendar",
+        "todays calendar", "schedule a meeting", "book a meeting",
+        "my meetings", "next meeting",
+        "my drive", "search drive", "find my cv", "find my resume", "my resume",
+        "upload to drive", "upload it to drive", "drive folder", "shared drive",
+        "google doc", "google docs", "create a doc", "new document",
+        "my notion", "notion page", "notion task", "create task",
+        "my slack", "slack message", "slack channel", "notify slack", "send to slack",
+        "post to linkedin", "linkedin post", "my linkedin",
+        "my instagram", "instagram analytics", "create a reel", "instagram post",
+        "my tweet", "post on x", "post to twitter", "schedule tweet", "my tweets",
+        "facebook page", "my facebook", "post on facebook",
+        "my notion database", "my board", "my project", "my tasks",
     ])
 
     _agent_extra_triggers = (

@@ -104,6 +104,7 @@ Rules:
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, delete data, send messages, publish content, create purchases, or perform financial actions unless explicitly requested. For ambiguous or destructive actions, ask one concise confirmation question instead of executing.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
+18i. COMPLETION PIPELINE: composio_search_tools only DISCOVERS an action — it does NOT perform it. The user's request is only satisfied after composio_execute returns a successful TOOL_RESULT. After any composio_search_tools result, your NEXT message MUST be a composio_execute TOOL_CALL with the exact discovered slug and its required arguments (or composio_connect if the connection status shows not connected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a composio_execute TOOL_RESULT confirms it actually ran.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools. Posting remains pending until the user approves it.
 18h. Read-only app actions may execute immediately. Any send, reply, post, publish, create, update, upload, delete, payment, booking, or similar external change is intercepted by STEW's approval gateway. Clearly show the prepared action and ask the user to reply APPROVE or CANCEL; never claim it ran before approval.
@@ -648,15 +649,70 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         query = args.get("query", "")
         try:
             data = await search_tools(tg_user_id or chat_id, query)
-            return {
-                "tool": tool,
-                "success": data.get("success", False),
-                "output": json.dumps(data, ensure_ascii=False, default=str)[:30000],
-                "data": data,
-            }
         except Exception as exc:
             logger.warning("Composio tool search failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"Composio search failed: {exc}"}
+        # Deterministic read-path completion. The LLM proved unreliable at
+        # chaining search -> execute (it declared "Done! I fetched your
+        # emails" without ever calling composio_execute). When the search
+        # found ONE clear primary action, the app is connected, and the
+        # action is read-only, execute it immediately so read requests
+        # ("check my gmail", "my youtube analytics") complete in one step.
+        # Write actions are never auto-executed — they still route through
+        # the approval gateway inside execute_action.
+        try:
+            results = data.get("results") or []
+            if results:
+                primary = (results[0].get("primary_tool_slugs") or [None])[0]
+                toolkit = (results[0].get("toolkits") or [None])[0]
+                statuses = data.get("toolkit_connection_statuses") or []
+                st = next((s for s in statuses if isinstance(s, dict) and s.get("toolkit") == toolkit), None)
+                if primary and toolkit and st and st.get("has_active_connection"):
+                    from server.composio_service import list_app_actions, execute_action
+                    acts = await list_app_actions(toolkit)
+                    act = next((a for a in acts.get("items", []) if a.get("slug") == primary), None)
+                    if act and act.get("permission") == "read_only":
+                        exec_result = await execute_action(
+                            tg_user_id or chat_id, primary,
+                            args.get("arguments") or {},
+                        )
+                        data["auto_executed"] = {
+                            "tool_slug": primary,
+                            "toolkit": toolkit,
+                            "success": exec_result.get("success"),
+                            "data": exec_result.get("data"),
+                            "error": exec_result.get("error"),
+                        }
+                        logger.info(f"Auto-executed read-only action {primary} for query {query!r}")
+        except Exception as chain_exc:
+            logger.warning("Auto read-execution skipped: %s", chain_exc)
+        if data.get("auto_executed"):
+            auto = data["auto_executed"]
+            payload = json.dumps(auto.get("data"), ensure_ascii=False, default=str)[:25000]
+            output = (
+                f"Executed {auto['tool_slug']} on the user's real {auto['toolkit']} account. "
+                f"Success: {auto['success']}.\nRESULT:\n{payload}"
+            )
+            if auto.get("error"):
+                output = f"Executed {auto['tool_slug']}: FAILED — {auto['error'][:300]}"
+            return {"tool": tool, "success": bool(auto.get("success")), "output": output[:30000], "data": data}
+        # Not auto-executed (not connected, write action, or ambiguous) — tell
+        # the model exactly what the next step is so it cannot stall.
+        next_hint = ""
+        results = data.get("results") or []
+        if results:
+            _slug = (results[0].get("primary_tool_slugs") or [None])[0]
+            if _slug:
+                next_hint = (f"\n\nNEXT STEP REQUIRED: the request is NOT complete. "
+                             f"Call composio_execute with tool_slug {_slug} and the arguments "
+                             f"its schema requires (or composio_connect if the app is not "
+                             f"connected). Do NOT claim the task is done.")
+        return {
+            "tool": tool,
+            "success": data.get("success", False),
+            "output": json.dumps(data, ensure_ascii=False, default=str)[:30000] + next_hint,
+            "data": data,
+        }
     elif tool == "composio_connect":
         from server.composio_service import connect_app
         toolkit = args.get("toolkit", "")
@@ -807,9 +863,33 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
         return 'Prepared, not executed:\n'+'\n'.join(lines)+'\nReply /approve <approval ID> to execute one action, or /cancel <approval ID>.'
     failures = [x['result'].get('data', {}) for x in history
                 if x.get('call', {}).get('tool') == 'composio_execute'
-                and x.get('result', {}).get('success') is False]
+                and x.get('result').get('success') is False]
     if failures:
         return 'Connected-app action was not completed: '+str(failures[-1].get('error') or 'Provider unavailable')[:350]
+    tools_run = {x.get('call', {}).get('tool') for x in history}
+    auto_executed_ok = any(
+        (x.get('result', {}).get('data', {}) or {}).get('auto_executed', {}).get('success')
+        for x in history if x.get('call', {}).get('tool') == 'composio_search_tools'
+    )
+    if auto_executed_ok:
+        pass  # read-only action ran inside the search step — genuine completion
+    elif 'composio_search_tools' in tools_run and 'composio_execute' not in tools_run and 'composio_connect' not in tools_run:
+        # The model discovered the right action but never executed it — yet
+        # models in this situation routinely write "Done! I've fetched your
+        # emails." Provider outcomes are the only authority: replace the
+        # hallucinated completion with the truthful state and a next step.
+        found = []
+        for x in history:
+            if x.get('call', {}).get('tool') == 'composio_search_tools':
+                data = x.get('result', {}).get('data', {})
+                for r in (data.get('results') or [])[:3]:
+                    for s in (r.get('primary_tool_slugs') or [])[:1]:
+                        if s not in found:
+                            found.append(s)
+        if found:
+            return ("I found the right action (" + ", ".join(found) + ") but it hasn't actually "
+                    "run yet. Reply \"run it\" and I'll execute it now.")
+        return "I found the right connected-app action but it hasn't actually run yet. Please send your request again."
     return text
 
 
@@ -869,8 +949,37 @@ async def run_agent_loop(
         }
     """
     llm = get_llm_client()
+
+    # Live connected-apps context: every agent conversation should begin by
+    # knowing which apps THIS user actually connected, so the model never
+    # answers "I don't have access to your apps" from blind memory, and
+    # routing to the right Composio connector is grounded in reality.
+    system_prompt = TOOL_SYSTEM_PROMPT
+    if tg_user_id:
+        try:
+            from server.composio_service import list_connections
+            _apps_data = await list_connections(tg_user_id, connected_only=True, limit=50)
+            _active_apps = []
+            for _item in _apps_data.get("items", []):
+                _conn = _item.get("connection") or {}
+                if _conn.get("is_active"):
+                    _active_apps.append(_item.get("name") or _item.get("slug"))
+            if _active_apps:
+                system_prompt = (
+                    system_prompt
+                    + f"\n\nCONNECTED APPS RIGHT NOW for this user: {', '.join(_active_apps)}. "
+                    "These are live OAuth connections. If the user's request involves ANY of "
+                    "them, you MUST use the composio tools to act on the real account — call "
+                    "composio_search_tools with their exact goal first, then execute the "
+                    "discovered action. Never say you cannot access these apps; they ARE "
+                    "connected. Never invent results — always call the tool."
+                )
+                logger.info(f"Agent context: {len(_active_apps)} connected apps injected")
+        except Exception as _apps_exc:
+            logger.warning(f"Connected-apps context unavailable: {_apps_exc}")
+
     messages = [
-        {"role": "system", "content": TOOL_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_text},
     ]
 
@@ -906,6 +1015,18 @@ async def run_agent_loop(
             # tools actually did so the user is never left with a blank reply.
             if not assistant_text and tool_history:
                 assistant_text = _summarize_tool_history(tool_history)
+            if not assistant_text and not tool_history and iteration == 0:
+                # The model produced literal silence on the first turn. This
+                # used to be returned as an empty response, which surfaced
+                # in Telegram as a fake "Task completed." Ask once more with
+                # an explicit nudge before giving up.
+                messages.append({"role": "assistant", "content": raw_content or "(empty)"})
+                messages.append({
+                    "role": "user",
+                    "content": "Your previous reply was empty. Answer the user's request now. "
+                                "If it involves a connected app, emit a composio TOOL_CALL.",
+                })
+                continue
             return {
                 "response": _verified_app_response(assistant_text,tool_history),
                 "files": files,
@@ -1008,8 +1129,10 @@ async def run_agent_loop(
             messages.append({
                 "role": "user",
                 "content": f"TOOL_RESULT for {tool_name}:\n{tool_output[:5000]}\n\n"
-                           f"Analyze this result and continue. If you have enough information, "
-                           f"provide your final answer (no more TOOL_CALL)."
+                           f"Analyze this result. If the user's request is NOT yet fully "
+                           f"completed, continue with the next TOOL_CALL. Only give a "
+                           f"final answer once the request is genuinely satisfied — and "
+                           f"never claim work was done unless a TOOL_RESULT confirms it."
             })
 
     # Max iterations reached — get final response
