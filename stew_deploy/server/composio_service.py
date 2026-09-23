@@ -204,7 +204,18 @@ async def execute_action(
 
     from server.agent_activity import is_write_action, queue_approval, record_activity
     stable_user_id = str(user_id or "anonymous")
-    if is_write_action(slug) and not approved:
+    # Consult provider behavior tags as well as conservative name classification.
+    # This blocks mutating actions even if their names look read-only.
+    toolkit = slug.split("_", 1)[0].lower()
+    available = await list_app_actions(toolkit)
+    action = next((item for item in available.get("items", []) if item["slug"] == slug and not item["deprecated"]), None)
+    if not action:
+        return {"success": False, "error": "Action is not available in the current Composio catalog."}
+    requires_approval = is_write_action(slug) or action["permission"] != "read_only"
+    connection = await list_connections(stable_user_id, toolkits=[toolkit])
+    if not any(item.get("slug") == toolkit and (item.get("connection") or {}).get("is_active") for item in connection.get("items", [])):
+        return {"success": False, "error": f"{toolkit} is not connected for this user. Connect it first."}
+    if requires_approval and not approved:
         pending = await queue_approval(stable_user_id, slug, arguments, account)
         try:
             await record_activity(stable_user_id, slug, "awaiting_approval", arguments, approval_required=True)
@@ -231,6 +242,11 @@ async def execute_action(
         response = await asyncio.to_thread(_execute)
         data = _plain(response)
         error = data.get("error") if isinstance(data, dict) else None
+        provider_data = data.get("data") if isinstance(data, dict) else None
+        if isinstance(data, dict) and data.get("successful") is False:
+            error = error or "Provider reported the action was unsuccessful."
+        if isinstance(provider_data, dict) and provider_data.get("successful") is False:
+            error = error or provider_data.get("error") or "Provider reported failure."
         log_id = data.get("log_id") if isinstance(data, dict) else None
         result = {
             "success": not bool(error),
@@ -255,23 +271,37 @@ async def execute_action(
 
 
 async def approve_pending_action(user_id: str | int, action_id: Optional[str] = None) -> Dict[str, Any]:
-    """Execute exactly one previously prepared external action after approval."""
+    """Claim a pending action atomically; never replay a possibly completed send."""
+    from sqlalchemy import update
+    from server.database import AsyncSessionLocal
+    from server.models import PendingAgentAction
     from server.agent_activity import get_pending, decide_pending
     pending = await get_pending(str(user_id), action_id)
     if not pending:
         return {"success": False, "error": "No unexpired action is waiting for approval."}
-    # Claim before execution. If recording the final state ever fails after the
-    # provider succeeds, a second APPROVE cannot execute the same action twice.
-    await decide_pending(str(user_id), pending.id, "executing")
+    async with AsyncSessionLocal() as db:
+        claim = await db.execute(update(PendingAgentAction).where(
+            PendingAgentAction.id == pending.id, PendingAgentAction.telegram_user_id == str(user_id),
+            PendingAgentAction.status == "pending"
+        ).values(status="executing"))
+        await db.commit()
+        if claim.rowcount != 1:
+            return {"success": False, "error": "This action was already claimed; check Activities."}
     try:
         result = await execute_action(
             str(user_id), pending.tool_slug, pending.arguments or {},
             account=pending.account, approved=True,
         )
-    except Exception:
-        await decide_pending(str(user_id), pending.id, "failed")
-        raise
-    await decide_pending(str(user_id), pending.id, "completed" if result.get("success") else "failed")
+    except Exception as exc:
+        result = {"success": False, "error": f"Outcome is uncertain: {exc}. Check the provider before trying again."}
+    await decide_pending(str(user_id), pending.id, "completed" if result.get("success") else "needs_review")
+    try:
+        from server.automation_engine import on_approval
+        goal_result = await on_approval(str(user_id), pending.id, result)
+        if goal_result:
+            result["goal"] = goal_result
+    except Exception as exc:
+        logger.warning("Goal resumption failed after approval; durable goal remains: %s", exc)
     return {**result, "approval_id": pending.id, "approved": True}
 
 
@@ -281,6 +311,8 @@ async def cancel_pending_action(user_id: str | int, action_id: Optional[str] = N
     if not pending:
         return {"success": False, "error": "No unexpired action is waiting for approval."}
     await decide_pending(str(user_id), pending.id, "cancelled")
+    from server.automation_engine import on_cancellation
+    await on_cancellation(str(user_id), pending.id)
     return {"success": True, "cancelled": True, "approval_id": pending.id, "tool_slug": pending.tool_slug}
 
 

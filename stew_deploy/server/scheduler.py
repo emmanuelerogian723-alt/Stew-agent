@@ -112,6 +112,7 @@ async def execute_scheduled_task(task: ScheduledTask, user: User) -> dict:
 
         agent_result = await run_agent_loop(
             task.prompt, bot=bot, chat_id=chat_id, max_iterations=6,
+            tg_user_id=str(chat_id) if chat_id is not None else str(user.id),
         )
         return {
             "response": agent_result.get("response") or "Task completed.",
@@ -231,6 +232,8 @@ async def scheduler_loop():
         try:
             await asyncio.sleep(30)
             await check_and_run_due_tasks()
+            from server.automation_engine import tick_goals
+            await tick_goals()
         except asyncio.CancelledError:
             logger.info("Scheduler engine stopping")
             break

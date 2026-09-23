@@ -170,6 +170,8 @@ async def lifespan(app: FastAPI):
             {"command": "approve", "description": "Approve a prepared app action"},
             {"command": "cancel", "description": "Cancel a prepared app action"},
             {"command": "guide", "description": "Learn how to use STEW Agent"},
+            {"command": "goal", "description": "Assign a multi-app goal to STEW"},
+            {"command": "goals", "description": "Check or resume goal progress"},
             {"command": "admin", "description": "Admin access (owner only)"},
             {"command": "pass", "description": "Access pass system (owner: create/list/revoke, users: redeem)"},
         ]
@@ -1176,6 +1178,32 @@ async def composio_approval(request: Request):
     if decision == "cancel":
         return await cancel_pending_action(str(tg_user["id"]), action_id)
     raise HTTPException(400, "Decision must be approve or cancel")
+
+
+@app.post("/api/automation/goals", include_in_schema=False)
+async def automation_goals_api(request: Request):
+    payload, user = await _verified_mini_app_user(request)
+    from server.automation_engine import list_goals
+    return {"items":await list_goals(str(user["id"]),limit=payload.get("limit",30))}
+
+
+@app.post("/api/automation/resume-connected", include_in_schema=False)
+async def automation_resume_connected(request: Request):
+    _, user = await _verified_mini_app_user(request)
+    from server.automation_engine import resume_connected_goals
+    return {"items":await resume_connected_goals(str(user["id"]))}
+
+
+@app.post("/api/automation/goal", include_in_schema=False)
+async def automation_goal_api(request: Request):
+    payload, user = await _verified_mini_app_user(request)
+    from server.automation_engine import get_goal, cancel_goal, resume_goal
+    uid=str(user["id"]);goal_id=str(payload.get("goal_id", ""));action=payload.get("action","read")
+    if action=="cancel":return {"cancelled":await cancel_goal(uid,goal_id)}
+    if action=="resume":return await resume_goal(uid,goal_id)
+    goal=await get_goal(uid,goal_id)
+    if not goal:raise HTTPException(404,"Goal not found")
+    return goal
 
 
 @app.post("/api/composio/youtube/analytics", include_in_schema=False)
@@ -11168,6 +11196,32 @@ Requirements:
             await bot.send_message(chat_id, "Couldn't fetch the exchange rate right now. Try again in a moment.")
         return {"ok": True}
 
+    # ── DURABLE GOALS: explicit /goal and clearly scheduled cross-app work ────
+    if user_lower.startswith("/goal "):
+        from server.automation_engine import create_goal
+        try:
+            outcome = await create_goal(str(tg_user.telegram_id),str(chat_id),user_text.partition(" ")[2].strip())
+            await bot.send_message(chat_id,outcome.get("question") or f"Goal {outcome.get('goal_id')}: {outcome.get('status')} ({outcome.get('progress')}%).\n{outcome.get('message') or ''}")
+        except Exception as exc:
+            logger.warning("Goal planning failed: %s",exc)
+            await bot.send_message(chat_id,f"I couldn't safely plan that goal: {str(exc)[:350]}")
+        return {"ok":True}
+    if user_lower == "/goals":
+        from server.automation_engine import list_goals
+        goals=await list_goals(str(tg_user.telegram_id),10)
+        await bot.send_message(chat_id,"\n".join(f"{x['id']}: {x['status']} ({x['progress']}%) {x['objective'][:60]}" for x in goals) or "No goals yet. Use /goal followed by the outcome you want.")
+        return {"ok":True}
+    if user_lower.startswith("/goals resume "):
+        from server.automation_engine import resume_goal
+        result=await resume_goal(str(tg_user.telegram_id),user_text.split()[-1])
+        await bot.send_message(chat_id,f"Goal: {result.get('status')} ({result.get('progress',0)}%). {result.get('message','')}")
+        return {"ok":True}
+    if user_lower.startswith("/goals cancel "):
+        from server.automation_engine import cancel_goal
+        ok=await cancel_goal(str(tg_user.telegram_id),user_text.split()[-1])
+        await bot.send_message(chat_id,"Goal cancelled." if ok else "Goal not found or already running/completed.")
+        return {"ok":True}
+
     # ── HUMAN APPROVAL FOR EXTERNAL APP ACTIONS ────────────────────────────────
     _approval_words = {"approve", "approved", "confirm", "yes approve", "go ahead", "do it"}
     _cancel_words = {"cancel", "cancel it", "do not do it", "don't do it", "reject"}
@@ -11176,7 +11230,9 @@ Requirements:
         action_id = user_text.partition(" ")[2].strip() or None
         result = await approve_pending_action(str(msg['user_id']), action_id)
         if result.get("success"):
-            await bot.send_message(chat_id, f"Approved and completed: {result.get('tool_slug', 'app action')}\nLog ID: {result.get('log_id') or 'recorded in Activity'}")
+            goal=result.get("goal") or {}
+            suffix=f"\nGoal: {goal.get('status')} ({goal.get('progress',0)}%). {goal.get('message','')}" if goal else ""
+            await bot.send_message(chat_id, f"Approved and completed: {result.get('tool_slug', 'app action')}\nLog ID: {result.get('log_id') or 'recorded in Activity'}{suffix}")
         else:
             await bot.send_message(chat_id, result.get("error", "The action could not be completed."))
         return {"ok": True}
@@ -11257,6 +11313,23 @@ Requirements:
             logger.error("Composio connect command failed: %s", exc)
             await bot.send_message(chat_id, "I couldn't start that app connection. Check the app name and try again.")
         return {"ok": True}
+
+    # Schedule/cross-app outcomes enter the durable engine even without /goal.
+    # Avoid capturing ordinary chat: require a clear app plus task verb and either
+    # an explicit future-time cue or a named cross-app transfer.
+    _app_terms = ("gmail", "instagram", "tiktok", "youtube", "slack", "notion", "google drive", "google calendar", "dropbox", "github", "outlook", "sheets")
+    _action_terms = ("post", "publish", "send", "reply", "upload", "save", "move", "schedule", "create", "transfer", "summarize")
+    _timed = bool(re.search(r"\b(tomorrow|next week|next month|at \d{1,2}(?::\d{2})?\s*(?:am|pm)|schedule (?:it|this|the))\b",user_lower))
+    _cross_app = sum(bool(re.search(r"\b"+re.escape(app)+r"\b",user_lower)) for app in _app_terms) >= 2
+    if not user_lower.startswith("/") and any(x in user_lower for x in _action_terms) and any(x in user_lower for x in _app_terms) and (_timed or _cross_app):
+        from server.automation_engine import create_goal
+        try:
+            outcome=await create_goal(str(tg_user.telegram_id),str(chat_id),user_text)
+            await bot.send_message(chat_id,outcome.get("question") or f"Goal {outcome.get('goal_id')}: {outcome.get('status')} ({outcome.get('progress')}%).\n{outcome.get('message') or ''}")
+        except Exception as exc:
+            logger.warning("Natural goal planning failed: %s",exc)
+            await bot.send_message(chat_id,f"I couldn't safely plan that cross-app task: {str(exc)[:350]}")
+        return {"ok":True}
 
     # ── TOOL-CALLING AGENT (Kimi-style) ─────────────────────────────────────────
     # Detect requests that need tool calling: code, math, data analysis, documents

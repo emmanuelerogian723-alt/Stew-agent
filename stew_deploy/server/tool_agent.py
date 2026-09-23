@@ -797,6 +797,22 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         return {"error": f"Unknown tool: {tool}"}
 
 
+def _verified_app_response(text: str, history: list[dict]) -> str:
+    """Provider outcomes, not model prose, are authoritative for app writes."""
+    pending = [x['result'].get('data', {}) for x in history
+               if x.get('call', {}).get('tool') == 'composio_execute'
+               and x.get('result', {}).get('data', {}).get('approval_required')]
+    if pending:
+        lines = [f"{x.get('summary', x.get('tool_slug', 'Action'))} (approval {x.get('approval_id')})" for x in pending]
+        return 'Prepared, not executed:\n'+'\n'.join(lines)+'\nReply /approve <approval ID> to execute one action, or /cancel <approval ID>.'
+    failures = [x['result'].get('data', {}) for x in history
+                if x.get('call', {}).get('tool') == 'composio_execute'
+                and x.get('result', {}).get('success') is False]
+    if failures:
+        return 'Connected-app action was not completed: '+str(failures[-1].get('error') or 'Provider unavailable')[:350]
+    return text
+
+
 def _summarize_tool_history(tool_history: list) -> str:
     """Build a user-facing summary from the executed tool calls — used when the
     LLM's final message is empty (e.g. it ended on tool calls and its wrap-up
@@ -891,7 +907,7 @@ async def run_agent_loop(
             if not assistant_text and tool_history:
                 assistant_text = _summarize_tool_history(tool_history)
             return {
-                "response": assistant_text,
+                "response": _verified_app_response(assistant_text,tool_history),
                 "files": files,
                 "figures": figures,
                 "tool_calls": tool_history,
@@ -1007,7 +1023,7 @@ async def run_agent_loop(
         final_text = _summarize_tool_history(tool_history)
 
     return {
-        "response": final_text,
+        "response": _verified_app_response(final_text,tool_history),
         "files": files,
         "figures": figures,
         "tool_calls": tool_history,
