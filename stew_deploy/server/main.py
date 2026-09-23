@@ -11426,7 +11426,7 @@ Requirements:
             pass
         try:
             from server.tool_agent import run_agent_loop
-            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=5, tg_user_id=str(msg['user_id']))
+            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=8, tg_user_id=str(msg['user_id']))
             if _ta_banner:
                 await _ta_banner.update("🔧 Working with your connected apps…")
 
