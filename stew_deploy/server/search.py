@@ -47,6 +47,55 @@ class WebSearch:
     def _is_available(self) -> bool:
         return bool(self.api_key or True)  # DuckDuckGo fallback always available
 
+    def _exa_search(self, query: str, num_results: int = 8) -> dict:
+        """Exa neural/agentic web search (https://docs.exa.ai). Primary provider
+        when EXA_API_KEY is configured: auto search type (balanced relevance and
+        speed) with highlights, so each result carries a snippet and quote."""
+        api_key = os.getenv("EXA_API_KEY", "").strip()
+        if not api_key:
+            return {}
+        try:
+            import httpx
+            resp = httpx.post(
+                "https://api.exa.ai/search",
+                timeout=15,
+                headers={"x-api-key": api_key, "Content-Type": "application/json"},
+                json={
+                    "query": query,
+                    "numResults": max(1, min(int(num_results or 5), 10)),
+                    "type": "auto",
+                    "contents": {"highlights": {"numSentences": 3}, "text": {"maxCharacters": 1200}},
+                },
+            )
+            if resp.status_code != 200:
+                logger.warning(f"Exa search HTTP {resp.status_code}: {resp.text[:200]}")
+                return {}
+            data = resp.json()
+            organic = []
+            for item in (data.get("results", []) or [])[:num_results]:
+                snippet = " ".join(item.get("highlights") or []) or (item.get("text") or "")[:300]
+                organic.append({
+                    "title": item.get("title", ""),
+                    "link": item.get("url", ""),
+                    "snippet": snippet[:400],
+                    "source": "exa",
+                    "published_date": item.get("publishedDate"),
+                    "author": item.get("author"),
+                })
+            if organic:
+                logger.info("Exa search succeeded")
+                return {
+                    "organic": organic,
+                    "answer_box": {},
+                    "knowledge_graph": {},
+                    "grounded": True,
+                    "source": "exa",
+                    "query": query,
+                }
+        except Exception as e:
+            logger.warning(f"Exa search failed: {e}")
+        return {}
+
     def search(self, query: str, num_results: int = 8) -> dict:
         """
         Perform a real web search via the autonomous WebCrawler engine.
@@ -62,6 +111,11 @@ class WebSearch:
         """
         import asyncio as _aio
         
+        # Try 0: Exa agentic search (best relevance when EXA_API_KEY is set)
+        result = self._exa_search(query, num_results)
+        if result.get("organic"):
+            return result
+
         # Try 1: Autonomous WebCrawler (no API key needed!)
         try:
             from server.web_crawler import get_crawler

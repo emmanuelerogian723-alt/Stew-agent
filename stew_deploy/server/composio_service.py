@@ -131,6 +131,27 @@ async def search_tools(user_id: str | int | None, query: str) -> Dict[str, Any]:
     }
 
 
+async def _resolve_toolkit_slug(session: Any, requested: str) -> str:
+    """Composio's real toolkit slugs don't always match the common app name
+    (e.g. 'higgsfield' vs the registered 'higgsfield_mcp'). Search and prefer
+    an exact slug, else the closest result, else what was asked for."""
+    try:
+        response = await asyncio.to_thread(session.toolkits, search=requested, limit=5)
+        data = _plain(response)
+        items = data.get("items", []) if isinstance(data, dict) else []
+        slugs = [i.get("slug") for i in items if isinstance(i, dict) and i.get("slug")]
+        if requested in slugs:
+            return requested
+        for s in slugs:
+            if s and (s.startswith(requested) or requested.startswith(s)):
+                return s
+        if slugs:
+            return slugs[0]
+    except Exception as _resolve_err:
+        logger.debug(f"toolkit slug resolution skipped for '{requested}': {_resolve_err}")
+    return requested
+
+
 async def connect_app(
     user_id: str | int | None,
     toolkit: str,
@@ -141,6 +162,7 @@ async def connect_app(
     if not toolkit:
         return {"success": False, "error": "Please name the app you want to connect."}
     session = await get_session(user_id)
+    toolkit = await _resolve_toolkit_slug(session, toolkit)
 
     def _authorize() -> Any:
         kwargs: Dict[str, Any] = {}
