@@ -11481,6 +11481,28 @@ Requirements:
     if any(k in user_lower for k in _agent_extra_triggers):
         needs_tools = True
 
+    # Also route tasks for newly connected apps without redeploying a hardcoded
+    # list. A connected toolkit's name + task verb indicates an app action;
+    # capability/status questions have already been handled above.
+    if not needs_tools and not user_lower.startswith("/"):
+        _app_task_verb = re.search(
+            r"\b(check|read|find|show|search|summarize|analy[sz]e|create|send|post|publish|update|delete|upload|download|schedule|list|fetch|export|import)\b",
+            user_lower,
+        )
+        if _app_task_verb:
+            try:
+                from server.composio_service import list_connections as _list_live_apps
+                _live = await _list_live_apps(str(msg['user_id']), connected_only=True, limit=50)
+                for _item in _live.get("items", []):
+                    if not (_item.get("connection") or {}).get("is_active"):
+                        continue
+                    _names = (_item.get("name"), _item.get("slug"))
+                    if any(_name and re.search(r"(?<!\w)" + re.escape(str(_name).lower().replace("_", " ")) + r"(?!\w)", user_lower)
+                           for _name in _names):
+                        needs_tools = True
+                        break
+            except Exception as _route_exc:
+                logger.warning("Live connected-app routing unavailable: %s", _route_exc)
 
     if needs_tools:
         await bot.send_typing(chat_id)
