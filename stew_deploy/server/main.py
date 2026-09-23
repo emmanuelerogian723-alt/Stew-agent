@@ -6860,20 +6860,31 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     # ══ /memstats — memory system status ════════════════════════════════════
     if user_text.strip() == "/memstats":
         try:
-            from server.memory_gateway import memory_status, letta_profile
-            _st = memory_status()
-            _prof = await letta_profile(f"tg_{msg['user_id']}")
+            from server.memory_gateway import memory_status, letta_profile, _mem0_search
+            _prof, _ = await asyncio.gather(
+                letta_profile(f"tg_{msg['user_id']}"),
+                _mem0_search(f"tg_{msg['user_id']}", "memory status", top_k=1),
+            )
+            _st = memory_status()  # status after real provider calls, not just key presence
             _n_lines = len([l for l in _prof.splitlines() if l.strip()]) if _prof else 0
-            _m0 = "🟢 active" if _st["mem0"]["active"] else ("🔴 limits hit" if _st["mem0"]["configured"] else "⚪ not set")
-            _lt = "🟢 active" if _st["letta"]["active"] else ("🔴 limits hit" if _st["letta"]["configured"] else "⚪ not set")
+            def _label(info):
+                if not info["configured"]:
+                    return "⚪ not set"
+                if info["reachable"] is True:
+                    return "🟢 API reachable"
+                if info["reachable"] is False:
+                    return "🔴 API unavailable"
+                return "🟡 configured, not verified"
+            _m0 = _label(_st["mem0"])
+            _lt = _label(_st["letta"])
             await bot.send_message(
                 chat_id,
                 f"🧠 Stew Memory System\n\n"
                 f"Mem0 semantic memory: {_m0}\n"
                 f"Letta durable memory: {_lt} ({_n_lines} stored memories)\n"
                 f"Local conversation memory: 🟢 always on\n\n"
-                "I remember your preferences, files, videos, activities, thoughts and conversations "
-                "across every chat — with automatic failover between memory providers.")
+                "Tool conversations use available memory providers. If a provider is unavailable, "
+                "I will not claim its memories were saved or loaded.")
         except Exception as _ms_err:
             logger.warning(f"/memstats error: {_ms_err}")
             await bot.send_message(chat_id, "Memory status unavailable right now.")

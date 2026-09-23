@@ -34,6 +34,8 @@ _MEM0_COOLDOWN = 3600  # seconds to skip Mem0 after a quota/auth failure
 # Provider health state (module-level; fine for a single-worker deploy)
 _mem0_disabled_until: float = 0.0
 _letta_disabled_until: float = 0.0
+_mem0_last_ok: Optional[bool] = None
+_letta_last_ok: Optional[bool] = None
 
 
 def _env(name: str) -> Optional[str]:
@@ -72,10 +74,12 @@ def memory_status() -> Dict[str, Any]:
         "mem0": {
             "configured": bool(_mem0_key()),
             "active": bool(_mem0_key()) and now >= _mem0_disabled_until,
+            "reachable": _mem0_last_ok,
         },
         "letta": {
             "configured": bool(_letta_key()),
             "active": bool(_letta_key()) and now >= _letta_disabled_until,
+            "reachable": _letta_last_ok,
         },
     }
 
@@ -84,7 +88,7 @@ def memory_status() -> Dict[str, Any]:
 
 async def _mem0_add(user_key: str, messages: List[Dict[str, str]],
                     mem_type: str, metadata: Dict[str, Any]) -> bool:
-    global _mem0_disabled_until
+    global _mem0_disabled_until, _mem0_last_ok
     key = _mem0_key()
     if not key or time.time() < _mem0_disabled_until:
         return False
@@ -101,10 +105,12 @@ async def _mem0_add(user_key: str, messages: List[Dict[str, str]],
                 json=payload,
             )
         if r.status_code in (401, 402, 403, 429):
+            _mem0_last_ok = False
             _mem0_disabled_until = time.time() + _MEM0_COOLDOWN
             logger.warning(f"Mem0 quota/auth issue ({r.status_code}) — falling back to Letta for 1h")
             return False
-        return r.status_code in (200, 201, 202)
+        _mem0_last_ok = r.status_code in (200, 201, 202)
+        return _mem0_last_ok
     except Exception as e:
         logger.warning(f"Mem0 add failed (transient): {e}")
         return False
@@ -115,7 +121,7 @@ async def _mem0_search(user_key: str, query: str, top_k: int = 8,
     """Search Mem0. mem_types (e.g. ["preference","fact"]) applies a metadata
     filter so retrieval stays precise as the memory store grows, instead of
     pulling back everything vaguely related."""
-    global _mem0_disabled_until
+    global _mem0_disabled_until, _mem0_last_ok
     key = _mem0_key()
     if not key or time.time() < _mem0_disabled_until:
         return []
@@ -131,9 +137,11 @@ async def _mem0_search(user_key: str, query: str, top_k: int = 8,
                       "top_k": max(1, min(top_k, 20))},
             )
         if r.status_code in (401, 402, 403, 429):
+            _mem0_last_ok = False
             _mem0_disabled_until = time.time() + _MEM0_COOLDOWN
             logger.warning(f"Mem0 search hit limits ({r.status_code}) — using Letta")
             return []
+        _mem0_last_ok = r.status_code == 200
         if r.status_code != 200:
             return []
         data = r.json()
@@ -150,7 +158,7 @@ def _block_label(user_key: str) -> str:
 
 
 async def _letta_request(method: str, path: str, json_body: Optional[dict] = None) -> Optional[httpx.Response]:
-    global _letta_disabled_until
+    global _letta_disabled_until, _letta_last_ok
     key = _letta_key()
     if not key or time.time() < _letta_disabled_until:
         return None
@@ -162,11 +170,14 @@ async def _letta_request(method: str, path: str, json_body: Optional[dict] = Non
                 json=json_body,
             )
         if r.status_code in (401, 403, 429):
+            _letta_last_ok = False
             _letta_disabled_until = time.time() + _MEM0_COOLDOWN
             logger.warning(f"Letta auth/quota issue ({r.status_code}) — Letta paused 1h")
             return None
+        _letta_last_ok = 200 <= r.status_code < 300
         return r
     except Exception as e:
+        _letta_last_ok = False
         logger.warning(f"Letta request failed: {e}")
         return None
 
