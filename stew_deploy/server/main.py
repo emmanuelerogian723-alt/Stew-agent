@@ -11200,7 +11200,7 @@ Requirements:
     if user_lower.startswith("/goal "):
         from server.automation_engine import create_goal
         try:
-            outcome = await create_goal(str(tg_user.telegram_id),str(chat_id),user_text.partition(" ")[2].strip())
+            outcome = await create_goal(str(user_id),str(chat_id),user_text.partition(" ")[2].strip())
             await bot.send_message(chat_id,outcome.get("question") or f"Goal {outcome.get('goal_id')}: {outcome.get('status')} ({outcome.get('progress')}%).\n{outcome.get('message') or ''}")
         except Exception as exc:
             logger.warning("Goal planning failed: %s",exc)
@@ -11208,17 +11208,17 @@ Requirements:
         return {"ok":True}
     if user_lower == "/goals":
         from server.automation_engine import list_goals
-        goals=await list_goals(str(tg_user.telegram_id),10)
+        goals=await list_goals(str(user_id),10)
         await bot.send_message(chat_id,"\n".join(f"{x['id']}: {x['status']} ({x['progress']}%) {x['objective'][:60]}" for x in goals) or "No goals yet. Use /goal followed by the outcome you want.")
         return {"ok":True}
     if user_lower.startswith("/goals resume "):
         from server.automation_engine import resume_goal
-        result=await resume_goal(str(tg_user.telegram_id),user_text.split()[-1])
+        result=await resume_goal(str(user_id),user_text.split()[-1])
         await bot.send_message(chat_id,f"Goal: {result.get('status')} ({result.get('progress',0)}%). {result.get('message','')}")
         return {"ok":True}
     if user_lower.startswith("/goals cancel "):
         from server.automation_engine import cancel_goal
-        ok=await cancel_goal(str(tg_user.telegram_id),user_text.split()[-1])
+        ok=await cancel_goal(str(user_id),user_text.split()[-1])
         await bot.send_message(chat_id,"Goal cancelled." if ok else "Goal not found or already running/completed.")
         return {"ok":True}
 
@@ -11324,7 +11324,7 @@ Requirements:
     if not user_lower.startswith("/") and any(x in user_lower for x in _action_terms) and any(x in user_lower for x in _app_terms) and (_timed or _cross_app):
         from server.automation_engine import create_goal
         try:
-            outcome=await create_goal(str(tg_user.telegram_id),str(chat_id),user_text)
+            outcome=await create_goal(str(user_id),str(chat_id),user_text)
             await bot.send_message(chat_id,outcome.get("question") or f"Goal {outcome.get('goal_id')}: {outcome.get('status')} ({outcome.get('progress')}%).\n{outcome.get('message') or ''}")
         except Exception as exc:
             logger.warning("Natural goal planning failed: %s",exc)
