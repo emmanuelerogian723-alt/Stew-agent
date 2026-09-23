@@ -1129,7 +1129,8 @@ async def composio_mini_connect(request: Request):
     except HTTPException:
         raise
     except Exception as _pw_exc:
-        logger.warning("Mini app paywall check skipped: %s", _pw_exc)
+        logger.warning("Mini app connection count unavailable: %s", _pw_exc)
+        raise HTTPException(503, "Cannot verify your app limit right now. Please try again shortly.") from _pw_exc
     try:
         callback_url = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/") + f"/apps-mini?connected={toolkit}"
         return await connect_app(str(tg_user["id"]), toolkit, callback_url=callback_url)

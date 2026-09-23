@@ -38,17 +38,30 @@ def app_limit_for(plan: str) -> int:
 
 
 async def count_connected_apps(user_id: str) -> int:
-    """Count this user's currently-connected Composio apps."""
-    try:
-        from server.composio_service import list_connections
-        res = await list_connections(user_id, connected_only=True, limit=50)
-        items = res.get("items", []) if isinstance(res, dict) else []
-        slugs = {str(i.get("slug", "")).lower() for i in items if i.get("slug")}
-        # YouTube via direct Google OAuth isn't in the Composio list — count it too
-        return len(slugs)
-    except Exception as e:
-        logger.warning(f"count_connected_apps failed: {e}")
-        return 0
+    """Count every live Composio toolkit, not just the first catalog page.
+
+    Fail closed: a provider error cannot be interpreted as zero connections.
+    """
+    from server.composio_service import list_connections
+    slugs = set()
+    cursor = None
+    seen_cursors = set()
+    for _ in range(20):
+        res = await list_connections(user_id, connected_only=True, limit=50, next_cursor=cursor)
+        if not isinstance(res, dict) or not res.get("success", False):
+            raise RuntimeError("Connected-app count is unavailable")
+        for item in res.get("items", []):
+            if item.get("slug") and (item.get("is_no_auth") or (item.get("connection") or {}).get("is_active")):
+                slugs.add(str(item["slug"]).lower())
+        cursor = res.get("next_cursor")
+        if not cursor:
+            return len(slugs)
+        if cursor in seen_cursors:
+            raise RuntimeError("Connected-app catalog repeated a page")
+        seen_cursors.add(cursor)
+    if cursor:
+        raise RuntimeError("Connected-app count exceeded pagination safety limit")
+    return len(slugs)
 
 
 async def get_connected_apps(user_id: str) -> list:

@@ -104,7 +104,8 @@ Rules:
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, delete data, send messages, publish content, create purchases, or perform financial actions unless explicitly requested. For ambiguous or destructive actions, ask one concise confirmation question instead of executing.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
-18i. COMPLETION PIPELINE: composio_search_tools only DISCOVERS an action — it does NOT perform it. The user's request is only satisfied after composio_execute returns a successful TOOL_RESULT. After any composio_search_tools result, your NEXT message MUST be a composio_execute TOOL_CALL with the exact discovered slug and its required arguments (or composio_connect if the connection status shows not connected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a composio_execute TOOL_RESULT confirms it actually ran.
+18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it.
+18j. SOCIAL MANAGER: A broad request to manage social accounts is not authorization to publish. Inspect connected account(s) and recent content/analytics first. Ask for missing brand voice, audience, goal, content topic, media assets, target accounts, schedule and timezone, rather than inventing them. Prepare platform-specific drafts for review. Check each provider's media format and required arguments from its live schema. Request separate approval for each publish/edit and report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools. Posting remains pending until the user approves it.
 18h. Read-only app actions may execute immediately. Any send, reply, post, publish, create, update, upload, delete, payment, booking, or similar external change is intercepted by STEW's approval gateway. Clearly show the prepared action and ask the user to reply APPROVE or CANCEL; never claim it ran before approval.
@@ -671,10 +672,14 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                     from server.composio_service import list_app_actions, execute_action
                     acts = await list_app_actions(toolkit)
                     act = next((a for a in acts.get("items", []) if a.get("slug") == primary), None)
-                    if act and act.get("permission") == "read_only":
+                    supplied_args = args.get("arguments") or {}
+                    required = act.get("required_fields") if act else []
+                    if act and act.get("permission") == "read_only" and isinstance(supplied_args, dict) and all(
+                        field in supplied_args and supplied_args[field] not in (None, "") for field in required
+                    ):
                         exec_result = await execute_action(
                             tg_user_id or chat_id, primary,
-                            args.get("arguments") or {},
+                            supplied_args,
                         )
                         data["auto_executed"] = {
                             "tool_slug": primary,
@@ -729,14 +734,15 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                 async with AsyncSessionLocal() as _pdb:
                     _pu = (await _pdb.execute(_psel(_PUser).where(
                         _PUser.email == f"tg_{_pw_tgnum}@telegram.stew"))).scalar_one_or_none()
-                    if _pu:
-                        _pw_allowed, _pw_cur, _pw_limit, _pw_msg = await check_connect_allowed(
-                            _pu.plan, _pw_tgnum)
-                        if not _pw_allowed:
-                            return {"tool": tool, "success": False,
-                                    "error": _pw_msg, "output": _pw_msg}
+                    _pw_allowed, _pw_cur, _pw_limit, _pw_msg = await check_connect_allowed(
+                        _pu.plan if _pu else "free", _pw_tgnum)
+                    if not _pw_allowed:
+                        return {"tool": tool, "success": False,
+                                "error": _pw_msg, "output": _pw_msg}
         except Exception as _pw_exc:
-            logger.warning("Connect paywall check skipped: %s", _pw_exc)
+            logger.warning("Connect app limit check unavailable: %s", _pw_exc)
+            return {"tool": tool, "success": False,
+                    "error": "Cannot verify your app limit right now. Please try again shortly."}
 
         try:
             data = await connect_app(tg_user_id or chat_id, toolkit)
