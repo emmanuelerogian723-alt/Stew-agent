@@ -463,6 +463,19 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
             permission_label = "Runs automatically · read-only"
         schema = data.get("input_parameters") or {}
         required = schema.get("required", []) if isinstance(schema, dict) else []
+        # Parameter names and types are part of the public provider schema. Keep
+        # the full schema server-side; expose a bounded, UI-safe form spec only.
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        parameters = []
+        for key, field in list(properties.items())[:40]:
+            if not isinstance(field, dict):
+                field = {}
+            parameters.append({
+                "name": str(key)[:100], "type": field.get("type", "object"),
+                "title": str(field.get("title") or key)[:100],
+                "description": str(field.get("description") or "")[:220],
+                "required": key in required,
+            })
         items.append({
             "slug": slug,
             "name": data.get("name") or slug.replace("_", " ").title(),
@@ -471,6 +484,8 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
             "permission_label": permission_label,
             "tags": tags,
             "required_fields": required,
+            "parameters": parameters,
+            "scope_requirements": data.get("scope_requirements") or {},
             "deprecated": bool(data.get("is_deprecated")),
             "version": data.get("version"),
         })
@@ -481,5 +496,6 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
         "total": len(items),
         "read_only": sum(x["permission"] == "read_only" for x in items),
         "approval_required": sum(x["permission"] != "read_only" for x in items),
+        "write_actions": sum(x["permission"] != "read_only" for x in items),
         "items": items,
     }

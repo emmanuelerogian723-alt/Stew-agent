@@ -1147,7 +1147,7 @@ async def composio_app_dashboard(request: Request):
         raise HTTPException(400, "Choose an app")
     from server.composio_service import list_connections, list_app_actions
     from server.agent_activity import activity_dashboard
-    catalog = await list_connections(str(tg_user["id"]), search=toolkit, limit=20)
+    catalog = await list_connections(str(tg_user["id"]), toolkits=[toolkit], limit=20)
     exact = next((x for x in catalog.get("items", []) if str(x.get("slug", "")).lower() == toolkit), None)
     if not exact:
         raise HTTPException(404, "App not found in the current Composio catalog")
@@ -1165,6 +1165,43 @@ async def composio_activities(request: Request):
     return await activity_dashboard(
         str(tg_user["id"]), toolkit=payload.get("toolkit"), limit=int(payload.get("limit", 50) or 50)
     )
+
+
+@app.post("/api/composio/pending", include_in_schema=False)
+async def composio_pending_api(request: Request):
+    payload, user = await _verified_mini_app_user(request)
+    from server.agent_activity import pending_dashboard
+    toolkit = payload.get("toolkit")
+    if toolkit and not re.fullmatch(r"[a-z0-9_-]{1,64}", str(toolkit)):
+        raise HTTPException(400, "Invalid app")
+    return {"items": await pending_dashboard(str(user["id"]), toolkit=toolkit)}
+
+
+@app.post("/api/composio/prepare", include_in_schema=False)
+async def composio_prepare_api(request: Request):
+    """Prepare a connected app write; never execute it without approval."""
+    payload, user = await _verified_mini_app_user(request)
+    slug = str(payload.get("tool_slug", "")).upper()
+    arguments = payload.get("arguments")
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{3,130}", slug) or not isinstance(arguments, dict):
+        raise HTTPException(400, "Choose an action and supply its parameters")
+    if len(json.dumps(arguments, default=str)) > 16000:
+        raise HTTPException(413, "Action parameters are too large")
+    from server.composio_service import execute_action, list_app_actions
+    from server.agent_activity import is_write_action
+    actions = await list_app_actions(slug.split("_", 1)[0].lower())
+    action = next((x for x in actions.get("items", []) if x["slug"] == slug and not x["deprecated"]), None)
+    if not action:
+        raise HTTPException(404, "Action is not available")
+    if action["permission"] == "read_only" and not is_write_action(slug):
+        raise HTTPException(400, "This is a read action. Ask STEW in chat to run it.")
+    missing = [x for x in action["required_fields"] if x not in arguments or arguments[x] in (None, "")]
+    if missing:
+        raise HTTPException(400, "Missing required fields: " + ", ".join(missing[:10]))
+    result = await execute_action(str(user["id"]), slug, arguments)
+    if not result.get("approval_required"):
+        raise HTTPException(400, result.get("error") or "Could not prepare this action")
+    return result
 
 
 @app.post("/api/composio/approval", include_in_schema=False)

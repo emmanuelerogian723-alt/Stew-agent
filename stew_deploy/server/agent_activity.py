@@ -62,6 +62,23 @@ async def queue_approval(user_id: str, tool_slug: str, arguments: Dict[str, Any]
         return row
 
 
+async def pending_dashboard(user_id: str, toolkit: Optional[str] = None) -> list[Dict[str, Any]]:
+    """Only unexpired, user-owned approval requests; never expose raw arguments."""
+    async with AsyncSessionLocal() as db:
+        q = select(PendingAgentAction).where(
+            PendingAgentAction.telegram_user_id == str(user_id),
+            PendingAgentAction.status == "pending",
+            PendingAgentAction.expires_at > datetime.utcnow(),
+        )
+        if toolkit:
+            q = q.where(PendingAgentAction.toolkit == toolkit.lower())
+        rows = (await db.execute(q.order_by(PendingAgentAction.created_at.desc()).limit(30))).scalars().all()
+        return [{"id": r.id, "toolkit": r.toolkit, "tool_slug": r.tool_slug,
+                 "summary": r.summary, "expires_at": r.expires_at.isoformat() + "Z",
+                 "created_at": r.created_at.isoformat() + "Z" if r.created_at else None}
+                for r in rows]
+
+
 async def latest_pending(user_id: str) -> Optional[PendingAgentAction]:
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(PendingAgentAction).where(
