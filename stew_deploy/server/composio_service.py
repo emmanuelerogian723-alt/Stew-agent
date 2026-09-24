@@ -356,6 +356,15 @@ async def execute_action(
         approval_kind = "destructive"
     elif action["permission"] == "approval_publish" or is_public_action(slug, arguments):
         approval_kind = "publish"
+    # Per-user "Always allow" trust toggle (Claude-style permission model):
+    # a user who explicitly promoted this tool past the pause isn't re-asked.
+    if approval_kind is not None:
+        try:
+            from server.mcp_service import get_always_allow
+            if await get_always_allow(stable_user_id, f"composio:{slug}"):
+                approval_kind = None
+        except Exception:
+            pass  # trust-store hiccup must never block the normal approval flow
     requires_approval = approval_kind is not None
     connection = await list_connections(stable_user_id, toolkits=[toolkit])
     if not any(item.get("slug") == toolkit and (item.get("connection") or {}).get("is_active") for item in connection.get("items", [])):
@@ -442,6 +451,13 @@ async def approve_pending_action(user_id: str | int, action_id: Optional[str] = 
     if scheduled:
         result = {"success": True, "scheduled_only": True, "approved_arguments": pending.arguments or {},
                   "tool_slug": pending.tool_slug, "message": "Approved for the scheduled time; not executed yet."}
+    elif pending.toolkit == "mcp":
+        # User-connected MCP server action — same approval queue, different executor.
+        try:
+            from server.mcp_service import resume_approved_mcp
+            result = await resume_approved_mcp(str(user_id), pending)
+        except Exception as exc:
+            result = {"success": False, "error": f"Outcome is uncertain: {exc}. Check the server before trying again."}
     else:
         try:
             result = await execute_action(

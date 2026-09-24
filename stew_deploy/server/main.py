@@ -1244,6 +1244,115 @@ async def composio_prepare_api(request: Request):
     return result
 
 
+@app.get("/api/mcp/servers", include_in_schema=False)
+async def mcp_list_servers_api(request: Request):
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import list_servers
+    return {"servers": await list_servers(str(user["id"]))}
+
+
+@app.post("/api/mcp/connect", include_in_schema=False)
+async def mcp_connect_api(request: Request):
+    """Add a remote MCP server (any platform with an MCP endpoint — the open
+    ecosystem Claude supports and the fixed catalog doesn't). Tries the
+    connection immediately: initialize + tools/list, caches the tools."""
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import add_server
+    name = str(payload.get("name", "")).strip()
+    url = str(payload.get("url", "")).strip()
+    auth_header_name = str(payload.get("auth_header_name", "") or "").strip() or "Authorization"
+    auth_token = str(payload.get("auth_token", "") or "").strip() or None
+    try:
+        result = await add_server(str(user["id"]), name, url, auth_header_name, auth_token)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, f"Could not connect: {exc}")
+    if not result.get("success"):
+        # saved but errored — surface the server state so the user can fix creds
+        from server.mcp_service import list_servers as _ls
+        return {"saved": True, "success": False, "error": result.get("error"),
+                "servers": await _ls(str(user["id"]))}
+    from server.mcp_service import list_servers as _ls
+    return {"saved": True, "success": True, "tool_count": result.get("tool_count"),
+            "servers": await _ls(str(user["id"]))}
+
+
+@app.post("/api/mcp/test", include_in_schema=False)
+async def mcp_test_api(request: Request):
+    """Dry-run a URL + token without saving (Mini App 'Test' button)."""
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import test_server
+    try:
+        return await test_server(str(user["id"]), str(payload.get("url", "")),
+                                 str(payload.get("auth_header_name", "") or "").strip() or None,
+                                 str(payload.get("auth_token", "") or "").strip() or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/mcp/tools", include_in_schema=False)
+async def mcp_tools_api(request: Request):
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import list_server_tools
+    server_id = str(payload.get("server_id", ""))
+    if not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", server_id):
+        raise HTTPException(400, "Invalid server")
+    return await list_server_tools(str(user["id"]), server_id,
+                                   refresh=bool(payload.get("refresh", False)))
+
+
+@app.post("/api/mcp/delete", include_in_schema=False)
+async def mcp_delete_api(request: Request):
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import remove_server, list_servers
+    server_id = str(payload.get("server_id", ""))
+    if not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", server_id):
+        raise HTTPException(400, "Invalid server")
+    removed = await remove_server(str(user["id"]), server_id)
+    if not removed:
+        raise HTTPException(404, "MCP server not found")
+    return {"removed": True, "servers": await list_servers(str(user["id"]))}
+
+
+@app.post("/api/mcp/prepare", include_in_schema=False)
+async def mcp_prepare_api(request: Request):
+    """Run an MCP tool from the Mini App. Read/private-write executes
+    immediately; destructive/public lands in the shared approval queue (same
+    one the chat Approve/Cancel buttons drain)."""
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import execute_mcp_tool
+    server_id = str(payload.get("server_id", ""))
+    tool_name = str(payload.get("tool_name", ""))
+    arguments = payload.get("arguments")
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,120}", tool_name) or not isinstance(arguments, dict):
+        raise HTTPException(400, "Choose a tool and supply its parameters")
+    if len(json.dumps(arguments, default=str)) > 16000:
+        raise HTTPException(413, "Parameters are too large")
+    result = await execute_mcp_tool(str(user["id"]), server_id, tool_name, arguments)
+    if not result.get("success") and not result.get("approval_required") and not result.get("paywall"):
+        raise HTTPException(400, result.get("error") or "Could not run this tool")
+    return result
+
+
+@app.post("/api/permissions", include_in_schema=False)
+async def permissions_api(request: Request):
+    """Per-user 'Always allow' trust toggles — the Claude permission model.
+    GET-style: {"tool_key": ...} returns current state; setting:
+    {"tool_key": ..., "allow_always": true/false} promotes/demotes a tool
+    past the destructive/public approval pause."""
+    payload, user = await _verified_mini_app_user(request)
+    from server.mcp_service import get_always_allow, set_always_allow, list_trusted_tools
+    if payload.get("list"):
+        return {"items": await list_trusted_tools(str(user["id"]))}
+    tool_key = str(payload.get("tool_key", "")).strip()
+    if not tool_key or len(tool_key) > 255:
+        raise HTTPException(400, "A tool_key is required")
+    if "allow_always" in payload:
+        await set_always_allow(str(user["id"]), tool_key, bool(payload.get("allow_always")))
+    return {"tool_key": tool_key, "allow_always": await get_always_allow(str(user["id"]), tool_key)}
+
+
 @app.post("/api/composio/approval", include_in_schema=False)
 async def composio_approval(request: Request):
     payload, tg_user = await _verified_mini_app_user(request)

@@ -463,3 +463,39 @@ class ContactEmail(Base):
     brevo_synced: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class McpServer(Base):
+    """A user-connected remote MCP server (Model Context Protocol) — lets
+    Stew reach ANY platform beyond the fixed Composio catalog, the same
+    open-ecosystem pattern Claude supports with remote MCP connectors."""
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    auth_header_name: Mapped[str] = mapped_column(String(64), default="Authorization")
+    auth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # sent as "<header>: Bearer <token>"
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending/active/error
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tools: Mapped[list] = mapped_column(JSON, default=list)  # cached tools/list result
+    tool_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ToolPermission(Base):
+    """Per-user 'Always allow' toggle for a specific risky tool — the Claude
+    permission model: users can promote a tool they trust past the approval
+    pause, or demote it back. tool_key examples: composio:TWITTER_CREATE_TWEET
+    or mcp:<server_id>:<tool_name>."""
+    __tablename__ = "tool_permissions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tool_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    allow_always: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
