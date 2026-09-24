@@ -1255,6 +1255,21 @@ async def composio_approval(request: Request):
     raise HTTPException(400, "Decision must be approve or cancel")
 
 
+@app.post("/api/debug/approval-roundtrip", include_in_schema=False)
+async def debug_approval_roundtrip_api(request: Request):
+    """Admin diagnostic: queue a real write-action approval then immediately
+    try to approve it, in one request, to isolate DB/session issues from
+    any Telegram message-ordering effects."""
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.composio_service import execute_action, approve_pending_action
+    uid = str(tg_user["id"])
+    slug = str(payload.get("tool_slug") or "GMAIL_CREATE_EMAIL_DRAFT")
+    arguments = payload.get("arguments") or {}
+    step1 = await execute_action(uid, slug, arguments, approved=False)
+    step2 = await approve_pending_action(uid, step1.get("approval_id"))
+    return {"success": True, "queue_result": step1, "approve_result": step2}
+
+
 @app.post("/api/debug/agent-run", include_in_schema=False)
 async def debug_agent_run_api(request: Request):
     """Admin diagnostic: run the SAME tool-agent loop the Telegram chat uses
