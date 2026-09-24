@@ -1266,8 +1266,9 @@ async def debug_approval_roundtrip_api(request: Request):
     slug = str(payload.get("tool_slug") or "GMAIL_CREATE_EMAIL_DRAFT")
     arguments = payload.get("arguments") or {}
     step1 = await execute_action(uid, slug, arguments, approved=False)
-    step2 = await approve_pending_action(uid, step1.get("approval_id"))
-    return {"success": True, "queue_result": step1, "approve_result": step2}
+    use_bare = bool(payload.get("bare_approve"))
+    step2 = await approve_pending_action(uid, None if use_bare else step1.get("approval_id"))
+    return {"success": True, "queue_result": step1, "approve_result": step2, "used_bare": use_bare}
 
 
 @app.post("/api/debug/agent-run", include_in_schema=False)
