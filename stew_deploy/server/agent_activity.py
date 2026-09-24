@@ -24,6 +24,45 @@ _READ_WORDS = {
     "VIEW", "DESCRIBE", "RETRIEVE", "ANALYZE", "ANALYTICS", "STATISTICS", "STATUS",
 }
 
+# A write that lands on something OTHER people can see (a public post, a
+# published video, a broadcast) is a different risk tier than a private write
+# (send one email, update your own calendar). Claude/ChatGPT-style connectors
+# gate exactly this: irreversible-and-visible actions get a real pause.
+_PUBLIC_WORDS = {
+    "PUBLISH", "TWEET", "POST", "BROADCAST", "ANNOUNCE", "RETWEET", "SHARE",
+}
+_PRIVACY_WORDS = {"PRIVACY", "VISIBILITY"}  # e.g. UPDATE_VIDEO with privacyStatus -> public
+
+
+# Toolkits whose whole point is public, follower-visible content, so an
+# upload there is a publish even though "UPLOAD" isn't a public verb by itself.
+_PUBLIC_TOOLKIT_PREFIXES = (
+    "youtube", "twitter", "x", "instagram", "tiktok", "facebook",
+    "linkedin", "pinterest", "threads", "reddit", "medium", "substack",
+)
+
+
+def is_public_action(tool_slug: str, arguments: Optional[Dict[str, Any]] = None) -> bool:
+    """True if this write is likely to become visible to people other than
+    the user themselves (posting, publishing, broadcasting)."""
+    words = set(re.findall(r"[A-Z0-9]+", (tool_slug or "").upper()))
+    if words & _PUBLIC_WORDS:
+        return True
+    slug_l = (tool_slug or "").lower()
+    # An upload into a public-facing platform publishes content even though
+    # "upload" by itself (e.g. to Google Drive) is a private write.
+    if "UPLOAD" in words and slug_l.startswith(_PUBLIC_TOOLKIT_PREFIXES):
+        return True
+    # "update video" etc only goes public if the args actually flip something
+    # to a public-facing value — otherwise it is just a private metadata edit.
+    if isinstance(arguments, dict) and arguments:
+        blob = json.dumps(arguments, default=str).lower()
+        keys = " ".join(str(k) for k in arguments.keys()).lower()
+        if "public" in blob and ("privacy" in keys or "visibility" in keys
+                                 or "privacy" in blob or "visibility" in blob):
+            return True
+    return False
+
 
 def toolkit_from_slug(tool_slug: str) -> str:
     return (tool_slug or "unknown").split("_", 1)[0].lower()

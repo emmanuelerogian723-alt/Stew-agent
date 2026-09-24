@@ -340,13 +340,23 @@ async def execute_action(
             break
     if not action:
         return {"success": False, "error": "Action is not available in the current Composio catalog."}
-    # Autonomous by default: an explicit chat request for a regular write
-    # (send email, post, upload, create, update) IS the user's approval — it
-    # runs immediately, no separate confirmation round-trip. The one thing
-    # that still pauses is a genuinely irreversible action (Composio's
-    # "destructiveHint" tier: permanently delete/remove) — one bad slot-fill
-    # by the model there can't be undone, so that alone gets a quick confirm.
-    requires_approval = action["permission"] == "approval_destructive"
+    # Autonomous by default: an explicit chat request for a regular PRIVATE
+    # write (send an email, update your own calendar, create a doc) IS the
+    # user's approval — it runs immediately, no separate confirmation
+    # round-trip. Two risk tiers still pause for a real chat approval: a
+    # genuinely irreversible action (Composio's "destructiveHint": permanently
+    # delete/remove), and anything that becomes visible to OTHER people
+    # (post, publish, broadcast) — one bad slot-fill there can't be quietly
+    # undone. Both send an actual tappable Approve/Cancel button in the chat
+    # (see telegram_bot.send_approval_prompt), the same pattern Claude/ChatGPT
+    # connectors use for a sensitive tool call — not a "reply APPROVE" text.
+    from server.agent_activity import is_public_action
+    approval_kind = None
+    if action["permission"] == "approval_destructive":
+        approval_kind = "destructive"
+    elif action["permission"] == "approval_publish" or is_public_action(slug, arguments):
+        approval_kind = "publish"
+    requires_approval = approval_kind is not None
     connection = await list_connections(stable_user_id, toolkits=[toolkit])
     if not any(item.get("slug") == toolkit and (item.get("connection") or {}).get("is_active") for item in connection.get("items", [])):
         return {"success": False, "error": f"{toolkit} is not connected for this user. Connect it first."}
@@ -356,13 +366,18 @@ async def execute_action(
             await record_activity(stable_user_id, slug, "awaiting_approval", arguments, approval_required=True)
         except Exception as audit_exc:
             logger.warning("Approval audit write failed: %s", audit_exc)
+        wording = {
+            "destructive": "This permanently deletes/removes something and can't be undone.",
+            "publish": "This publishes something publicly — other people will see it.",
+        }[approval_kind]
         return {
             "success": False,
             "approval_required": True,
             "approval_id": pending.id,
+            "kind": approval_kind,
             "tool_slug": slug,
             "summary": pending.summary,
-            "message": "This permanently deletes/removes something and can't be undone, so I paused it. Reply APPROVE to go ahead, or CANCEL to discard it.",
+            "message": f"{wording} I've sent an Approve/Cancel button in the chat — tap it and I'll continue right away.",
         }
 
     session = await get_session(user_id)
@@ -588,7 +603,7 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
         )
 
     raw = await asyncio.to_thread(_list)
-    from server.agent_activity import is_write_action
+    from server.agent_activity import is_write_action, is_public_action
     items = []
     for tool in raw:
         data = _plain(tool)
@@ -599,6 +614,9 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
         if "destructiveHint" in tags:
             permission = "approval_destructive"
             permission_label = "Approval required · destructive"
+        elif is_public_action(slug):
+            permission = "approval_publish"
+            permission_label = "Approval required · goes public"
         elif any(x in tags for x in ("createHint", "updateHint")) or is_write_action(slug):
             permission = "approval_required"
             permission_label = "Approval required"

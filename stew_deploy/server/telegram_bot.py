@@ -155,17 +155,45 @@ class TelegramBot:
             resp = await client.get(f"{self.base}/getMe")
             return resp.json()
 
-    async def edit_message(self, chat_id: int, message_id: int, text: str) -> dict:
-        """Edit a previously sent message (for live status motion)."""
+    async def edit_message(self, chat_id: int, message_id: int, text: str, clear_keyboard: bool = False) -> dict:
+        """Edit a previously sent message (for live status motion). Pass
+        clear_keyboard=True to also strip any inline buttons attached to it
+        (used after an Approve/Cancel tap so it can't be pressed twice)."""
+        import json as _json
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
+        if clear_keyboard:
+            payload["reply_markup"] = _json.dumps({"inline_keyboard": []})
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    f"{self.base}/editMessageText",
-                    json={"chat_id": chat_id, "message_id": message_id, "text": text},
-                )
+                resp = await client.post(f"{self.base}/editMessageText", json=payload)
                 return resp.json()
         except Exception:
             return {}
+
+    async def send_approval_prompt(self, chat_id: int, action_id: str, tool_slug: str,
+                                    summary: str, kind: str = "destructive") -> dict:
+        """Ask for human-in-the-loop approval right in the chat — an actual
+        tappable Approve/Cancel button, not a 'reply APPROVE' text convention.
+        Mirrors how Claude/ChatGPT connectors gate a sensitive tool call: the
+        agent pauses, shows exactly what it wants to do, and resumes the
+        instant the user taps Approve. Returns the sent message so the caller
+        can store its message_id and clear the buttons after a decision."""
+        headline = {
+            "destructive": "⚠️ *This permanently deletes/removes something — can't be undone.*",
+            "publish": "📢 *This publishes something publicly — others will see it.*",
+        }.get(kind, "⚠️ *This needs your approval before it runs.*")
+        action_name = (tool_slug or "").replace("_", " ").title()
+        text = (
+            f"{headline}\n\n"
+            f"*Action:* {action_name}\n"
+            f"*Details:* {(summary or '')[:600]}\n\n"
+            "Tap a button below — Stew will continue automatically once you decide."
+        )
+        keyboard = [[
+            {"text": "✅ Approve" + (" & Publish" if kind == "publish" else ""), "callback_data": f"apr:{action_id}"},
+            {"text": "❌ Cancel", "callback_data": f"den:{action_id}"},
+        ]]
+        return await self.send_inline_keyboard(chat_id, text, keyboard)
 
     async def set_message_reaction(self, chat_id: int, message_id: int,
                                    emoji: str = "👍") -> dict:

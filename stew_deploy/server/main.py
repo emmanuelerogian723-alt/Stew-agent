@@ -6748,6 +6748,37 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await cb_client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
                 json={"callback_query_id": callback_id})
 
+        # ── Chat-native human-in-the-loop: Approve/Cancel taps on a
+        # destructive-delete or publish-publicly action. This is the same
+        # atomic claim-then-execute path the Mini App's approve button uses
+        # (server/composio_service.py), so a second tap — from either
+        # surface — can never replay an already-completed send/post.
+        if callback_data.startswith("apr:") or callback_data.startswith("den:"):
+            action_id = callback_data.split(":", 1)[1]
+            approver_id = str(msg.get("user_id") or (tg_user.id if tg_user else chat_id))
+            from server.composio_service import approve_pending_action, cancel_pending_action
+            if callback_data.startswith("apr:"):
+                await bot.edit_message(chat_id, msg.get("message_id"), "⏳ Approved — running now…", clear_keyboard=True)
+                try:
+                    result = await approve_pending_action(approver_id, action_id)
+                except Exception as approve_exc:
+                    logger.warning("Chat approval execution failed: %s", approve_exc)
+                    result = {"success": False, "error": f"Outcome is uncertain: {approve_exc}. Check the provider before trying again."}
+                if result.get("success"):
+                    finish_text = "✅ Approved and done — " + (result.get("message") or "the action completed.")
+                elif result.get("scheduled_only"):
+                    finish_text = "✅ Approved — queued for its scheduled time, not published yet."
+                else:
+                    finish_text = "⚠️ " + (result.get("error") or "Could not complete the action. Nothing was published.")
+                await bot.send_message(chat_id, finish_text)
+            else:
+                await bot.edit_message(chat_id, msg.get("message_id"), "❌ Cancelled — nothing was run or published.", clear_keyboard=True)
+                try:
+                    await cancel_pending_action(approver_id, action_id)
+                except Exception as cancel_exc:
+                    logger.warning("Chat cancellation failed: %s", cancel_exc)
+            return {"ok": True}
+
         callback_map = {
             "menu_students": "students",
             "menu_lecturers": "lecturers",

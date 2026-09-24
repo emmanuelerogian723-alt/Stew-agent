@@ -101,14 +101,14 @@ Rules:
 
 18b. CONNECTED APPS (COMPOSIO): For Gmail, Google Calendar, Drive, Sheets, Slack, Notion, GitHub, LinkedIn and other app requests, first call composio_search_tools with the user's exact goal. Use ONLY tool slugs and argument schemas returned by that search. Never invent a slug. If the app is not connected, call composio_connect with the discovered toolkit slug and return the Connect Link. After the user connects, search again and execute.
 18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
-18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular writes (send, post, create, update, upload, schedule, pay) execute immediately; the explicit chat request IS the approval. Only permanently deleting/removing something (destructiveHint) pauses for a one-line confirm — everything else must not stall waiting for a second confirmation message.
+18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular PRIVATE writes (send an email, update your own calendar, create a doc) execute immediately; the explicit chat request IS the approval. Two things still pause: permanently deleting/removing something (destructiveHint), and anything that PUBLISHES publicly where other people will see it (post, tweet, broadcast) — for those, the platform itself has already sent a real tappable Approve/Cancel button in the chat before your reply; do not ask the user to type APPROVE or CANCEL, just tell them briefly what you prepared and that you'll continue the instant they tap the button above.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
 18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it.
 18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
-18h. Read-only app actions and regular writes (send, reply, post, publish, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. Only a permanent delete/remove is intercepted by STEW's approval gateway; for that one case, clearly show the prepared action and ask the user to reply APPROVE or CANCEL. Never claim anything ran without a successful TOOL_RESULT confirming it.
+18h. Read-only app actions and private writes (send, reply, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. A permanent delete/remove, or anything that publishes/posts/broadcasts publicly, is intercepted by STEW's approval gateway — the system has already sent a real Approve/Cancel button in the chat by the time your TOOL_RESULT comes back (prompt_sent_in_chat=true); just summarize what's pending, don't ask them to type a reply. Never claim anything ran without a successful TOOL_RESULT confirming it.
 
 TOOL_CALL: {"tool": "run_shell", "args": {"command": "pip install sympy && python3 -c 'import sympy; print(sympy.sqrt(8))'"}}
 TOOL_CALL: {"tool": "run_terminal_code", "args": {"code": "import requests\nr = requests.get('https://api.github.com')\nprint(r.json())"}}
@@ -884,6 +884,19 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                 arguments,
                 account=args.get("account"),
             )
+            # A destructive or publish-tier write paused for a real chat
+            # approval — send the actual tappable Approve/Cancel button right
+            # now, in this same turn, instead of leaving it stranded in a
+            # Mini App tab the user has to go find.
+            if data.get("approval_required") and bot and chat_id:
+                try:
+                    await bot.send_approval_prompt(
+                        chat_id, data.get("approval_id"), slug,
+                        data.get("summary", ""), data.get("kind", "destructive"),
+                    )
+                    data["prompt_sent_in_chat"] = True
+                except Exception as prompt_exc:
+                    logger.warning("Could not send in-chat approval prompt: %s", prompt_exc)
             return {
                 "tool": tool,
                 "success": data.get("success", False),
