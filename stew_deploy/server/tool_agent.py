@@ -672,8 +672,21 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                     from server.composio_service import list_app_actions, execute_action
                     acts = await list_app_actions(toolkit)
                     act = next((a for a in acts.get("items", []) if a.get("slug") == primary), None)
-                    supplied_args = args.get("arguments") or {}
+                    supplied_args = dict(args.get("arguments") or {})
                     required = act.get("required_fields") if act else []
+                    # Owner-scoped read actions (e.g. "my channel", "my profile")
+                    # commonly expose an "at least one of id/handle/mine" schema
+                    # where none of those is in `required`, so this call used to
+                    # fire with {} and the provider rejected it for missing a
+                    # filter. If no identifying field was supplied, default the
+                    # boolean self-reference param (mine/self/me) to true instead
+                    # of executing a call the provider is guaranteed to reject.
+                    if act and isinstance(supplied_args, dict) and not supplied_args:
+                        param_names = {p.get("name") for p in (act.get("parameters") or [])}
+                        self_ref = next((n for n in ("mine", "self", "me", "own") if n in param_names), None)
+                        id_like = any(n in param_names for n in ("id", "channel_id", "user_id")) and not self_ref
+                        if self_ref and not id_like:
+                            supplied_args[self_ref] = True
                     if act and act.get("permission") == "read_only" and isinstance(supplied_args, dict) and all(
                         field in supplied_args and supplied_args[field] not in (None, "") for field in required
                     ):
@@ -688,8 +701,9 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                             "data": exec_result.get("data"),
                             "error": exec_result.get("error"),
                             "log_id": exec_result.get("log_id"),
+                            "attempted_arguments": supplied_args,
                         }
-                        logger.info(f"Auto-executed read-only action {primary} for query {query!r}")
+                        logger.info(f"Auto-executed read-only action {primary} for query {query!r} args={supplied_args}")
         except Exception as chain_exc:
             logger.warning("Auto read-execution skipped: %s", chain_exc)
         if data.get("auto_executed"):
@@ -871,8 +885,22 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
     failures = [x['result'].get('data', {}) for x in history
                 if x.get('call', {}).get('tool') == 'composio_execute'
                 and x.get('result').get('success') is False]
+    # A read-only action can also be attempted (and fail) INSIDE a
+    # composio_search_tools call via its auto-execute shortcut. That failure
+    # used to be invisible here (this only looked at 'composio_execute'
+    # calls), so a real provider rejection was mislabeled as "found the
+    # action but it hasn't run yet" below — a misleading dead end. Treat any
+    # auto_executed attempt with success=False as a genuine failure too.
+    auto_failed = [
+        (x.get('result', {}).get('data', {}) or {}).get('auto_executed', {})
+        for x in history if x.get('call', {}).get('tool') == 'composio_search_tools'
+        and (x.get('result', {}).get('data', {}) or {}).get('auto_executed', {})
+        and (x.get('result', {}).get('data', {}) or {}).get('auto_executed', {}).get('success') is False
+    ]
     if failures:
         return 'Connected-app action was not completed: '+str(failures[-1].get('error') or 'Provider unavailable')[:350]
+    if auto_failed:
+        return 'Connected-app action was not completed: '+str(auto_failed[-1].get('error') or 'Provider unavailable')[:350]
     tools_run = {x.get('call', {}).get('tool') for x in history}
     auto_executed_ok = any(
         (x.get('result', {}).get('data', {}) or {}).get('auto_executed', {}).get('success')
