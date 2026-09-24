@@ -11603,6 +11603,11 @@ Requirements:
 
     if needs_tools:
         await bot.send_typing(chat_id)
+        # React like a human: 👀 = seen and on it
+        try:
+            await bot.set_message_reaction(chat_id, msg.get("message_id"), "👀")
+        except Exception:
+            pass
         _ta_banner = None
         try:
             from server.live_motion import WorkingBanner
@@ -11611,9 +11616,48 @@ Requirements:
             await _ta_banner.update("🧠 Planning the steps…")
         except Exception:
             pass
+        # Live motion: translate real agent progress into human-readable
+        # banner stages so the user SEES each step as it happens.
+        _TOOL_STAGE_LABELS = {
+            "web_search": "🔍 Searching the web…",
+            "browse_url": "🌐 Reading a page…",
+            "run_python_code": "🧮 Crunching the numbers…",
+            "run_terminal_code": "💻 Running code…",
+            "generate_document": "📄 Writing your document…",
+            "generate_image": "🎨 Creating an image…",
+            "generate_qr_code": "🔳 Generating your QR code…",
+            "build_website": "🏗️ Building your website…",
+            "composio_search_tools": "🔎 Checking your connected apps…",
+            "composio_execute": "🛠️ Working on your connected app…",
+            "composio_connect": "🔗 Setting up an app connection…",
+            "prepare_social_video": "🎬 Preparing your video…",
+            "smart_clips": "✂️ Cutting your clips…",
+        }
+        def _agent_progress(event):
+            try:
+                _stage = (event or {}).get("stage")
+                if _stage == "thinking":
+                    _label = f"🧠 Thinking — step {event.get('iteration', 1)}…"
+                else:
+                    _label = _TOOL_STAGE_LABELS.get(
+                        event.get("tool"), f"⚙️ Working — step {event.get('iteration', 1)}…")
+                if _ta_banner:
+                    asyncio.get_event_loop().create_task(_ta_banner.update(_label))
+            except Exception:
+                pass
+        # Reply-awareness: if the user replied to a specific message, tell the
+        # agent exactly which message is being answered.
+        _agent_input = user_text
+        if msg.get("reply_to_text"):
+            _rt_author = msg.get("reply_to_author") or "me"
+            _agent_input = (
+                f'(Context: the user replied to this earlier message from {_rt_author}: '
+                f'"{msg["reply_to_text"]}" — answer with that message in mind.)\n\n'
+                + user_text
+            )
         try:
             from server.tool_agent import run_agent_loop
-            agent_result = await run_agent_loop(user_text, bot=bot, chat_id=chat_id, max_iterations=8, tg_user_id=str(msg['user_id']))
+            agent_result = await run_agent_loop(_agent_input, bot=bot, chat_id=chat_id, max_iterations=8, tg_user_id=str(msg['user_id']), progress_cb=_agent_progress)
             if _ta_banner:
                 await _ta_banner.update("🔧 Working with your connected apps…")
 
@@ -11658,11 +11702,7 @@ Requirements:
             else:
                 await bot.send_message(chat_id, "Task completed.")
 
-            # Log
-            if tg_user:
-                await _log_call(db, tg_user.id, "/telegram/tool_agent", "POST", 0, 200)
-
-            return {"ok": True}            # ── Deliver any generated videos (Higgsfield/other app results) in-chat ──
+            # ── Deliver any generated videos (Higgsfield/other app results) in-chat ──
             try:
                 import re as _vidre
                 import json as _vidjson
@@ -11681,6 +11721,12 @@ Requirements:
                         logger.warning(f"video delivery failed: {_vid_err}")
             except Exception as _vid_err:
                 logger.debug(f"video scan skipped: {_vid_err}")
+
+            # React ✅ on the user's original message: task finished
+            try:
+                await bot.set_message_reaction(chat_id, msg.get("message_id"), "✅")
+            except Exception:
+                pass
             if _ta_banner:
                 await _ta_banner.finish("✅ Done ✨")
 
@@ -11773,6 +11819,11 @@ Requirements:
     # ── MEMORY GATEWAY (Mem0 + Letta dual memory) + CONNECTED APPS AWARENESS ──
     _gw_user_key = f"tg_{msg['user_id']}"
     _gw_banner = None
+    # React like a human: 👀 = seen and reading it
+    try:
+        await bot.set_message_reaction(chat_id, msg.get("message_id"), "👀")
+    except Exception:
+        pass
     try:
         import server.paywall as _pw
         from server.live_motion import WorkingBanner
@@ -11906,6 +11957,22 @@ Requirements:
                                              conversation_id=conv.id)
     await append_message(db, conv, "user", user_text, platform="telegram")
     messages = build_llm_messages(conv, system, recalled_tg)
+    # Reply-awareness: the user may have replied to a specific earlier message.
+    if msg.get("reply_to_text"):
+        try:
+            _rt_note = (f'\n\nThe user is replying to this earlier message (from '
+                        f'{msg.get("reply_to_author") or "you"}): "{msg["reply_to_text"]}"\n'
+                        f'Answer with that specific message in mind.')
+            _injected = False
+            for _m in messages:
+                if isinstance(_m, dict) and _m.get("role") == "system":
+                    _m["content"] = str(_m.get("content", "")) + _rt_note
+                    _injected = True
+                    break
+            if not _injected:
+                messages.insert(0, {"role": "system", "content": _rt_note.strip()})
+        except Exception as _rt_err:
+            logger.debug(f"reply-context injection skipped: {_rt_err}")
 
     try:
         result = await asyncio.to_thread(llm.chat, messages)
@@ -11967,6 +12034,10 @@ Requirements:
         except Exception as _gw_save_err:
             logger.debug(f"gateway save skipped: {_gw_save_err}")
         # Finish the live working banner
+        try:
+            await bot.set_message_reaction(chat_id, msg.get("message_id"), "✅")
+        except Exception:
+            pass
         if _gw_banner:
             try:
                 await _gw_banner.finish("✅ Reply ready — I remembered this conversation")

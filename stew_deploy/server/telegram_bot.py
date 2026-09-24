@@ -167,6 +167,28 @@ class TelegramBot:
         except Exception:
             return {}
 
+    async def set_message_reaction(self, chat_id: int, message_id: int,
+                                   emoji: str = "👍") -> dict:
+        """React to a specific message like a human would (Bot API setMessageReaction)."""
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{self.base}/setMessageReaction",
+                    json={
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                        "reaction": [{"type": "emoji", "emoji": emoji}],
+                        "is_big": False,
+                    },
+                )
+                result = resp.json()
+                if not result.get("ok"):
+                    logger.debug(f"setMessageReaction not applied: {result.get('description')}")
+                return result
+        except Exception as e:
+            logger.debug(f"setMessageReaction skipped: {e}")
+            return {}
+
     async def send_typing(self, chat_id: int):
         """Show typing indicator."""
         async with httpx.AsyncClient(timeout=5) as client:
@@ -385,6 +407,21 @@ class TelegramBot:
             location_lon = loc.get("longitude")
             location_live_period = loc.get("live_period")
 
+        # Reply-awareness: when the user replies to a specific message, keep
+        # the original text (and who sent it) so the agent knows exactly what
+        # message is being replied to and can answer in that context.
+        reply_to_text = None
+        reply_to_message_id = None
+        reply_to_author = None
+        rtm = msg.get("reply_to_message")
+        if isinstance(rtm, dict):
+            reply_to_message_id = rtm.get("message_id")
+            _rt_author = rtm.get("from") or {}
+            reply_to_author = (_rt_author.get("username")
+                               or _rt_author.get("first_name")
+                               or ("stew_agent_bot" if _rt_author.get("is_bot") else None))
+            reply_to_text = (rtm.get("text") or rtm.get("caption") or "")[:800] or None
+
         return {
             "update_id": data.get("update_id"),
             "chat_id": msg["chat"]["id"],
@@ -413,4 +450,7 @@ class TelegramBot:
             "location_lat": location_lat,
             "location_lon": location_lon,
             "location_live_period": location_live_period,
+            "reply_to_text": reply_to_text,
+            "reply_to_message_id": reply_to_message_id,
+            "reply_to_author": reply_to_author,
         }
