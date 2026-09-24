@@ -1124,7 +1124,7 @@ async def composio_mini_connect(request: Request):
         from sqlalchemy import select as _msel
         async with _MiniDB() as _mdb:
             _mu = (await _mdb.execute(_msel(User).where(
-                User.email == f"tg_{tg_user['id']}@telegram.stew")).scalars().first()) if True else None
+                User.email == f"tg_{tg_user['id']}@telegram.stew"))).scalars().first()
             if _mu and _mu.plan:
                 _mplan = _mu.plan
     except Exception as _db_exc:
