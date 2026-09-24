@@ -310,6 +310,19 @@ async def execute_action(
 
     from server.agent_activity import is_write_action, queue_approval, record_activity
     stable_user_id = str(user_id or "anonymous")
+    # Paywall v4: every connected-app action consumes a monthly allowance so
+    # free users experience the feature, then convert when they love it.
+    meter_gate = None
+    if approved is not True:
+        try:
+            from server.paywall import metered_feature_gate
+            meter_gate = await metered_feature_gate(stable_user_id, "connector_action")
+            if not meter_gate.get("allowed"):
+                return {"success": False, "paywall": True,
+                        "error": meter_gate.get("message"),
+                        "message": meter_gate.get("message")}
+        except Exception as meter_exc:
+            logger.warning("Connector metering skipped: %s", meter_exc)
     # Consult provider behavior tags as well as conservative name classification.
     # This blocks mutating actions even if their names look read-only.
     # Slugs like HIGGSFIELD_MCP_BALANCE belong to the "higgsfield_mcp" toolkit;

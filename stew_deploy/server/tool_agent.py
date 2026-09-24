@@ -538,6 +538,64 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         prompt = args.get("prompt", "") or args.get("description", "")
         if not prompt:
             return {"error": "No prompt provided"}
+
+        # ── Tier 1: HD image (high-quality model, plan-metered) ──
+        async def _try_hd_image(p: str):
+            """Premium-quality generation, metered monthly; None = unavailable."""
+            try:
+                import os as _os_img
+                from server.paywall import metered_feature_gate
+                from server.config import settings as _settings_img
+                gate = await metered_feature_gate(str(tg_user_id or ""), "hd_image")
+                if not gate.get("allowed"):
+                    return {"blocked": True, "message": gate.get("message")}
+                hf_key = _os_img.getenv("HUGGINGFACE_API_KEY") or _settings_img.HUGGINGFACE_API_KEY
+                if not hf_key:
+                    return None
+                import httpx as _httpx_hd
+                payload = {"inputs": p, "parameters": {"width": 1024, "height": 1024}}
+                for url in (
+                    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+                    "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+                ):
+                    try:
+                        async with _httpx_hd.AsyncClient(timeout=60) as _client_hd:
+                            _r_hd = await _client_hd.post(
+                                url, json=payload,
+                                headers={"Authorization": f"Bearer {hf_key}"})
+                        if _r_hd.status_code == 200 and _r_hd.headers.get("content-type", "").startswith("image"):
+                            if len(_r_hd.content) > 5000:
+                                return {"bytes": _r_hd.content, "hd": True}
+                    except Exception:
+                        continue
+            except Exception as _hd_exc:
+                logger.warning("HD image tier skipped: %s", _hd_exc)
+            return None
+
+        _hd = None
+        try:
+            if tg_user_id:
+                _hd = await _try_hd_image(prompt)
+        except Exception:
+            _hd = None
+        if _hd and _hd.get("bytes"):
+            import base64 as _b64_hd, uuid as _uuid_hd
+            _public_hd = None
+            try:
+                from server.persistent_memory import upload_file as _upload_hd
+                _stored_hd = await _upload_hd(_hd["bytes"], f"{_uuid_hd.uuid4().hex}.jpg", "image/jpeg", "agent-media")
+                if _stored_hd:
+                    _public_hd = _stored_hd
+            except Exception as _up_exc_hd:
+                logger.warning("HD image upload fallback: %s", _up_exc_hd)
+            return {"tool": tool, "success": True, "quality": "hd",
+                    "output": f"HD image generated for: {prompt[:100]}" + (f"\nPublic media URL: {_public_hd}" if _public_hd else ""),
+                    "public_url": _public_hd,
+                    "figures": [{"base64": _b64_hd.b64encode(_hd["bytes"]).decode()}]}
+        _hd_note = ""
+        if isinstance(_hd, dict) and _hd.get("blocked"):
+            _hd_note = "\n\n" + str(_hd.get("message") or "")
+
         try:
             import httpx as _httpx_img
             import urllib.parse as _urlparse_img
@@ -569,7 +627,8 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                 return {
                     "tool": tool,
                     "success": True,
-                    "output": f"Image generated for: {prompt[:100]}\nPublic media URL for connected-app posting: {public_url}",
+                    "quality": "standard",
+                    "output": f"Image generated for: {prompt[:100]}\nPublic media URL for connected-app posting: {public_url}" + _hd_note,
                     "public_url": public_url,
                     "figures": [{"base64": _b64_img.b64encode(content).decode()}],
                 }

@@ -213,3 +213,108 @@ class LiveStatus:
                 except Exception:
                     pass
         return False
+
+
+# ═══════════════════ Paywall v4: metered feature allowances ═══════════════════
+# Free users get REAL monthly allowances for every premium feature so they can
+# experience the value before paying (the #1 conversion driver used by Chatbase,
+# ManyChat and GoHighLevel freemium tiers). Allowances reset monthly.
+
+FEATURE_LIMITS: Dict[str, Dict[str, int]] = {
+    # Connected-app actions (Composio executes: reads, prepared/approved writes)
+    "connector_action": {"free": 30, "whatsapp": 30, "student": 150, "pro": 1000,
+                          "business": 5000, "enterprise": 20000, "owner": 10_000_000},
+    # High-quality FLUX images (before falling back to standard generation)
+    "hd_image": {"free": 10, "whatsapp": 10, "student": 40, "pro": 200,
+                  "business": 1000, "enterprise": 5000, "owner": 10_000_000},
+}
+
+
+def feature_limit(plan: str, feature: str) -> int:
+    return FEATURE_LIMITS.get(feature, {}).get(plan or "free",
+           FEATURE_LIMITS.get(feature, {}).get("free", 0))
+
+
+def current_period(daily: bool = False) -> str:
+    from datetime import datetime
+    now = datetime.utcnow()
+    return now.strftime("%Y-%m-%d") if daily else now.strftime("%Y-%m")
+
+
+async def feature_usage_count(telegram_user_id: str, feature: str, period: str) -> int:
+    from server.models import FeatureUsage
+    from server.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        row = (await db.execute(select(FeatureUsage).where(
+            FeatureUsage.telegram_user_id == str(telegram_user_id),
+            FeatureUsage.feature == feature,
+            FeatureUsage.period == period))).scalar_one_or_none()
+        return row.count if row else 0
+
+
+async def meter_feature(telegram_user_id: str, feature: str, period: str, amount: int = 1) -> int:
+    """Increment usage and return the new count (upsert)."""
+    from server.models import FeatureUsage
+    from server.database import AsyncSessionLocal
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy import update as generic_update
+    async with AsyncSessionLocal() as db:
+        row = (await db.execute(select(FeatureUsage).where(
+            FeatureUsage.telegram_user_id == str(telegram_user_id),
+            FeatureUsage.feature == feature,
+            FeatureUsage.period == period))).scalar_one_or_none()
+        if row:
+            row.count += amount
+            await db.commit()
+            return row.count
+        db.add(FeatureUsage(telegram_user_id=str(telegram_user_id), feature=feature,
+                            period=period, count=amount))
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            # Race: another worker created it — fall back to an increment.
+            await db.execute(generic_update(FeatureUsage).where(
+                FeatureUsage.telegram_user_id == str(telegram_user_id),
+                FeatureUsage.feature == feature,
+                FeatureUsage.period == period).values(count=FeatureUsage.count + amount))
+            await db.commit()
+        return amount
+
+
+async def user_plan_for_telegram(telegram_user_id: str) -> str:
+    """Plan for a Telegram user (users are keyed by email tg_<id>@telegram.stew)."""
+    from server.models import User
+    from server.database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as db:
+            row = (await db.execute(select(User).where(
+                User.email == f"tg_{telegram_user_id}@telegram.stew"))).scalar_one_or_none()
+            return row.plan if row else "free"
+    except Exception as e:
+        logger.warning(f"user_plan_for_telegram failed: {e}")
+        return "free"
+
+
+async def check_feature(telegram_user_id: str, feature: str, daily: bool = False) -> Dict[str, Any]:
+    """Gate a feature by plan allowance. Returns allowed/used/limit/message."""
+    plan = await user_plan_for_telegram(telegram_user_id)
+    limit = feature_limit(plan, feature)
+    period = current_period(daily)
+    used = await feature_usage_count(telegram_user_id, feature, period)
+    if plan == "owner" or used < limit:
+        return {"allowed": True, "used": used, "limit": limit, "plan": plan}
+    return {"allowed": False, "used": used, "limit": limit, "plan": plan,
+            "message": (f"🔒 Monthly {feature.replace('_',' ')} limit reached ({used}/{limit} on "
+                        f"{plan.upper()}).\n\nYour allowance resets on the 1st, or upgrade with /upgrade "
+                        f"— Pro unlocks 1,000 connected-app actions and 200 HD images monthly.")}
+
+
+async def metered_feature_gate(telegram_user_id: str, feature: str) -> Dict[str, Any]:
+    """Check-and-charge atomically: consumes one unit if allowed."""
+    gate = await check_feature(telegram_user_id, feature)
+    if gate["allowed"] and gate["plan"] != "owner":
+        await meter_feature(telegram_user_id, feature, current_period())
+        gate["used"] += 1
+    return gate

@@ -437,3 +437,29 @@ class AutomationGoal(Base):
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class FeatureUsage(Base):
+    """Generic monthly/daily meter for plan-gated features (hd_image, connector_action...)."""
+    __tablename__ = "feature_usage"
+    __table_args__ = ({"sqlite_autoincrement": True},)
+
+    id: Mapped[str] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    feature: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    period: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # YYYY-MM or YYYY-MM-DD
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ContactEmail(Base):
+    """Marketing-opt-in email captured from a Telegram user (Brevo sync target)."""
+    __tablename__ = "contact_emails"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    brevo_synced: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

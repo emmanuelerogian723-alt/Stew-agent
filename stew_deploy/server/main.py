@@ -1787,6 +1787,188 @@ async def admin_dashboard_page():
     with open("admin.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+# ═══════════════ STEW HQ — the owner's personal control website ═══════════════
+# Only the admin secret opens HQ. From here the owner tracks Telegram users,
+# broadcasts announcements, syncs + emails captured contacts via Brevo, and
+# mints pass codes — no code, no Render dashboard needed.
+
+def _hq_authorized(request: Request) -> None:
+    key = request.headers.get("x-admin-key", "")
+    secret = (settings.STEW_ADMIN_SECRET or os.environ.get("STEW_ADMIN_SECRET", "")).strip()
+    if not secret or key.strip() != secret:
+        raise HTTPException(401, "Admin key required")
+
+
+@app.get("/hq", response_class=HTMLResponse, include_in_schema=False)
+async def stew_hq_page():
+    for path in ["stew_hq.html", "/app/stew_hq.html",
+                "/app/stew_deploy/stew_hq.html",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stew_hq.html")]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return HTMLResponse(f.read())
+    return HTMLResponse("<h1>STEW HQ not found</h1>", status_code=404)
+
+
+@app.get("/hq/api/stats", include_in_schema=False)
+async def hq_stats(request: Request, db: AsyncSession = Depends(get_db)):
+    _hq_authorized(request)
+    from datetime import datetime, timedelta
+    from server.models import ContactEmail, FeatureUsage, APICall
+    from server.paywall import current_period
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tg_filter = User.email.like("tg\_%@telegram.stew", escape="\\")
+    total_users = (await db.execute(select(func.count(User.id)).where(tg_filter))).scalar() or 0
+    new_week = (await db.execute(select(func.count(User.id)).where(tg_filter, User.created_at >= week_ago))).scalar() or 0
+    plan_rows = (await db.execute(select(User.plan, func.count(User.id)).where(tg_filter).group_by(User.plan))).all()
+    plans = {p: c for p, c in plan_rows}
+    active_today = (await db.execute(
+        select(func.count(func.distinct(APICall.user_id))).where(
+            APICall.timestamp >= today,
+            APICall.user_id.in_(select(User.id).where(tg_filter))))).scalar() or 0
+    emails = (await db.execute(select(func.count(ContactEmail.id)))).scalar() or 0
+    month = current_period()
+    async def _feature_total(feature: str) -> int:
+        res = await db.execute(select(func.coalesce(func.sum(FeatureUsage.count), 0)).where(
+            FeatureUsage.feature == feature, FeatureUsage.period == month))
+        return res.scalar() or 0
+    connector_actions = await _feature_total("connector_action")
+    hd_images = await _feature_total("hd_image")
+    return {
+        "success": True,
+        "total_users": total_users, "new_this_week": new_week,
+        "active_today": active_today, "emails_captured": int(emails),
+        "plans": plans, "connector_actions_this_month": int(connector_actions),
+        "hd_images_this_month": int(hd_images),
+        "timestamp": now.isoformat() + "Z",
+    }
+
+
+@app.get("/hq/api/users", include_in_schema=False)
+async def hq_users(request: Request, search: str = "", plan: str = "",
+                  db: AsyncSession = Depends(get_db)):
+    _hq_authorized(request)
+    from datetime import datetime
+    from server.models import ContactEmail, APICall
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    tg_filter = User.email.like("tg\_%@telegram.stew", escape="\\")
+    q = select(User).where(tg_filter)
+    if plan:
+        q = q.where(User.plan == plan)
+    if search:
+        q = q.where(User.name.ilike(f"%{search}%"))
+    users = (await db.execute(q.order_by(User.created_at.desc()).limit(300))).scalars().all()
+    user_ids = [u.id for u in users]
+    usage = {}
+    if user_ids:
+        rows = (await db.execute(select(APICall.user_id, func.count(APICall.id)).where(
+            APICall.user_id.in_(user_ids), APICall.timestamp >= month_start).group_by(APICall.user_id))).all()
+        usage = {r[0]: r[1] for r in rows}
+    tg_ids = []
+    by_tg = {}
+    for u in users:
+        email = u.email or ""
+        tg = email[3:].split("@")[0] if email.startswith("tg_") and "@telegram.stew" in email else ""
+        tg_ids.append(tg)
+        by_tg[u.id] = tg
+    contacts = {}
+    if any(tg_ids):
+        rows = (await db.execute(select(ContactEmail).where(
+            ContactEmail.telegram_user_id.in_([t for t in tg_ids if t])))).scalars().all()
+        contacts = {c.telegram_user_id: c for c in rows}
+    items = []
+    for u in users:
+        tg = by_tg[u.id]
+        c = contacts.get(tg)
+        items.append({
+            "name": u.name, "telegram_id": tg, "plan": u.plan,
+            "calls_this_month": usage.get(u.id, 0),
+            "email": c.email if c else None,
+            "brevo_synced": bool(c and c.brevo_synced),
+            "credits": getattr(u, "credits_balance", 0) or 0,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "active": u.is_active,
+        })
+    return {"success": True, "items": items, "count": len(items)}
+
+
+@app.post("/hq/api/broadcast", include_in_schema=False)
+async def hq_broadcast(request: Request, db: AsyncSession = Depends(get_db)):
+    """Send a Telegram announcement from the HQ site to all (or one plan's) users."""
+    _hq_authorized(request)
+    body = await request.json()
+    text = str(body.get("text", "")).strip()
+    plan_filter = str(body.get("plan", "") or "").strip()
+    if not text:
+        raise HTTPException(400, "Broadcast text is required")
+    tg_filter = User.email.like("tg\_%@telegram.stew", escape="\\")
+    q = select(User).where(tg_filter, User.is_active == True)  # noqa: E712
+    if plan_filter:
+        q = q.where(User.plan == plan_filter)
+    users = (await db.execute(q.limit(5000))).scalars().all()
+    from server.telegram_bot import TelegramBot
+    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
+    sent = failed = 0
+    for u in users:
+        email = u.email or ""
+        tg = email[3:].split("@")[0] if email.startswith("tg_") and "@telegram.stew" in email else ""
+        if not tg.isdigit():
+            continue
+        try:
+            _res = await bot.send_message(int(tg), f"📣 *S.T.E.W Announcement*\n\n{text}\n\n— Stew HQ")
+            if isinstance(_res, dict) and _res.get("ok"):
+                sent += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.12)
+    return {"success": True, "sent": sent, "failed": failed}
+
+
+@app.post("/hq/api/brevo/sync", include_in_schema=False)
+async def hq_brevo_sync(request: Request):
+    _hq_authorized(request)
+    from server import brevo_service
+    if not brevo_service.brevo_enabled():
+        raise HTTPException(503, "BREVO_API_KEY is not configured on the server.")
+    return await brevo_service.sync_all_contacts()
+
+
+@app.post("/hq/api/brevo/campaign", include_in_schema=False)
+async def hq_brevo_campaign(request: Request):
+    """Send a product-update email to every captured contact via Brevo."""
+    _hq_authorized(request)
+    from server import brevo_service
+    body = await request.json()
+    subject = str(body.get("subject", "")).strip()[:150]
+    content = str(body.get("content", "")).strip()
+    if not subject or not content:
+        raise HTTPException(400, "Subject and content are required")
+    if "<" not in content:
+        content = (f'<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto">'
+                   f'<p style="font-size:16px;line-height:1.6">{content}</p>'
+                   f'<p style="color:#888;font-size:12px">You receive this because you use '
+                   f'<b>S.T.E.W</b> on Telegram.</p></div>')
+    result = await brevo_service.send_campaign(subject, content)
+    return result
+
+
+@app.post("/hq/api/passcode", include_in_schema=False)
+async def hq_passcode(request: Request, db: AsyncSession = Depends(get_db)):
+    _hq_authorized(request)
+    body = await request.json()
+    plan = str(body.get("plan", "pro")).lower().strip()
+    note = str(body.get("note", "") or "")[:200]
+    from server.paywall import create_pass_code
+    result = await create_pass_code(db, plan, created_by="stew-hq", note=note)
+    if not result.get("success"):
+        raise HTTPException(400, result.get("error", "Could not create pass code"))
+    return result
+
+
 @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard_page():
     """Serve the S.T.E.W user dashboard."""
@@ -5524,6 +5706,19 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     _raw_text_early = (msg.get("text") or "").strip()
     _is_callback_early = bool(msg.get("is_callback"))
 
+    # ── EMAIL CAPTURE (Brevo marketing list) ─────────────────────────────────
+    # Explicit intake (bare email, /setemail, /skip) consumes the message;
+    # everything else just counts toward the once-a-day polite ask.
+    if tg_user_early is not None and not _is_callback_early and _raw_text_early:
+        try:
+            from server.email_capture import capture_and_confirm, maybe_ask_email
+            _ec_handled = await capture_and_confirm(tg_user_early, chat_id, bot, _raw_text_early)
+            if _ec_handled:
+                return {"ok": True}
+            asyncio.create_task(maybe_ask_email(tg_user_early, chat_id, _raw_text_early, bot))
+        except Exception as _ec_exc:
+            logger.warning(f"Email capture skipped: {_ec_exc}")
+
     # ── S.T.E.W VIDEO EDITOR (video uploads) ─────────────────────────────────
     # /videoedit — menu; plain text + pending video + edit intent → editor
     from server.video_editor import get_pending as _ve_pend, is_edit_intent as _ve_is_edit, is_read_intent as _ve_is_read, EDIT_MENU as _VE_MENU
@@ -7036,8 +7231,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             for _u in _bc_users:
                 _tgnum = getattr(_u, "telegram_id", None) or str(_u.email).split("_")[1].split("@")[0]
                 try:
-                    await bot.send_message(int(_tgnum), _bc_text, parse_mode="")
-                    _sent += 1
+                    _res_bc = await bot.send_message(int(_tgnum), _bc_text, parse_mode="")
+                    if isinstance(_res_bc, dict) and _res_bc.get("ok"):
+                        _sent += 1
+                    else:
+                        _failed += 1
                 except Exception:
                     _failed += 1
                 await asyncio.sleep(0.12)  # stay under Telegram rate limits

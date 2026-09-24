@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STEW HQ — Command Center</title>
+<style>
+:root{--bg:#0a0e1a;--card:#121829;--card2:#1a2238;--line:#28324d;--text:#f0f4ff;--muted:#8f9bb8;--accent:#5b7cfa;--accent2:#8b5cf6;--good:#34d399;--bad:#ff6b81;--amber:#ffc95c}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100vh;background:radial-gradient(45% 30% at 90% -5%,#5b7cfa22,transparent),radial-gradient(40% 35% at -10% 40%,#8b5cf61a,transparent),var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1080px;margin:auto;padding:18px 16px 90px}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+.logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(140deg,var(--accent),var(--accent2));color:#fff;font-size:21px;font-weight:900;box-shadow:0 8px 30px #5b7cfa55}
+.brand h1{margin:0;font-size:20px}
+.brand p{margin:2px 0 0;font-size:11px;color:var(--muted)}
+.card{border:1px solid var(--line);background:linear-gradient(150deg,var(--card),#0d1322);border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:0 12px 40px #0006}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:12px;padding:10px 16px;font:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.tabs button.active{background:linear-gradient(140deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{border:1px solid var(--line);background:var(--card2);border-radius:14px;padding:14px}
+.stat span{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+.stat strong{display:block;font-size:24px;margin-top:6px}
+.stat small{color:var(--good);font-size:10px}
+h2{font-size:15px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:11px;margin:0 0 14px}
+input,textarea,select{width:100%;padding:12px;border-radius:11px;border:1px solid var(--line);background:#0a101f;color:var(--text);font:inherit;margin:6px 0}
+textarea{min-height:110px;resize:vertical}
+button.primary{background:linear-gradient(140deg,var(--accent),var(--accent2));color:#fff;border:0;border-radius:11px;padding:12px 18px;font:inherit;font-weight:800;cursor:pointer}
+button.ghost{background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.6px;padding:8px 8px;border-bottom:1px solid var(--line)}
+td{padding:9px 8px;border-bottom:1px solid #1c2540}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:9px;font-weight:800}
+.pill.free{background:#1d2742;color:#9fb4e8}.pill.pro,.pill.business,.pill.student,.pill.enterprise{background:#14342a;color:var(--good)}
+.pill.owner{background:#33271488;color:var(--amber)}
+.pill.synced{background:#14342a;color:var(--good)}.pill.nosync{background:#2b1d24;color:var(--bad)}
+.gate{max-width:430px;margin:9vh auto 0;text-align:center}
+.gate .logo{margin:0 auto 16px;width:60px;height:60px;font-size:28px}
+.toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-140%);background:var(--card2);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;font-size:12px;transition:.3s;z-index:99;max-width:90%}
+.toast.show{transform:translate(-50%,0)}
+.muted{color:var(--muted);font-size:11px}
+.kv{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #1c2540;font-size:12px}
+.kv:last-child{border-bottom:0}
+.hint{font-size:10px;color:var(--muted);margin:4px 0 10px}
+.result{margin-top:12px;padding:12px;border-radius:11px;background:#0a101f;border:1px solid var(--line);font-size:12px;white-space:pre-wrap;display:none}
+@media(max-width:640px){.stat strong{font-size:20px}td,th{padding:7px 5px}}
+</style>
+</head>
+<body>
+<div id="toast" class="toast"></div>
+<div class="wrap" id="gate" style="display:none">
+  <div class="card gate">
+    <div class="logo">S</div>
+    <h2>STEW HQ</h2>
+    <p class="sub">Owner command center — sign in with your admin secret</p>
+    <input id="keyInput" type="password" placeholder="Admin secret" onkeydown="if(event.key==='Enter')login()">
+    <button class="primary" style="width:100%" onclick="login()">Unlock HQ</button>
+    <p class="hint">Only the STEW owner key opens this site. It is stored in this browser only.</p>
+  </div>
+</div>
+<div class="wrap" id="app" style="display:none">
+  <div class="brand"><div class="logo">S</div><div><h1>STEW HQ <span style="font-size:10px;color:var(--good)">● live</span></h1><p>Command center · users · broadcasts · email campaigns</p></div>
+  <div style="margin-left:auto"><button class="ghost" onclick="logout()">Lock</button></div></div>
+  <div class="tabs">
+    <button id="t-overview" class="active" onclick="go('overview')">Overview</button>
+    <button id="t-users" onclick="go('users')">Users</button>
+    <button id="t-broadcast" onclick="go('broadcast')">Telegram Broadcast</button>
+    <button id="t-email" onclick="go('email')">Email Campaigns</button>
+    <button id="t-codes" onclick="go('codes')">Pass Codes</button>
+  </div>
+
+  <div id="v-overview" class="card"><h2>Overview</h2><p class="sub">Live growth and usage of the STEW Telegram bot</p>
+    <div class="statgrid" id="stats"></div>
+    <div class="muted" style="margin-top:12px">Plan mix: <span id="planMix">—</span></div>
+  </div>
+
+  <div id="v-users" class="card" style="display:none"><h2>Telegram Users</h2><p class="sub">Search, plan and usage tracking</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="userSearch" placeholder="Search by name" style="flex:1;min-width:140px" oninput="loadUsers()">
+      <select id="userPlan" style="width:auto" onchange="loadUsers()">
+        <option value="">All plans</option><option>free</option><option>student</option><option>pro</option><option>business</option><option>owner</option>
+      </select>
+    </div>
+    <div style="overflow:auto"><table><thead><tr><th>User</th><th>Telegram ID</th><th>Plan</th><th>Calls/mo</th><th>Email</th><th>Brevo</th><th>Joined</th></tr></thead><tbody id="userRows"></tbody></table></div>
+  </div>
+
+  <div id="v-broadcast" class="card" style="display:none"><h2>Telegram Broadcast</h2><p class="sub">Send an announcement to every bot user's Telegram chat</p>
+    <select id="bcPlan"><option value="">All users</option><option value="free">Free users</option><option value="student">Student</option><option value="pro">Pro</option><option value="business">Business</option></select>
+    <textarea id="bcText" placeholder="Stew v7 is live — autonomous goals, HD images and more! 🎉"></textarea>
+    <button class="primary" onclick="sendBroadcast()">Send broadcast</button>
+    <div id="bcResult" class="result"></div>
+    <p class="hint">Sent at ~8 messages/second to respect Telegram rate limits.</p>
+  </div>
+
+  <div id="v-email" class="card" style="display:none"><h2>Email Campaigns (Brevo)</h2><p class="sub">STEW captures emails in chat and syncs them to your Brevo list</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="ghost" onclick="syncBrevo()">Sync captured emails to Brevo now</button><span class="muted" id="syncInfo"></span></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+    <input id="emSubject" placeholder="Subject — e.g. STEW Pro: HD images + 1,000 app actions">
+    <textarea id="emBody" placeholder="Write your update. Plain text is fine — it gets wrapped in a clean email template."></textarea>
+    <button class="primary" onclick="sendCampaign()">Send campaign to all captured emails</button>
+    <div id="emResult" class="result"></div>
+    <p class="hint">Emails go from your verified Brevo sender to every captured contact.</p>
+  </div>
+
+  <div id="v-codes" class="card" style="display:none"><h2>Upgrade Pass Codes</h2><p class="sub">Mint a code a user redeems with /unlock</p>
+    <select id="pcPlan"><option value="pro">Pro</option><option value="student">Student</option><option value="business">Business</option><option value="enterprise">Enterprise</option></select>
+    <input id="pcNote" placeholder="Note (optional) — e.g. UNN campus ambassador">
+    <button class="primary" onclick="mintCode()">Mint pass code</button>
+    <div id="pcResult" class="result"></div>
+  </div>
+</div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(m){let t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(window.tt);window.tt=setTimeout(()=>t.classList.remove('show'),3500)}
+function key(){return localStorage.getItem('hqKey')||''}
+async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{'content-type':'application/json','x-admin-key':key(),...(opts.headers||{})}});let d={};try{d=await r.json()}catch(e){}if(!r.ok)throw new Error(d.detail||d.error||('HTTP '+r.status));return d}
+function login(){const k=document.getElementById('keyInput').value.trim();if(!k)return toast('Enter your admin secret');localStorage.setItem('hqKey',k);verify()}
+async function verify(){try{await api('/hq/api/stats');document.getElementById('gate').style.display='none';document.getElementById('app').style.display='block';loadOverview();loadUsers()}catch(e){if(key()){document.getElementById('gate').style.display='block';document.getElementById('app').style.display='none';toast('Wrong admin secret')}}}
+function logout(){localStorage.removeItem('hqKey');location.reload()}
+function go(v){['overview','users','broadcast','email','codes'].forEach(x=>{document.getElementById('v-'+x).style.display=x===v?'block':'none';document.getElementById('t-'+x).classList.toggle('active',x===v)});if(v==='overview')loadOverview();if(v==='users')loadUsers()}
+async function loadOverview(){try{const d=await api('/hq/api/stats');document.getElementById('stats').innerHTML=`
+<div class="stat"><span>Total users</span><strong>${d.total_users}</strong><small>+${d.new_this_week} this week</small></div>
+<div class="stat"><span>Active today</span><strong>${d.active_today}</strong></div>
+<div class="stat"><span>Emails captured</span><strong>${d.emails_captured}</strong><small>Brevo list</small></div>
+<div class="stat"><span>Paying users</span><strong>${(d.plans.student||0)+(d.plans.pro||0)+(d.plans.business||0)+(d.plans.enterprise||0)}</strong><small>student+pro+biz</small></div>
+<div class="stat"><span>App actions this month</span><strong>${d.connector_actions_this_month}</strong><small>connected apps</small></div>
+<div class="stat"><span>HD images this month</span><strong>${d.hd_images_this_month}</strong></div>`;
+document.getElementById('planMix').textContent=Object.entries(d.plans).map(([p,c])=>`${p}: ${c}`).join(' · ')||'—'}catch(e){toast(e.message)}}
+async function loadUsers(){try{const search=document.getElementById('userSearch').value.trim(),plan=document.getElementById('userPlan').value;const d=await api(`/hq/api/users?search=${encodeURIComponent(search)}&plan=${encodeURIComponent(plan)}`);document.getElementById('userRows').innerHTML=d.items.map(u=>`<tr>
+<td>${esc(u.name||'—')}</td><td>${esc(u.telegram_id||'—')}</td>
+<td><span class="pill ${esc(u.plan)}">${esc(u.plan)}</span></td>
+<td>${u.calls_this_month}</td>
+<td>${u.email?esc(u.email):'<span class="muted">not captured</span>'}</td>
+<td>${u.email?`<span class="pill ${u.brevo_synced?'synced':'nosync'}">${u.brevo_synced?'synced':'pending'}</span>`:'—'}</td>
+<td class="muted">${u.created_at?u.created_at.slice(0,10):'—'}</td></tr>`).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No users found.</td></tr>'}catch(e){toast(e.message)}}
+async function sendBroadcast(){const text=document.getElementById('bcText').value.trim(),plan=document.getElementById('bcPlan').value;if(!text)return toast('Write the announcement first');const r=document.getElementById('bcResult');r.style.display='block';r.textContent='Sending…';try{const d=await api('/hq/api/broadcast',{method:'POST',body:JSON.stringify({text,plan})});r.textContent=`✅ Sent to ${d.sent} users`+(d.failed?` (${d.failed} failed)`:'');toast('Broadcast delivered')}catch(e){r.textContent='❌ '+e.message}}
+async function syncBrevo(){document.getElementById('syncInfo').textContent='Syncing…';try{const d=await api('/hq/api/brevo/sync',{method:'POST'});document.getElementById('syncInfo').textContent=`✅ ${d.synced} synced${d.failed?`, ${d.failed} failed`:''}`;toast('Brevo list updated')}catch(e){document.getElementById('syncInfo').textContent='';toast(e.message)}}
+async function sendCampaign(){const subject=document.getElementById('emSubject').value.trim(),content=document.getElementById('emBody').value.trim();if(!subject||!content)return toast('Subject and content are required');const r=document.getElementById('emResult');r.style.display='block';r.textContent='Sending campaign…';try{const d=await api('/hq/api/brevo/campaign',{method:'POST',body:JSON.stringify({subject,content})});r.textContent=`✅ Sent: ${d.sent||0}`+(d.failed?` · Failed: ${d.failed}${d.failures?'\n'+d.failures.join('\n'):''}`:' · All delivered')}catch(e){r.textContent='❌ '+e.message}}
+async function mintCode(){const plan=document.getElementById('pcPlan').value,note=document.getElementById('pcNote').value.trim();const r=document.getElementById('pcResult');r.style.display='block';r.textContent='Minting…';try{const d=await api('/hq/api/passcode',{method:'POST',body:JSON.stringify({plan,note})});r.textContent=`✅ ${d.code} (${plan.toUpperCase()})\nUser redeems it in chat with:\n/unlock ${d.code}`}catch(e){r.textContent='❌ '+e.message}}
+if(key())verify();else document.getElementById('gate').style.display='block';
+</script>
+</body>
+</html>
