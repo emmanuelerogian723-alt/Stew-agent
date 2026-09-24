@@ -11724,7 +11724,7 @@ Requirements:
 
             # React ✅ on the user's original message: task finished
             try:
-                await bot.set_message_reaction(chat_id, msg.get("message_id"), "✅")
+                await bot.set_message_reaction(chat_id, msg.get("message_id"), "🎉")
             except Exception:
                 pass
             if _ta_banner:
@@ -12035,7 +12035,7 @@ Requirements:
             logger.debug(f"gateway save skipped: {_gw_save_err}")
         # Finish the live working banner
         try:
-            await bot.set_message_reaction(chat_id, msg.get("message_id"), "✅")
+            await bot.set_message_reaction(chat_id, msg.get("message_id"), "🎉")
         except Exception:
             pass
         if _gw_banner:
