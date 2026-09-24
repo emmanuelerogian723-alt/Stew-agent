@@ -1139,6 +1139,24 @@ async def composio_mini_connect(request: Request):
         raise HTTPException(502, "Could not start this app connection") from exc
 
 
+@app.post("/api/composio/disconnect", include_in_schema=False)
+async def composio_mini_disconnect(request: Request):
+    """Revoke one of the user's live provider connections from the Mini App."""
+    payload, tg_user = await _verified_mini_app_user(request)
+    toolkit = re.sub(r"[^a-z0-9_-]", "", str(payload.get("toolkit", "")).strip().lower())
+    if not toolkit:
+        raise HTTPException(400, "Choose an app to disconnect")
+    from server.composio_service import disconnect_app
+    try:
+        result = await disconnect_app(str(tg_user["id"]), toolkit)
+    except Exception as exc:
+        logger.error("Mini App disconnect failed for %s: %s", toolkit, exc)
+        raise HTTPException(502, "Could not disconnect this app right now") from exc
+    if not result.get("success"):
+        raise HTTPException(404, result.get("error") or "App is not connected")
+    return result
+
+
 @app.post("/api/composio/app", include_in_schema=False)
 async def composio_app_dashboard(request: Request):
     """Connection truth, usage analytics, and activity for one toolkit."""

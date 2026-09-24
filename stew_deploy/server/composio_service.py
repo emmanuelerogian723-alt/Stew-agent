@@ -34,6 +34,87 @@ def _safe_user_id(user_id: str | int | None) -> str:
     return f"stew_{safe or 'anonymous'}"
 
 
+# Connections created by an earlier deployment live under a double-prefixed
+# Composio identity (stew_stew_<id>). Sessions created by the current code use
+# stew_<id>. Without resolution the agent cannot see those existing OAuth
+# connections at all, so resolve each user's identity once from live data.
+_identity_cache: "OrderedDict[str, str]" = OrderedDict()
+
+
+def _candidate_ids(user_id: str | int | None) -> list:
+    raw = str(user_id or "anonymous").strip()
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", raw)[:96] or "anonymous"
+    primary = f"stew_{safe}"
+    legacy = f"stew_{primary}"
+    return [primary] if legacy == primary else [primary, legacy]
+
+
+async def resolve_composio_identity(user_id: str | int | None) -> str:
+    """Pick the Composio identity that actually owns this user's connections."""
+    key = str(user_id or "anonymous")
+    cached = _identity_cache.get(key)
+    if cached:
+        _identity_cache.move_to_end(key)
+        return cached
+    candidates = _candidate_ids(user_id)
+    resolved = candidates[0]
+    try:
+        client = _get_client()
+
+        def _probe() -> dict:
+            counts = {}
+            for uid in candidates:
+                data = _plain(client.client.connected_accounts.list(user_ids=[uid]))
+                counts[uid] = sum(
+                    1
+                    for item in (data.get("items") or [])
+                    if str(item.get("status", "")).upper() == "ACTIVE"
+                )
+            return counts
+
+        counts = await asyncio.to_thread(_probe)
+        # Majority of live connections wins; ties favor the primary identity.
+        best = max(candidates, key=lambda u: (counts.get(u, 0), u == candidates[-1]))
+        if counts.get(best, 0) > 0:
+            resolved = best
+    except Exception as exc:
+        logger.warning("Composio identity probe unavailable for %s: %s", key, exc)
+    _identity_cache[key] = resolved
+    while len(_identity_cache) > 2000:
+        _identity_cache.popitem(last=False)
+    return resolved
+
+
+async def disconnect_app(user_id: str | int | None, toolkit: str) -> Dict[str, Any]:
+    """Revoke one of this user's live provider connections at the source."""
+    toolkit = re.sub(r"[^a-z0-9_-]", "", (toolkit or "").strip().lower())
+    if not toolkit:
+        return {"success": False, "error": "Please name the app to disconnect."}
+    uid = await resolve_composio_identity(user_id)
+    client = _get_client()
+
+    def _find() -> list:
+        data = _plain(client.client.connected_accounts.list(user_ids=[uid]))
+        return [
+            item
+            for item in (data.get("items") or [])
+            if (item.get("app_slug") or {}).get("slug") == toolkit
+            and str(item.get("status", "")).upper() == "ACTIVE"
+        ]
+
+    matches = await asyncio.to_thread(_find)
+    if not matches:
+        return {"success": False, "error": f"{toolkit} is not currently connected."}
+    account_id = matches[0].get("id")
+
+    def _delete() -> Any:
+        return client.client.connected_accounts.delete(connected_account_id=account_id)
+
+    await asyncio.to_thread(_delete)
+    _identity_cache.pop(str(user_id or "anonymous"), None)
+    return {"success": True, "disconnected": toolkit, "connected_account_id": account_id}
+
+
 def _plain(value: Any) -> Any:
     """Convert Pydantic/SDK response objects into JSON-compatible values."""
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -79,7 +160,7 @@ def _create_session_sync(user_id: str) -> Any:
 
 async def get_session(user_id: str | int | None) -> Any:
     """Return a process-cached session scoped to one stable S.T.E.W user ID."""
-    key = _safe_user_id(user_id)
+    key = await resolve_composio_identity(user_id)
     session = _sessions.get(key)
     if session is not None:
         _sessions.move_to_end(key)
