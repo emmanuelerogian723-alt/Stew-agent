@@ -1114,15 +1114,23 @@ async def composio_mini_connect(request: Request):
     if not toolkit:
         raise HTTPException(400, "Choose an app to connect")
     from server.composio_service import connect_app
-    # Paywall v3: free users can connect at most 7 apps
+    # Paywall v3: free users can connect at most 7 apps.
+    # The connected-app COUNT (provider-based, fail-closed) is the real gate;
+    # the plan lookup only raises the limit for paid users, so a DB hiccup must
+    # default to "free" instead of bricking every connect with a 503.
+    _mplan = "free"
     try:
-        import server.paywall as _pw
         from server.database import AsyncSessionLocal as _MiniDB
         from sqlalchemy import select as _msel
         async with _MiniDB() as _mdb:
             _mu = (await _mdb.execute(_msel(User).where(
-                User.email == f"tg_{tg_user['id']}@telegram.stew"))).scalar_one_or_none()
-            _mplan = _mu.plan if _mu else "free"
+                User.email == f"tg_{tg_user['id']}@telegram.stew")).scalars().first()) if True else None
+            if _mu and _mu.plan:
+                _mplan = _mu.plan
+    except Exception as _db_exc:
+        logger.warning("Mini app plan lookup unavailable, defaulting to free plan: %s", _db_exc)
+    try:
+        import server.paywall as _pw
         _ok, _cur, _lim, _msg = await _pw.check_connect_allowed(_mplan, str(tg_user["id"]))
         if not _ok:
             raise HTTPException(402, _msg)
