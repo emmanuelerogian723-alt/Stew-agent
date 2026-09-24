@@ -1244,7 +1244,7 @@ async def composio_prepare_api(request: Request):
     return result
 
 
-@app.get("/api/mcp/servers", include_in_schema=False)
+@app.post("/api/mcp/servers", include_in_schema=False)
 async def mcp_list_servers_api(request: Request):
     payload, user = await _verified_mini_app_user(request)
     from server.mcp_service import list_servers
