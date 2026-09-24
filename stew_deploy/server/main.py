@@ -1153,7 +1153,9 @@ async def composio_mini_disconnect(request: Request):
         logger.error("Mini App disconnect failed for %s: %s", toolkit, exc)
         raise HTTPException(502, "Could not disconnect this app right now") from exc
     if not result.get("success"):
-        raise HTTPException(404, result.get("error") or "App is not connected")
+        # 409, not 404: the global 404 handler rewrites endpoint-raised 404s
+        # into a misleading "Endpoint not found" message.
+        raise HTTPException(409, result.get("error") or "App is not connected")
     return result
 
 
