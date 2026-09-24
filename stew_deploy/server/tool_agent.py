@@ -1152,7 +1152,10 @@ async def run_agent_loop(
         assistant_text = clean_response(raw_content)
         try:
             trace.append({"iteration": iteration + 1,
-                          "raw_head": raw_content[:350],
+                          "raw_head": (raw_content or "")[:350],
+                          "raw_len": len(raw_content or ""),
+                          "provider": result.get("provider"),
+                          "model": result.get("model"),
                           "tools": [tc.get("tool") for tc in tool_calls]})
         except Exception:
             pass
