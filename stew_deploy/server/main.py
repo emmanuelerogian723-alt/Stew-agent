@@ -1294,6 +1294,7 @@ async def debug_agent_run_api(request: Request):
         "tool_calls": result.get("tool_calls", []),
         "files": len(result.get("files", [])),
         "figures": len(result.get("figures", [])),
+        "trace": result.get("trace", []),
     }
 
 

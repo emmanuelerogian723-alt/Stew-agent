@@ -1114,7 +1114,7 @@ async def run_agent_loop(
                 await save_conversation_turn(f"tg_{tg_user_id}", user_text, verified, "telegram")
             except Exception as exc:
                 logger.warning("Tool-agent memory save unavailable: %s", exc)
-        return {"response": verified, "files": files, "figures": figures, "tool_calls": history, "outcome": outcome}
+        return {"response": verified, "files": files, "figures": figures, "tool_calls": history, "outcome": outcome, "trace": trace}
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -1125,6 +1125,7 @@ async def run_agent_loop(
     figures = []
     tool_history = []
     tools_used = set()  # Track tools already called to prevent loops
+    trace = []  # per-iteration raw model output (debug visibility only)
 
     for iteration in range(max_iterations):
         if progress_cb:
@@ -1145,6 +1146,12 @@ async def run_agent_loop(
         # prose-only "final answer" (the NovaPay wall-of-text bug).
         tool_calls = extract_tool_calls(raw_content)
         assistant_text = clean_response(raw_content)
+        try:
+            trace.append({"iteration": iteration + 1,
+                          "raw_head": raw_content[:350],
+                          "tools": [tc.get("tool") for tc in tool_calls]})
+        except Exception:
+            pass
 
         if not tool_calls:
             # No more tool calls — this is the final answer.
