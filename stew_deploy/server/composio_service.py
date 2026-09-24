@@ -312,9 +312,19 @@ async def execute_action(
     stable_user_id = str(user_id or "anonymous")
     # Consult provider behavior tags as well as conservative name classification.
     # This blocks mutating actions even if their names look read-only.
+    # Slugs like HIGGSFIELD_MCP_BALANCE belong to the "higgsfield_mcp" toolkit;
+    # try progressively longer prefixes so underscored toolkits resolve.
+    action = None
     toolkit = slug.split("_", 1)[0].lower()
-    available = await list_app_actions(toolkit)
-    action = next((item for item in available.get("items", []) if item["slug"] == slug and not item["deprecated"]), None)
+    parts = slug.split("_")
+    for _tk in ["_".join(parts[:i]).lower() for i in range(1, len(parts))]:
+        available = await list_app_actions(_tk)
+        if not available.get("items"):
+            continue
+        action = next((item for item in available.get("items", []) if item["slug"] == slug and not item["deprecated"]), None)
+        if action:
+            toolkit = _tk
+            break
     if not action:
         return {"success": False, "error": "Action is not available in the current Composio catalog."}
     requires_approval = is_write_action(slug) or action["permission"] != "read_only"
