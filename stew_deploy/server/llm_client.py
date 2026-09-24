@@ -1,7 +1,7 @@
 """
 S.T.E.W LLM Client — multi-provider with automatic fallback.
 Updated 2026-07-01: Added NVIDIA NIM (free tier) as a provider.
-Chain: Groq (llama-3.3-70b) → NVIDIA NIM → OpenRouter → HuggingFace → OpenAI
+Chain: Groq → OpenRouter (Nemotron Ultra 550B free) → Puter → NVIDIA NIM → Mistral → HuggingFace → OpenAI
 """
 import logging
 from typing import Optional
@@ -27,7 +27,7 @@ PROVIDER_MODELS = {
     "groq":         "openai/gpt-oss-120b",           # best Groq model (replaced llama-3.3-70b)
     "groq_fast":    "openai/gpt-oss-20b",            # faster Groq model (replaced llama-4-scout)
     "nvidia":       "meta/llama-3.3-70b-instruct",   # free on build.nvidia.com NIM
-    "openrouter":   "meta-llama/llama-3.3-70b-instruct:free",
+    "openrouter":   "nvidia/nemotron-3-ultra-550b-a55b:free",  # strongest free OpenRouter model
     "puter":        "gpt-5.4-nano",
     "openai":       "gpt-4o-mini",
     "huggingface":  "Qwen/Qwen3-235B-A22B",         # best free on HF Router
@@ -41,6 +41,20 @@ GROQ_FALLBACKS = [
     "openai/gpt-oss-120b",        # primary — best Groq model
     "openai/gpt-oss-20b",         # fast fallback
     "qwen/qwen3.6-27b",          # reasoning model fallback
+]
+
+# Fallback chain for OpenRouter — strong FREE models, live-verified on
+# 2026-09-24 via /api/v1/models (all $0 prompt+completion). Order: biggest
+# capable MoE first, then progressively lighter/faster. `openrouter/free`
+# is OpenRouter's own router that picks any available free model, so the
+# chain can never dead-end because one model was deprecated.
+OPENROUTER_FALLBACKS = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",   # 550B MoE, 1M ctx — flagship free
+    "nvidia/nemotron-3-super-120b-a12b:free",   # 120B MoE, 262k ctx
+    "nvidia/nemotron-3.5-lightning:free",       # fast, 1M ctx
+    "qwen/qwen3.8-27b:free",                   # strong small model
+    "google/gemma-4-31b-it:free",               # stable all-rounder
+    "openrouter/free",                          # auto-route to any live free model
 ]
 
 
@@ -169,7 +183,7 @@ class LLMClient:
 
     @property
     def fallback_order(self) -> list[str]:
-        return [p for p in ["groq", "puter", "nvidia", "mistral", "openrouter", "huggingface", "openai", "pollinations"] if p in self.providers]
+        return [p for p in ["groq", "openrouter", "puter", "nvidia", "mistral", "huggingface", "openai", "pollinations"] if p in self.providers]
 
     def _call_groq_with_fallback(self, messages: list[dict], temperature: float, max_tokens: int = 4096) -> dict:
         """Try each Groq model in fallback order."""
@@ -201,6 +215,12 @@ class LLMClient:
                     if reasoning.strip():
                         logger.info(f"Groq {model}: empty content, recovering {len(reasoning)} chars from reasoning channel")
                         content = reasoning
+                if not content.strip():
+                    # A 200-with-empty-content is a DEAD reply, not a success.
+                    # Returning "" here made Stew answer with silence (and
+                    # skip every fallback provider) whenever Groq degraded.
+                    logger.warning(f"Groq {model}: empty content with no reasoning, trying next model")
+                    continue
                 usage = response.usage
                 logger.info(f"Groq success with model: {model}")
                 return {
@@ -221,6 +241,51 @@ class LLMClient:
                 else:
                     raise  # Non-model error — don't retry
         raise last_error
+
+    def _call_openrouter_with_fallback(self, messages: list[dict], temperature: float, max_tokens: int = 4096) -> dict:
+        """Try each strong free OpenRouter model in OPENROUTER_FALLBACKS.
+        Recovers reasoning-channel-only replies (same trap as Groq) and treats
+        an empty completion as a dead reply, moving to the next model."""
+        client = self.providers["openrouter"]
+        last_error = None
+        for model in OPENROUTER_FALLBACKS:
+            try:
+                response = client.chat.completions.create(
+                    model=model, messages=messages, temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                content = response.choices[0].message.content or ""
+                if not content.strip():
+                    reasoning = getattr(response.choices[0].message, "reasoning", None)
+                    if not reasoning and hasattr(response.choices[0].message, "model_extra") and response.choices[0].message.model_extra:
+                        reasoning = response.choices[0].message.model_extra.get("reasoning")
+                    reasoning = reasoning or ""
+                    if reasoning.strip():
+                        logger.info(f"OpenRouter {model}: empty content, recovering {len(reasoning)} chars from reasoning channel")
+                        content = reasoning
+                if not content.strip():
+                    logger.warning(f"OpenRouter {model}: empty content with no reasoning, trying next model")
+                    continue
+                usage = response.usage
+                logger.info(f"OpenRouter success with model: {model}")
+                return {
+                    "content": content, "provider": "openrouter", "model": model,
+                    "tokens": {
+                        "prompt": usage.prompt_tokens if usage else 0,
+                        "completion": usage.completion_tokens if usage else 0,
+                        "total": usage.total_tokens if usage else 0,
+                    },
+                }
+            except Exception as e:
+                last_error = e
+                err = str(e)
+                # Free-tier rate limits (429) and model deprecations (404) are
+                # expected on free models — fall through to the next one.
+                if any(x in err for x in ("429", "rate", "404", "not_active", "decommissioned", "No endpoints")):
+                    logger.warning(f"OpenRouter {model} unavailable ({err[:120]}), trying next")
+                    continue
+                raise
+        raise last_error or Exception("All OpenRouter free models failed")
 
     def _call_nvidia_with_fallback(self, messages: list[dict], temperature: float, max_tokens: int = 4096) -> dict:
         """Try each NVIDIA NIM free-tier model in fallback order."""
@@ -281,6 +346,23 @@ class LLMClient:
                 }
             except Exception:
                 return self._call_groq_with_fallback(messages, temperature, max_tokens)
+
+        if provider_name == "openrouter":
+            if model is None:
+                return self._call_openrouter_with_fallback(messages, temperature, max_tokens)
+            client = self.providers["openrouter"]
+            response = client.chat.completions.create(
+                model=model, messages=messages, temperature=temperature, max_tokens=max_tokens)
+            content = response.choices[0].message.content
+            usage = response.usage
+            return {
+                "content": content, "provider": "openrouter", "model": model,
+                "tokens": {
+                    "prompt": usage.prompt_tokens if usage else 0,
+                    "completion": usage.completion_tokens if usage else 0,
+                    "total": usage.total_tokens if usage else 0,
+                },
+            }
 
         if provider_name == "nvidia":
             if model is None:
@@ -374,6 +456,13 @@ class LLMClient:
         for provider_name in providers:
             try:
                 result = self._call_provider(provider_name, messages, model, temperature, max_tokens)
+                if not (result.get("content") or "").strip():
+                    # Empty completion = dead reply. Keep trying providers so
+                    # the user never gets silence while the chain still has
+                    # live options left.
+                    logger.warning(f"{provider_name} returned empty content, trying next provider")
+                    last_error = Exception("empty completion from " + provider_name)
+                    continue
                 logger.info(f"LLM success via {provider_name}/{result['model']}")
                 return result
             except Exception as e:
