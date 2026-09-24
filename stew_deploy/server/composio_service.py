@@ -146,13 +146,16 @@ def _get_client() -> Any:
     return _client
 
 
-def _create_session_sync(user_id: str) -> Any:
+def _create_session_sync(composio_user_id: str) -> Any:
     client = _get_client()
-    # Keep connection management available so users receive a Composio Connect
-    # Link when an app needs OAuth. Disable remote sandbox tools because S.T.E.W
-    # already has a controlled execution sandbox of its own.
+    # The caller passes an already-resolved, stable Composio user id
+    # (see resolve_composio_identity). Never re-prefix it here: that used to
+    # turn stew_stew_<id> into a fresh triple-prefixed identity with no
+    # connections. Keep connection management available so users receive a
+    # Composio Connect Link when an app needs OAuth. Disable remote sandbox
+    # tools because S.T.E.W already has a controlled execution sandbox.
     return client.sessions.create(
-        user_id=_safe_user_id(user_id),
+        user_id=composio_user_id,
         manage_connections={"enable": True, "wait_for_connections": False},
         sandbox={"enable": False},
     )
