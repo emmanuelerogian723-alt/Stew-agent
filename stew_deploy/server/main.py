@@ -1210,8 +1210,17 @@ async def composio_prepare_api(request: Request):
         raise HTTPException(413, "Action parameters are too large")
     from server.composio_service import execute_action, list_app_actions
     from server.agent_activity import is_write_action
-    actions = await list_app_actions(slug.split("_", 1)[0].lower())
-    action = next((x for x in actions.get("items", []) if x["slug"] == slug and not x["deprecated"]), None)
+    # Slugs like HIGGSFIELD_MCP_BALANCE belong to the "higgsfield_mcp" toolkit;
+    # try progressively longer prefixes so underscored toolkits resolve.
+    action = None
+    parts = slug.split("_")
+    for _tk in ["_".join(parts[:i]).lower() for i in range(1, len(parts))]:
+        actions = await list_app_actions(_tk)
+        if not actions.get("items"):
+            continue
+        action = next((x for x in actions["items"] if x["slug"] == slug and not x["deprecated"]), None)
+        if action:
+            break
     if not action:
         raise HTTPException(404, "Action is not available")
     if action["permission"] == "read_only" and not is_write_action(slug):
@@ -4005,6 +4014,14 @@ async def test_api_key(body: TestKeyRequest, db: AsyncSession = Depends(get_db))
 
 @app.exception_handler(404)
 async def not_found(request: Request, exc):
+    # Endpoint-raised HTTPException(404) details must survive; only genuinely
+    # unrouted requests get the generic "Endpoint not found" message.
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, str) and detail and detail.lower() != "not found":
+        return JSONResponse(
+            status_code=404,
+            content={"detail": detail, "success": False},
+        )
     return JSONResponse(
         status_code=404,
         content={"detail": f"Endpoint {request.url.path} not found", "success": False},
