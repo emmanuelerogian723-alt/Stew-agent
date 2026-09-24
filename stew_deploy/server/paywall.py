@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.config import settings
+from server.config import get_settings  # noqa: F401 (name is `get_settings`, not `settings`)
 
 logger = logging.getLogger(__name__)
 
