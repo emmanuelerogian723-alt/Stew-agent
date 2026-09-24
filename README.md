@@ -669,7 +669,7 @@ Pass these in the request body for Stew-specific features:
 
 **MUTYINT Nigeria**
 
-S.T.E.W — Smart Task Execution Worker
+S.T.E.W — Secret Task Execution Worker
 
 🇳🇬 100% Nigerian-built · Designed for Africa · Made for the world
 

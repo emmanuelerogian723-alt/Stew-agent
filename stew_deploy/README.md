@@ -1,4 +1,4 @@
-# 🧠 S.T.E.W Agent — Smart Thinking Executive Worker
+# 🧠 S.T.E.W Agent — Secret Task Execution Worker
 
 > *The AI API built for Africa. Multi-model LLM access, 60+ skills, 100-agent swarm, document generation, web search, and Naira billing via Paystack — no dollar card needed.*
 

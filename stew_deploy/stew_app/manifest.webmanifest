@@ -1,7 +1,7 @@
 {
   "name": "Stew Agent — AI Superpowers",
   "short_name": "Stew",
-  "description": "S.T.E.W (Smart Thinking Executive Worker) — your personal AI superpowers app. 12 personas, 63 skills, image generation, web search, MCP integrations. Built for Africa.",
+  "description": "S.T.E.W (Secret Task Execution Worker) — your personal AI superpowers app. 12 personas, 63 skills, image generation, web search, MCP integrations. Built for Africa.",
   "start_url": "/app/",
   "scope": "/app/",
   "display": "standalone",

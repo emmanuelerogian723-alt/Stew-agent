@@ -42,7 +42,7 @@ def _build_html(title: str, body_html: str) -> str:
                 S.T.E.W
               </h1>
               <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;letter-spacing:1px;">
-                Smart Thinking Executive Worker
+                Secret Task Execution Worker
               </p>
             </td>
           </tr>

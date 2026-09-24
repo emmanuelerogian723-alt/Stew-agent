@@ -9,7 +9,7 @@ license: mit
 app_port: 7860
 ---
 
-# S.T.E.W — Smart Thinking Executive Worker
+# S.T.E.W — Secret Task Execution Worker
 
 An autonomous AI agent API with real document generation, multi-provider LLM fallback, web search, and persistent memory.
 

@@ -234,6 +234,8 @@ async def scheduler_loop():
             await check_and_run_due_tasks()
             from server.automation_engine import tick_goals
             await tick_goals()
+            from server.checkin_service import run_due_check_ins
+            await run_due_check_ins()
         except asyncio.CancelledError:
             logger.info("Scheduler engine stopping")
             break

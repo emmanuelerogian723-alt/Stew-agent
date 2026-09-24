@@ -348,7 +348,7 @@ async def landing_page():
 h1{font-size:3em;background:linear-gradient(90deg,#7B2FBE,#00d4ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 p{color:#aaa;font-size:1.2em}.btn{display:inline-block;margin:10px;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:bold}
 .btn-primary{background:#7B2FBE;color:#fff}.btn-secondary{border:2px solid #7B2FBE;color:#7B2FBE}</style></head>
-<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Smart Thinking Executive Worker</p>
+<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Secret Task Execution Worker</p>
 <p>Africa's Most Powerful AI Agent API</p>
 <a class="btn btn-primary" href="/docs">API Docs</a>
 <a class="btn btn-secondary" href="/heartbeat">Status</a>
@@ -392,7 +392,7 @@ async def llms_txt():
     """llms.txt v2 - AI-friendly docs for LLM agents (ChatGPT, Gemini, Perplexity, Claude)."""
     content = """# S.T.E.W Agent
 
-> S.T.E.W (Smart Thinking Executive Worker) is an AI agent API built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
+> S.T.E.W (Secret Task Execution Worker) is an AI agent API built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
 
 ## Key Facts
 - Base URL: https://stew-agent.onrender.com

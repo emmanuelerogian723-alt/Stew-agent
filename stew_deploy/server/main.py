@@ -1606,7 +1606,7 @@ async def landing_page():
 h1{font-size:3em;background:linear-gradient(90deg,#7B2FBE,#00d4ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 p{color:#aaa;font-size:1.2em}.btn{display:inline-block;margin:10px;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:bold}
 .btn-primary{background:#7B2FBE;color:#fff}.btn-secondary{border:2px solid #7B2FBE;color:#7B2FBE}</style></head>
-<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Smart Thinking Executive Worker</p>
+<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Secret Task Execution Worker</p>
 <p>Africa's Most Powerful AI Agent API</p>
 <a class="btn btn-primary" href="/docs">API Docs</a>
 <a class="btn btn-secondary" href="/heartbeat">Status</a>
@@ -1650,7 +1650,7 @@ async def llms_txt():
     """llms.txt v2 - AI-friendly docs for LLM agents (ChatGPT, Gemini, Perplexity, Claude)."""
     content = """# Stew Agent (S.T.E.W)
 
-> Stew Agent (S.T.E.W — Smart Thinking Executive Worker) is an AI agent API and Telegram bot built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
+> Stew Agent (S.T.E.W — Secret Task Execution Worker) is an AI agent API and Telegram bot built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
 
 ## Key Facts
 - Base URL: https://stew-agent.onrender.com
@@ -6090,6 +6090,65 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(cid, "Podcast generation failed — please try again.")
 
         asyncio.create_task(_run_podcast(chat_id, _topic))
+        return {"ok": True}
+
+    # ── AGENT-INITIATED CHECK-INS (Stew reaches out first) ──────────────────
+    if _raw_text_early.startswith("/checkin") and not _raw_text_early.startswith("/checkins"):
+        # /checkin cancel <id>
+        _m = re.match(r"^/checkin\s+cancel\s+(\S+)", _raw_text_early, re.I)
+        if _m:
+            from server.checkin_service import cancel_check_in
+            _done = await cancel_check_in(str(tg_user_early.id), _m.group(1))
+            await bot.send_message(chat_id, "✅ Check-in cancelled — I won't reach out for that anymore." if _done else "I couldn't find that check-in — /checkins shows the list.")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Use /checkins to list your check-ins, then /checkin cancel <id>.")
+        return {"ok": True}
+
+    if _raw_text_early.startswith("/checkins"):
+        from server.checkin_service import list_check_ins
+        _items = await list_check_ins(str(tg_user_early.id))
+        if not _items:
+            await bot.send_message(chat_id, "📭 No active check-ins. Just tell me in chat — *check on me Friday about my thesis* or *give me a daily briefing* — and I'll reach out first.")
+        else:
+            _lines = ["🫡 *Your check-ins — I message you first:*"]
+            for _i, _c in enumerate(_items, 1):
+                _when = (_c.get("next_run_at") or "")[:16].replace("T", " ")
+                _label = {"goal": "🎯 Goal digest", "briefing": "📰 Daily briefing", "custom": "🧭 Custom check-in"}.get(_c["kind"], _c["kind"])
+                _topic = (" — " + _c["message"][:60]) if _c["message"] else (f" — goal {_c['goal_id'][:8]}" if _c.get("goal_id") else "")
+                _lines.append(f"{_i}. {_label}{_topic}\n   due {_when} UTC{' · repeats' if _c.get('recurring') else ''} · id `{_c['id'][:8]}`")
+            _lines.append("\nCancel: /checkin cancel <id>")
+            await bot.send_message(chat_id, "\n".join(_lines))
+        return {"ok": True}
+
+    if _raw_text_early.startswith("/briefing"):
+        from server.checkin_service import schedule_check_in, cancel_check_in, list_check_ins
+        _arg = _raw_text_early[len("/briefing"):].strip().lower()
+        if _arg in ("daily", "on", "auto"):
+            # next 07:30 WAT (UTC+1), then every 24h
+            _wat = timezone(timedelta(hours=1))
+            _now_wat = datetime.now(_wat)
+            _due = _now_wat.replace(hour=7, minute=30, second=0, microsecond=0)
+            if _due <= _now_wat:
+                _due += timedelta(days=1)
+            _utc_due = _due.astimezone(timezone.utc).replace(tzinfo=None)
+            await schedule_check_in(str(tg_user_early.id), str(chat_id), "briefing",
+                                    "daily personal briefing", when=_utc_due.isoformat(),
+                                    recurring=True, interval_seconds=86400)
+            await bot.send_message(chat_id, "📰 *Daily briefing on.* Every morning at 7:30 I'll reach out first — goals, calendar, weather, headlines. /briefing off stops it.")
+            return {"ok": True}
+        if _arg in ("off", "stop"):
+            _stopped = 0
+            for _c in await list_check_ins(str(tg_user_early.id)):
+                if _c["kind"] == "briefing":
+                    await cancel_check_in(str(tg_user_early.id), _c["id"])
+                    _stopped += 1
+            await bot.send_message(chat_id, "Daily briefing off." if _stopped else "You had no daily briefing on.")
+            return {"ok": True}
+        # on-demand: send one right now
+        await bot.send_message(chat_id, "📰 Pulling your morning briefing — one moment…")
+        from server.checkin_service import compose_daily_briefing
+        _brief = await compose_daily_briefing(str(tg_user_early.id))
+        await bot.send_message(chat_id, _brief or "I couldn't build the briefing right now — try again in a minute.")
         return {"ok": True}
 
     # ── STEW REMINDERS (natural language → scheduled Telegram pings) ─────────

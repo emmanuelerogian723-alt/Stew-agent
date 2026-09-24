@@ -26,7 +26,8 @@ Tools available:
   18. composio_list_connections()    — Show this user's connected apps
   19. mcp_list_servers()               — Show this user's connected MCP servers (open-ecosystem connectors: any platform with a remote MCP endpoint)
   20. mcp_search_tools(query)          — Discover tools across the user's connected MCP servers
-  21. mcp_execute(server_id, tool_name, arguments) — Run an MCP tool. Same trust model as apps: read/private-write runs instantly; destructive or public tools send a chat Approve/Cancel button
+  21. mcp_execute(server_id, tool_name, arguments) — Run an MCP tool.
+  22. schedule_check_in(kind, when, message, recurring, interval_seconds, goal_id) — Schedule Stew to reach out FIRST (agent-initiated check-in): a live goal-progress digest, a daily personal briefing, or a custom follow-up on any topic. when = ISO datetime or +90m style. Same trust model as apps: read/private-write runs instantly; destructive or public tools send a chat Approve/Cancel button
   19. composio_execute(tool_slug, arguments) — Execute a discovered app action
   20. prepare_social_video(video_url) — Add burned captions and create a public posting URL
 """
@@ -107,6 +108,7 @@ Rules:
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular PRIVATE writes (send an email, update your own calendar, create a doc) execute immediately; the explicit chat request IS the approval. Two things still pause: permanently deleting/removing something (destructiveHint), and anything that PUBLISHES publicly where other people will see it (post, tweet, broadcast) — for those, the platform itself has already sent a real tappable Approve/Cancel button in the chat before your reply; do not ask the user to type APPROVE or CANCEL, just tell them briefly what you prepared and that you'll continue the instant they tap the button above.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
+18k. PROACTIVE CHECK-INS: If the user says anything like "check on me", "follow up with me", "check on my goal tomorrow", "ping me Friday about X", "give me a daily briefing" — schedule_check_in. kinds: goal (progress digest; pass goal_id if known), briefing (daily For-You digest; recurring=True, interval_seconds=86400, when=07:30 local), custom (any topic; put the topic in message). when can be ISO datetime or +90m relative. One check-in per request unless the user asks for recurring. Confirm to the user in one line when it fires. /checkins lists them, /checkin cancel <id> stops one.
 18j. MCP CONNECTORS: If the user's request is about a platform NOT in the app catalog (Higgsfield, Clay, an internal CRM, anything), check mcp_list_servers. If a relevant server exists, mcp_search_tools with the user's goal, then mcp_execute with the exact discovered server_id, tool_name and schema arguments in the SAME turn. Never invent a tool name — only use names returned by mcp_search_tools. If no MCP server matches, say so and suggest adding one in the Mini App's MCP tab (remote https MCP URL). If a TOOL_RESULT includes approval_required=true with prompt_sent_in_chat=true, the Approve/Cancel button is already in the chat — just summarize what's pending, do not ask them to type a reply.
 18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it.
 18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
@@ -886,6 +888,34 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         except Exception as exc:
             logger.warning("MCP tool search failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"Could not search MCP tools: {exc}"}
+
+    elif tool == "schedule_check_in":
+        from server.checkin_service import schedule_check_in
+        kind = str(args.get("kind", "custom")).strip().lower()
+        if kind not in ("custom", "goal", "briefing"):
+            kind = "custom"
+        when = args.get("when") or args.get("time")
+        in_minutes = args.get("in_minutes")
+        if not when and in_minutes is None:
+            return {"tool": tool, "success": False,
+                    "error": "Pass when (ISO datetime like 2026-09-25T17:30:00 or +90m) or in_minutes."}
+        try:
+            rec = await schedule_check_in(
+                tg_user_id or chat_id, str(chat_id), kind,
+                str(args.get("message", "") or args.get("topic", "") or ""),
+                when=when, in_minutes=in_minutes,
+                recurring=bool(args.get("recurring", False)),
+                interval_seconds=args.get("interval_seconds"),
+                goal_id=args.get("goal_id"))
+        except ValueError as exc:
+            return {"tool": tool, "success": False, "error": str(exc)}
+        except Exception as exc:
+            logger.warning("schedule_check_in failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"Could not schedule the check-in: {exc}"}
+        due = rec.get("due_at", "")
+        return {"tool": tool, "success": True,
+                "output": f"Check-in scheduled ({kind}), due {due}. Stew will message the user proactively then — no action needed from them.",
+                "data": rec}
 
     elif tool == "mcp_execute":
         from server.mcp_service import execute_mcp_tool
