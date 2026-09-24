@@ -1136,7 +1136,11 @@ async def run_agent_loop(
                 pass
         # Get LLM response
         result = await asyncio.to_thread(llm.chat, messages)
-        raw_content = result["content"]
+        # Some providers occasionally return content=None (e.g. a native
+        # tool-call completion with empty text). Every downstream regex
+        # expects a string, so a None here crashed the whole agent loop
+        # with "expected string or bytes-like object, got 'NoneType'".
+        raw_content = result.get("content") or ""
 
         # CRITICAL: extract tool calls from the RAW content BEFORE any
         # cleaning. clean_response() deliberately strips TOOL_CALL lines
