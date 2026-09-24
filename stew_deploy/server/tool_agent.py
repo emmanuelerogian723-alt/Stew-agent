@@ -718,19 +718,45 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
             return {"tool": tool, "success": bool(auto.get("success")), "output": output[:30000], "data": data}
         # Not auto-executed (not connected, write action, or ambiguous) — tell
         # the model exactly what the next step is so it cannot stall.
+        # IMPORTANT: this hint goes at the FRONT of the output. The chat loop
+        # truncates tool results before the LLM sees them, and a hint buried
+        # at the tail of a 15k-char blob was silently cut off — the model
+        # discovered the action but never chained composio_execute.
         next_hint = ""
         results = data.get("results") or []
         if results:
             _slug = (results[0].get("primary_tool_slugs") or [None])[0]
+            _tk = (results[0].get("toolkits") or [None])[0]
             if _slug:
-                next_hint = (f"\n\nNEXT STEP REQUIRED: the request is NOT complete. "
-                             f"Call composio_execute with tool_slug {_slug} and the arguments "
-                             f"its schema requires (or composio_connect if the app is not "
-                             f"connected). Do NOT claim the task is done.")
+                _arg_spec = ""
+                if _tk:
+                    try:
+                        from server.composio_service import list_app_actions as _laa
+                        _acts = await _laa(_tk)
+                        _act = next((a for a in (_acts.get("items") or [])
+                                     if a.get("slug") == _slug and not a.get("deprecated")), None)
+                        if _act:
+                            _params = [
+                                {"name": p["name"], "type": p.get("type"),
+                                 "required": bool(p.get("required")),
+                                 **({"description": p["description"]} if p.get("description") else {})}
+                                for p in (_act.get("parameters") or [])[:25]
+                            ]
+                            _arg_spec = "\nARGUMENTS the tool expects: " + json.dumps(_params, ensure_ascii=False, default=str)[:2500]
+                    except Exception as _spec_exc:
+                        logger.debug(f"arg-spec lookup skipped: {_spec_exc}")
+                next_hint = (f"NEXT STEP REQUIRED: the request is NOT complete. "
+                             f"Call composio_execute with tool_slug {_slug} in your next "
+                             f"TOOL_CALL, filling its required arguments from the "
+                             f"ARGUMENTS spec below (or composio_connect if the app is "
+                             f"not connected). Do NOT claim the task is done and do NOT "
+                             f"stop to ask the user to confirm a regular write — "
+                             f"executing it IS the confirmation.{_arg_spec}\n\n"
+                             f"FULL SEARCH RESULT:\n")
         return {
             "tool": tool,
             "success": data.get("success", False),
-            "output": json.dumps(data, ensure_ascii=False, default=str)[:30000] + next_hint,
+            "output": next_hint + json.dumps(data, ensure_ascii=False, default=str)[:30000],
             "data": data,
         }
     elif tool == "composio_connect":
@@ -1232,10 +1258,15 @@ async def run_agent_loop(
             # (append the RAW assistant content — with its TOOL_CALL blocks —
             # so the model sees its own tool invocations in context)
             tool_output = tool_result.get("output", tool_result.get("error", "No output"))
+            # Head+tail truncation: keep the instructions at the front AND the
+            # tail of long payloads (where provider guidance often lives). A
+            # flat [:5000] once hid a 15k-char result's entire next-step hint.
+            if len(tool_output) > 9000:
+                tool_output = tool_output[:6000] + "\n...[truncated middle]...\n" + tool_output[-2500:]
             messages.append({"role": "assistant", "content": raw_content})
             messages.append({
                 "role": "user",
-                "content": f"TOOL_RESULT for {tool_name}:\n{tool_output[:5000]}\n\n"
+                "content": f"TOOL_RESULT for {tool_name}:\n{tool_output}\n\n"
                            f"Analyze this result. If the user's request is NOT yet fully "
                            f"completed, continue with the next TOOL_CALL. Only give a "
                            f"final answer once the request is genuinely satisfied — and "
