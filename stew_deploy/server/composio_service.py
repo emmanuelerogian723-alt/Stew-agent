@@ -327,7 +327,13 @@ async def execute_action(
             break
     if not action:
         return {"success": False, "error": "Action is not available in the current Composio catalog."}
-    requires_approval = is_write_action(slug) or action["permission"] != "read_only"
+    # Autonomous by default: an explicit chat request for a regular write
+    # (send email, post, upload, create, update) IS the user's approval — it
+    # runs immediately, no separate confirmation round-trip. The one thing
+    # that still pauses is a genuinely irreversible action (Composio's
+    # "destructiveHint" tier: permanently delete/remove) — one bad slot-fill
+    # by the model there can't be undone, so that alone gets a quick confirm.
+    requires_approval = action["permission"] == "approval_destructive"
     connection = await list_connections(stable_user_id, toolkits=[toolkit])
     if not any(item.get("slug") == toolkit and (item.get("connection") or {}).get("is_active") for item in connection.get("items", [])):
         return {"success": False, "error": f"{toolkit} is not connected for this user. Connect it first."}
@@ -343,7 +349,7 @@ async def execute_action(
             "approval_id": pending.id,
             "tool_slug": slug,
             "summary": pending.summary,
-            "message": "I prepared this action but have not executed it. Reply APPROVE to continue or CANCEL to discard it.",
+            "message": "This permanently deletes/removes something and can't be undone, so I paused it. Reply APPROVE to go ahead, or CANCEL to discard it.",
         }
 
     session = await get_session(user_id)

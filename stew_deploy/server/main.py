@@ -1208,7 +1208,9 @@ async def composio_pending_api(request: Request):
 
 @app.post("/api/composio/prepare", include_in_schema=False)
 async def composio_prepare_api(request: Request):
-    """Prepare a connected app write; never execute it without approval."""
+    """Run a connected-app write from the Mini app. Regular writes execute
+    immediately (tapping this button IS the approval); only a permanent
+    delete/remove comes back with approval_required=True and waits."""
     payload, user = await _verified_mini_app_user(request)
     slug = str(payload.get("tool_slug", "")).upper()
     arguments = payload.get("arguments")
@@ -1237,8 +1239,8 @@ async def composio_prepare_api(request: Request):
     if missing:
         raise HTTPException(400, "Missing required fields: " + ", ".join(missing[:10]))
     result = await execute_action(str(user["id"]), slug, arguments)
-    if not result.get("approval_required"):
-        raise HTTPException(400, result.get("error") or "Could not prepare this action")
+    if not result.get("success") and not result.get("approval_required"):
+        raise HTTPException(400, result.get("error") or "Could not run this action")
     return result
 
 
@@ -11722,13 +11724,26 @@ Requirements:
             except Exception as _vid_err:
                 logger.debug(f"video scan skipped: {_vid_err}")
 
-            # React ✅ on the user's original message: task finished
+            # React to match what actually happened, not a flat "done" every time.
+            _OUTCOME_REACTIONS = {
+                "done": "🎉",
+                "needs_confirmation": "🤔",
+                "failed": "😢",
+            }
             try:
-                await bot.set_message_reaction(chat_id, msg.get("message_id"), "🎉")
+                await bot.set_message_reaction(
+                    chat_id, msg.get("message_id"),
+                    _OUTCOME_REACTIONS.get(agent_result.get("outcome"), "🎉"),
+                )
             except Exception:
                 pass
             if _ta_banner:
-                await _ta_banner.finish("✅ Done ✨")
+                _BANNER_FINISH = {
+                    "done": "✅ Done ✨",
+                    "needs_confirmation": "⏸️ Paused — needs your confirmation",
+                    "failed": "⚠️ Hit an error — nothing changed",
+                }
+                await _ta_banner.finish(_BANNER_FINISH.get(agent_result.get("outcome"), "✅ Done ✨"))
 
             # Log
             if tg_user:

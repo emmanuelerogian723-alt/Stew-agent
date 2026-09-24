@@ -101,14 +101,14 @@ Rules:
 
 18b. CONNECTED APPS (COMPOSIO): For Gmail, Google Calendar, Drive, Sheets, Slack, Notion, GitHub, LinkedIn and other app requests, first call composio_search_tools with the user's exact goal. Use ONLY tool slugs and argument schemas returned by that search. Never invent a slug. If the app is not connected, call composio_connect with the discovered toolkit slug and return the Connect Link. After the user connects, search again and execute.
 18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
-18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, delete data, send messages, publish content, create purchases, or perform financial actions unless explicitly requested. For ambiguous or destructive actions, ask one concise confirmation question instead of executing.
+18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular writes (send, post, create, update, upload, schedule, pay) execute immediately; the explicit chat request IS the approval. Only permanently deleting/removing something (destructiveHint) pauses for a one-line confirm — everything else must not stall waiting for a second confirmation message.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
 18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it.
-18j. SOCIAL MANAGER: A broad request to manage social accounts is not authorization to publish. Inspect connected account(s) and recent content/analytics first. Ask for missing brand voice, audience, goal, content topic, media assets, target accounts, schedule and timezone, rather than inventing them. Prepare platform-specific drafts for review. Check each provider's media format and required arguments from its live schema. Request separate approval for each publish/edit and report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone.
+18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
-18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools. Posting remains pending until the user approves it.
-18h. Read-only app actions may execute immediately. Any send, reply, post, publish, create, update, upload, delete, payment, booking, or similar external change is intercepted by STEW's approval gateway. Clearly show the prepared action and ask the user to reply APPROVE or CANCEL; never claim it ran before approval.
+18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
+18h. Read-only app actions and regular writes (send, reply, post, publish, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. Only a permanent delete/remove is intercepted by STEW's approval gateway; for that one case, clearly show the prepared action and ask the user to reply APPROVE or CANCEL. Never claim anything ran without a successful TOOL_RESULT confirming it.
 
 TOOL_CALL: {"tool": "run_shell", "args": {"command": "pip install sympy && python3 -c 'import sympy; print(sympy.sqrt(8))'"}}
 TOOL_CALL: {"tool": "run_terminal_code", "args": {"code": "import requests\nr = requests.get('https://api.github.com')\nprint(r.json())"}}
@@ -881,7 +881,8 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
                and x.get('result', {}).get('data', {}).get('approval_required')]
     if pending:
         lines = [f"{x.get('summary', x.get('tool_slug', 'Action'))} (approval {x.get('approval_id')})" for x in pending]
-        return 'Prepared, not executed:\n'+'\n'.join(lines)+'\nReply /approve <approval ID> to execute one action, or /cancel <approval ID>.'
+        return ('This permanently deletes/removes something and can\'t be undone, so I paused it:\n'
+                + '\n'.join(lines) + '\nReply APPROVE to go ahead, or CANCEL to discard it.')
     failures = [x['result'].get('data', {}) for x in history
                 if x.get('call', {}).get('tool') == 'composio_execute'
                 and x.get('result').get('success') is False]
@@ -933,9 +934,9 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
                         if s not in found:
                             found.append(s)
         if found:
-            return ("I found the right action (" + ", ".join(found) + ") but it hasn't actually "
-                    "run yet. Reply \"run it\" and I'll execute it now.")
-        return "I found the right connected-app action but it hasn't actually run yet. Please send your request again."
+            return ("I found the right action (" + ", ".join(found) + ") but hit an error before it "
+                    "could run — nothing was changed. Please try again in a moment.")
+        return "I found the right connected-app action but hit an error before it could run — nothing was changed. Please try again."
     if not auto_executed_ok:
         completed = [x.get('result', {}).get('data', {}) for x in history
                      if x.get('call', {}).get('tool') == 'composio_execute'
@@ -1065,6 +1066,20 @@ async def run_agent_loop(
         ):
             verified = ("I haven't run a connected-app action for that request, so I can't "
                         "claim a result. Please try the request again, or send /apps to check the connection.")
+        # Classify the outcome for the caller (chat reaction, banner finish
+        # line) — cheap re-derivation of the same signals _verified_app_response
+        # already used, so the UI layer never has to text-sniff the reply.
+        outcome = "done"
+        if any(x.get('call', {}).get('tool') == 'composio_execute'
+               and x.get('result', {}).get('data', {}).get('approval_required') for x in history):
+            outcome = "needs_confirmation"
+        elif any(x.get('call', {}).get('tool') == 'composio_execute'
+                 and x.get('result', {}).get('success') is False for x in history):
+            outcome = "failed"
+        elif any((x.get('result', {}).get('data', {}) or {}).get('auto_executed', {}).get('success') is False
+                 for x in history if x.get('call', {}).get('tool') == 'composio_search_tools'
+                 and (x.get('result', {}).get('data', {}) or {}).get('auto_executed')):
+            outcome = "failed"
         # Persist the conversation text, not provider payloads or attachments.
         # Keep this best-effort so memory outages cannot erase a completed action.
         if tg_user_id:
@@ -1073,7 +1088,7 @@ async def run_agent_loop(
                 await save_conversation_turn(f"tg_{tg_user_id}", user_text, verified, "telegram")
             except Exception as exc:
                 logger.warning("Tool-agent memory save unavailable: %s", exc)
-        return {"response": verified, "files": files, "figures": figures, "tool_calls": history}
+        return {"response": verified, "files": files, "figures": figures, "tool_calls": history, "outcome": outcome}
 
     messages = [
         {"role": "system", "content": system_prompt},
