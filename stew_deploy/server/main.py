@@ -11966,6 +11966,13 @@ Requirements:
         "my tweet", "post on x", "post to twitter", "schedule tweet", "my tweets",
         "facebook page", "my facebook", "post on facebook",
         "my notion database", "my board", "my project", "my tasks",
+        # MCP connectors (any remote MCP server the user added in the Mini
+        # App) — missing this previously meant "check the mcp that's
+        # connected" fell through to plain chat, and the model answered
+        # from general knowledge about Microchip's MCP-series hardware
+        # chips instead of checking the user's actual MCP servers.
+        "mcp", "mcp server", "mcp servers", "mcp connector", "mcp connectors",
+        "mcp tool", "mcp tools", "connected mcp", "my mcp",
     ])
 
     _agent_extra_triggers = (
@@ -12000,6 +12007,20 @@ Requirements:
                         break
             except Exception as _route_exc:
                 logger.warning("Live connected-app routing unavailable: %s", _route_exc)
+            # Also match the user's own connected MCP servers by name, so
+            # "check <my custom server name>" routes to the agent even
+            # without the literal word "mcp" in the message.
+            if not needs_tools:
+                try:
+                    from server.mcp_service import list_servers as _list_mcp_servers
+                    _mcp_live = await _list_mcp_servers(str(msg['user_id']))
+                    for _srv in _mcp_live:
+                        _sname = str(_srv.get("name") or "").lower().strip()
+                        if _sname and re.search(r"(?<!\w)" + re.escape(_sname) + r"(?!\w)", user_lower):
+                            needs_tools = True
+                            break
+                except Exception as _mcp_route_exc:
+                    logger.warning("Live MCP-server routing unavailable: %s", _mcp_route_exc)
 
     if needs_tools:
         await bot.send_typing(chat_id)
