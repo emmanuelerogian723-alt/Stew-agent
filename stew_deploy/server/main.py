@@ -1255,6 +1255,30 @@ async def composio_approval(request: Request):
     raise HTTPException(400, "Decision must be approve or cancel")
 
 
+@app.post("/api/debug/agent-run", include_in_schema=False)
+async def debug_agent_run_api(request: Request):
+    """Admin diagnostic: run the SAME tool-agent loop the Telegram chat uses
+    and return its full result (response + tool_calls) instead of sending a
+    Telegram message. Owner-only via Telegram init_data verification."""
+    payload, tg_user = await _verified_mini_app_user(request)
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        raise HTTPException(400, "text required")
+    from server.tool_agent import run_agent_loop
+    try:
+        result = await run_agent_loop(text, bot=None, chat_id=None, max_iterations=8, tg_user_id=str(tg_user["id"]))
+    except Exception as exc:
+        logger.error("Debug agent-run failed: %s", exc, exc_info=True)
+        raise HTTPException(500, f"agent run failed: {type(exc).__name__}: {exc}")
+    return {
+        "success": True,
+        "response": result.get("response", ""),
+        "tool_calls": result.get("tool_calls", []),
+        "files": len(result.get("files", [])),
+        "figures": len(result.get("figures", [])),
+    }
+
+
 @app.post("/api/automation/goals", include_in_schema=False)
 async def automation_goals_api(request: Request):
     payload, user = await _verified_mini_app_user(request)
