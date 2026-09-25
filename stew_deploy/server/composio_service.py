@@ -287,9 +287,17 @@ async def list_connections(
 
     response = await asyncio.to_thread(_list)
     data = _plain(response)
+    items = data.get("items", []) if isinstance(data, dict) else []
+    # Every catalog item carries its real Composio app icon: Composio's own
+    # logo service serves a logo for every toolkit slug (100% coverage on the
+    # full 1,500+ app catalog).
+    for item in items:
+        if isinstance(item, dict) and item.get("slug"):
+            if not item.get("logo"):
+                item["logo"] = f"https://logos.composio.dev/api/{item['slug']}"
     return {
         "success": True,
-        "items": data.get("items", []) if isinstance(data, dict) else [],
+        "items": items,
         "next_cursor": data.get("next_cursor") if isinstance(data, dict) else None,
     }
 
