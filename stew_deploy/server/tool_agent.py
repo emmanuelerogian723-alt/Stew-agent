@@ -99,6 +99,7 @@ Rules:
 17. For open-ended, multi-step or research-heavy goals, break the goal into smaller steps and chain multiple DIFFERENT tools in sequence (e.g. web_search to find facts, then run_python_code to compute something, then generate_document to produce a deliverable). Think like an autonomous agent completing a real task end-to-end, not a one-shot Q&A bot.
 18. For unknown facts, historical/biographical info, or general knowledge lookups — prefer wikipedia_search over web_search (faster, more reliable for encyclopedic facts). Use web_search only for time-sensitive or very recent info.
 
+18k. CONNECTOR SUPERPOWERS: composio_search_tools searches the ENTIRE Composio app catalog (1000+ apps), not just the apps already connected. When the user asks for ANY capability — edit a video, make a cartoon animation with Blender, transcribe, render, design, publish anywhere — call composio_search_tools with their exact goal. If the best app for the job is not yet connected, call composio_connect with its toolkit slug and hand back the connect link; once connected, search again and execute. Never say "I can't do that" before you have searched the catalog. For render/media jobs the provider may return a queued or processing status with a job id — report the job as submitted with its id honestly; do not claim the finished media exists until a successful result says so.
 18b. CONNECTED APPS (COMPOSIO): For Gmail, Google Calendar, Drive, Sheets, Slack, Notion, GitHub, LinkedIn and other app requests, first call composio_search_tools with the user's exact goal. Use ONLY tool slugs and argument schemas returned by that search. Never invent a slug. If the app is not connected, call composio_connect with the discovered toolkit slug and return the Connect Link. After the user connects, search again and execute.
 18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular writes (send, post, create, update, upload, schedule, pay) execute immediately; the explicit chat request IS the approval. Only permanently deleting/removing something (destructiveHint) pauses for a one-line confirm — everything else must not stall waiting for a second confirmation message.
@@ -1183,6 +1184,7 @@ async def run_agent_loop(
     tool_history = []
     tools_used = set()  # Track tools already called to prevent loops
     trace = []  # per-iteration raw model output (debug visibility only)
+    _anti_hallucination_retries = 0  # self-correction pushes, capped at 2
 
     for iteration in range(max_iterations):
         if progress_cb:
@@ -1236,6 +1238,38 @@ async def run_agent_loop(
                                 "If it involves a connected app, emit a composio TOOL_CALL.",
                 })
                 continue
+            # ── ANTI-HALLUCINATION SELF-CORRECTION (v3 agentic powers) ─────────
+            # Models sometimes answer "Done! I've drafted the email…" without
+            # ever emitting a TOOL_CALL, or stop after search without
+            # executing. Provider results are the ONLY authority: push a
+            # corrective turn and keep looping (max 2 pushes) instead of
+            # ending with a fake or dead-end reply.
+            if _connected_app_task and _anti_hallucination_retries < 2:
+                _searched = any(x.get("call", {}).get("tool") == "composio_search_tools" for x in tool_history)
+                _executed = any(x.get("call", {}).get("tool") == "composio_execute" for x in tool_history)
+                _connected_link = any(x.get("call", {}).get("tool") == "composio_connect" for x in tool_history)
+                _confirmed = any(
+                    ((x.get('result', {}).get('data', {}) or {}).get('auto_executed', {}) or {}).get('success')
+                    or (x.get('call', {}).get('tool') == 'composio_execute' and x.get('result', {}).get('success'))
+                    for x in tool_history)
+                _claims_done = bool(re.search(
+                    r"\b(done|drafted|sent|posted|created|uploaded|published|scheduled|"
+                    r"fetched|checked|saved|updated|added|wrote|finished|completed)\b",
+                    (assistant_text or ""), re.I))
+                if not _confirmed and not _connected_link and (
+                        _claims_done or not tool_history or (_searched and not _executed)):
+                    _anti_hallucination_retries += 1
+                    messages.append({"role": "assistant", "content": raw_content or "(claimed completion)"})
+                    messages.append({"role": "user", "content": (
+                        "CORRECTION: that reply claims the connected-app task is done, but NO "
+                        "successful provider tool result confirms it. That is a hallucination — "
+                        "do not answer in prose. Emit a TOOL_CALL now: composio_search_tools "
+                        "with the user's exact goal (if not already searched), then "
+                        "composio_execute with the discovered tool_slug and its required "
+                        "arguments. Only composio_connect (returning its connect link) is a "
+                        "valid alternative when the app is not connected."
+                    )})
+                    continue
             return await _finish_agent(assistant_text, tool_history, files, figures)
 
         # Filter out tools already called (prevent search loops)

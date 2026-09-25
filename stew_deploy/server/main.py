@@ -11732,6 +11732,18 @@ Requirements:
         "upload to youtube", "upload to tiktok", "upload to instagram",
         "post my video", "post the video", "post the reel",
         "share to instagram", "instagram reel", "tiktok",
+        # Connector superpowers (2026-09-25): creative-tool requests must
+        # reach the agent, which searches the FULL Composio catalog (Blender,
+        # Shotstack, VEED, CapCut and 1000+ others) and offers a connect link
+        # when the app isn't connected yet. Without these triggers such
+        # requests fell through to plain chat and got a knowledge answer.
+        "blender", "cartoon", "animation", "animate", "animate it",
+        "video editor", "edit my video", "edit the video", "edit this video",
+        "video editing", "3d model", "3d animation", "render my",
+        "render the", "shotstack", "capcut", "veed", "davinci",
+        "premiere", "after effects", "canva", "midjourney", "runway",
+        "pika", "sora", "luma", "kling", "veo",
+        "use a connector", "any connector", "connected app",
     )
     if any(k in user_lower for k in _agent_extra_triggers):
         needs_tools = True
