@@ -13,6 +13,24 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+# ── WIND MOTION ──────────────────────────────────────────────────────────────
+# Claude's execution panel has flowing gradient "wind" lines while it works.
+# In plain Telegram text we emulate that with a wave pattern that DRIFTS one
+# character per tick — the strip visibly flows across edits.
+_WIND_CHARS = ["≋", "≈", "∿", "≈"]
+
+
+def _wind_strip(length: int, phase: int = 0) -> str:
+    if length <= 0:
+        return ""
+    return "".join(_WIND_CHARS[(i + phase) % len(_WIND_CHARS)] for i in range(length))
+
+
+def _esc(text) -> str:
+    """HTML-escape dynamic content so bold markup can never break the edit."""
+    import html as _html
+    return _html.escape(str(text or ""))
 _TICKS = ["🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔"]
 
 
@@ -194,11 +212,16 @@ class LiveActivityStream:
                     self.tool_card["status"] = "done" if ok else "error"
                     self.tool_card["evidence"] = evidence
                 if action and action.lower() not in evidence.lower():
-                    line = f"{icon} {prefix} {action} — {evidence}"
+                    log_line = f"{icon} {prefix} {action} — {evidence}"
                 else:
-                    line = f"{icon} {prefix} {evidence}"
-                self.timeline.append(line[:170])
-                self._log(line)
+                    log_line = f"{icon} {prefix} {evidence}"
+                # Claude-style step group: gerund action title + real evidence.
+                title = action or str(name)
+                self.timeline.append({
+                    "icon": icon, "title": title[:80], "evidence": evidence[:120],
+                    "ok": ok,
+                })
+                self._log(log_line)
                 self.current = None
                 if self.timeline:
                     self.progress_pct = min(90, int(100 * len(self.timeline) / (len(self.timeline) + 2)))
@@ -206,44 +229,69 @@ class LiveActivityStream:
             logger.debug("LiveActivityStream.record swallowed a bad event", exc_info=True)
 
     def _render(self, final: bool = False) -> str:
-        lines = [self.title, "─" * 28]
-        shown = self.timeline[-6:]
+        """Claude-style execution panel:
+        - bold step titles, muted (·) context/evidence lines
+        - a WIND strip that drifts every tick while work is in flight
+        - the wind doubles as the progress bar (flows further as steps land)
+        - rolling muted activity log at the bottom"""
+        phase = self._frame
+        out = []
+
+        # Header — bold, Claude-panel style
+        out.append(f"<b>{_esc('⚡ Stew is working' if not final else '⚡ Stew — finished')}</b>")
+
+        # Wind strip: flows while running; full-width still wave when done
+        if final:
+            out.append(_wind_strip(24) + "‖")
+        else:
+            out.append(_wind_strip(22, phase) + "≫")
+
+        # Step groups (Claude-style: bold title line, muted evidence line)
+        shown = self.timeline[-5:]
         hidden = len(self.timeline) - len(shown)
         if hidden > 0:
-            lines.append(f"… {hidden} earlier step(s) completed")
-        lines.extend(shown)
+            out.append(f"· … {_esc(hidden)} earlier step(s) done")
+        for step in shown:
+            mark = "✓" if step.get("ok", True) else "⚠"
+            out.append(f"<b>{mark} {_esc(step['title'])}</b>")
+            out.append(f"· {_esc(step['evidence'])}")
 
+        # Current in-flight action — bold with a small trailing wind trail
         if not final and self.current:
-            frame = _FRAMES[self._frame]
-            lines.append(f"{frame} {self.current.get('label', 'Working…')}")
+            label = self.current.get("label", "Working…")
+            trail = _wind_strip(3, phase)
+            out.append(f"<b>▸ {_esc(label)} {_wind_strip(3, phase)}</b>")
 
+        # Tool card (connector permission + status) — Claude tool-card feel
         tc = self.tool_card
         if tc and (not final or tc.get("status") != "running"):
-            lines.append("")
-            card = [f"{tc['icon']} {tc['name']}"]
+            out.append("")
+            out.append(f"{tc['icon']} <b>{_esc(tc['name'])}</b>")
             if tc.get("connector"):
-                card.append("   Permission: ✅ Authorized")
-            card.append(f"   {tc['label']}")
+                out.append("· Permission: ✅ Authorized")
             if tc.get("evidence"):
-                card.append(f"   → {tc['evidence']}")
-            status_label = {"running": "🟢 Running", "done": "✅ Complete",
-                            "error": "❌ Error"}.get(tc.get("status"), "🟢 Running")
-            card.append(f"   Status: {status_label}")
-            lines.append("\n".join(card))
+                out.append(f"· → {_esc(tc['evidence'])}")
+            if not final and tc.get("status") == "running":
+                out.append(f"· Still working on it… {_wind_strip(2, phase)}")
+            else:
+                status = {"done": "✅ Complete", "error": "⚠️ Error"}.get(tc.get("status"), "✅ Complete")
+                out.append(f"· Status: {status}")
 
+        # Wind progress bar — the same flowing wave, filled by real progress
         pct = 100 if final else self.progress_pct
-        filled = max(0, min(10, pct // 10))
-        bar = "▓" * filled + "░" * (10 - filled)
-        lines.append("")
-        lines.append(f"{bar} {pct}%")
+        filled = int(round(20 * pct / 100.0))
+        bar = _wind_strip(filled, phase) + "·" * (20 - filled)
+        out.append("")
+        out.append(f"{bar}  {pct}%")
 
+        # Muted rolling activity log
         if self.logs:
-            lines.append("")
-            lines.append("🖥 Live Log")
-            for ts, txt in self.logs[-6:]:
-                lines.append(f"{ts}  {txt}")
+            out.append("")
+            out.append("<b>Activity</b>")
+            for ts, txt in self.logs[-5:]:
+                out.append(f"· {_esc(ts)} {_esc(txt)}")
 
-        return "\n".join(lines)[:3900]
+        return "\n".join(out)[:3900]
 
     async def _tick(self) -> None:
         while not self._done:
@@ -251,7 +299,7 @@ class LiveActivityStream:
                 self._frame = (self._frame + 1) % len(_FRAMES)
                 text = self._render()
                 if self.message_id and text != self._last_rendered:
-                    await self.bot.edit_message(self.chat_id, self.message_id, text)
+                    await self.bot.edit_message(self.chat_id, self.message_id, text, parse_mode="HTML")
                     self._last_rendered = text
             except asyncio.CancelledError:
                 return
@@ -263,7 +311,7 @@ class LiveActivityStream:
         try:
             await self.bot.send_chat_action(self.chat_id, "typing")
             self.current = {"type": "thinking", "label": "Starting…"}
-            res = await self.bot.send_message(self.chat_id, self._render())
+            res = await self.bot.send_message(self.chat_id, self._render(), parse_mode="HTML")
             self.message_id = (res or {}).get("message_id")
         except Exception as e:
             logger.debug(f"LiveActivityStream start skipped: {e}")
@@ -281,7 +329,7 @@ class LiveActivityStream:
                 pass
         try:
             if self.message_id:
-                text = self._render(final=True) + "\n\n" + final[:300]
-                await self.bot.edit_message(self.chat_id, self.message_id, text[:3950])
+                text = self._render(final=True) + f"\n\n<b>{_esc(final)}</b>"
+                await self.bot.edit_message(self.chat_id, self.message_id, text[:3950], parse_mode="HTML")
         except Exception as e:
             logger.debug(f"LiveActivityStream finish edit skipped: {e}")

@@ -5983,6 +5983,65 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         asyncio.create_task(_run_podcast(chat_id, _topic))
         return {"ok": True}
 
+    # ── AGENT-INITIATED CHECK-INS (Stew reaches out first) ──────────────────
+    if _raw_text_early.startswith("/checkin") and not _raw_text_early.startswith("/checkins"):
+        # /checkin cancel <id>
+        _m = re.match(r"^/checkin\s+cancel\s+(\S+)", _raw_text_early, re.I)
+        if _m:
+            from server.checkin_service import cancel_check_in
+            _done = await cancel_check_in(str(tg_user_early.id), _m.group(1))
+            await bot.send_message(chat_id, "✅ Check-in cancelled — I won't reach out for that anymore." if _done else "I couldn't find that check-in — /checkins shows the list.")
+            return {"ok": True}
+        await bot.send_message(chat_id, "Use /checkins to list your check-ins, then /checkin cancel <id>.")
+        return {"ok": True}
+
+    if _raw_text_early.startswith("/checkins"):
+        from server.checkin_service import list_check_ins
+        _items = await list_check_ins(str(tg_user_early.id))
+        if not _items:
+            await bot.send_message(chat_id, "📭 No active check-ins. Just tell me in chat — *check on me Friday about my thesis* or *give me a daily briefing* — and I'll reach out first.")
+        else:
+            _lines = ["🫡 *Your check-ins — I message you first:*"]
+            for _i, _c in enumerate(_items, 1):
+                _when = (_c.get("next_run_at") or "")[:16].replace("T", " ")
+                _label = {"goal": "🎯 Goal digest", "briefing": "📰 Daily briefing", "custom": "🧭 Custom check-in"}.get(_c["kind"], _c["kind"])
+                _topic = (" — " + _c["message"][:60]) if _c["message"] else (f" — goal {_c['goal_id'][:8]}" if _c.get("goal_id") else "")
+                _lines.append(f"{_i}. {_label}{_topic}\n   due {_when} UTC{' · repeats' if _c.get('recurring') else ''} · id `{_c['id'][:8]}`")
+            _lines.append("\nCancel: /checkin cancel <id>")
+            await bot.send_message(chat_id, "\n".join(_lines))
+        return {"ok": True}
+
+    if _raw_text_early.startswith("/briefing"):
+        from server.checkin_service import schedule_check_in, cancel_check_in, list_check_ins
+        _arg = _raw_text_early[len("/briefing"):].strip().lower()
+        if _arg in ("daily", "on", "auto"):
+            # next 07:30 WAT (UTC+1), then every 24h
+            _wat = timezone(timedelta(hours=1))
+            _now_wat = datetime.now(_wat)
+            _due = _now_wat.replace(hour=7, minute=30, second=0, microsecond=0)
+            if _due <= _now_wat:
+                _due += timedelta(days=1)
+            _utc_due = _due.astimezone(timezone.utc).replace(tzinfo=None)
+            await schedule_check_in(str(tg_user_early.id), str(chat_id), "briefing",
+                                    "daily personal briefing", when=_utc_due.isoformat(),
+                                    recurring=True, interval_seconds=86400)
+            await bot.send_message(chat_id, "📰 *Daily briefing on.* Every morning at 7:30 I'll reach out first — goals, calendar, weather, headlines. /briefing off stops it.")
+            return {"ok": True}
+        if _arg in ("off", "stop"):
+            _stopped = 0
+            for _c in await list_check_ins(str(tg_user_early.id)):
+                if _c["kind"] == "briefing":
+                    await cancel_check_in(str(tg_user_early.id), _c["id"])
+                    _stopped += 1
+            await bot.send_message(chat_id, "Daily briefing off." if _stopped else "You had no daily briefing on.")
+            return {"ok": True}
+        # on-demand: send one right now
+        await bot.send_message(chat_id, "📰 Pulling your morning briefing — one moment…")
+        from server.checkin_service import compose_daily_briefing
+        _brief = await compose_daily_briefing(str(tg_user_early.id))
+        await bot.send_message(chat_id, _brief or "I couldn't build the briefing right now — try again in a minute.")
+        return {"ok": True}
+
     # ── STEW REMINDERS (natural language → scheduled Telegram pings) ─────────
     import server.reminder as _rm
     if _raw_text_early.startswith("/remind") or re.search(r"^remind\s+me\b", _raw_text_early.lower()):
@@ -11818,6 +11877,13 @@ Requirements:
         "my messages", "read my messages", "unread message", "my notifications",
         "latest notification", "my uploads", "latest upload", "my videos",
         "latest video", "my posts", "latest post", "my comments",
+        # MCP connectors (any remote MCP server the user added in the Mini
+        # App) — missing this previously meant "check the mcp that's
+        # connected" fell through to plain chat, and the model answered
+        # from general knowledge about Microchip's MCP-series hardware
+        # chips instead of checking the user's actual MCP servers.
+        "mcp", "mcp server", "mcp servers", "mcp connector", "mcp connectors",
+        "mcp tool", "mcp tools", "connected mcp", "my mcp",
     ])
 
     # Anti-hallucination gate: "read my latest email", "check my dms",

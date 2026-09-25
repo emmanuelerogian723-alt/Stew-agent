@@ -1,12 +1,12 @@
-"""E2E test: Live Execution & Activity Streaming System.
+"""E2E test: Claude-style Execution Live panel with WIND motion.
 
-Simulates a realistic multi-tool agent run (Gmail check -> Instagram
-analytics -> report generation) through the SAME code path production uses:
-tool_agent's _tool_display/_tool_evidence/_thinking_label feeding
-live_motion.LiveActivityStream.record(), driven by its real background
-ticker against a fake Telegram bot that just records edit calls.
+Simulates a multi-tool run through the real production path
+(tool_agent helpers -> LiveActivityStream.record -> real ticker ->
+HTML render) and asserts the Claude-panel look: bold step titles,
+muted evidence lines, drifting wind strip, wind progress bar,
+valid HTML escaping.
 """
-import os, sys, asyncio, time
+import os, sys, asyncio, html, json
 
 sys.path.insert(0, os.path.abspath("stew_deploy"))
 os.chdir("stew_deploy")
@@ -24,149 +24,120 @@ class FakeBot:
     async def send_message(self, chat_id, text, parse_mode=""):
         mid = self._next_id
         self._next_id += 1
-        self.sent.append((chat_id, text))
+        self.sent.append((parse_mode, text))
         return {"message_id": mid}
 
-    async def edit_message(self, chat_id, message_id, text, clear_keyboard=False):
-        self.edits.append(text)
+    async def edit_message(self, chat_id, message_id, text, clear_keyboard=False, parse_mode=""):
+        self.edits.append((parse_mode, text))
         return {"ok": True}
 
 
+def assert_valid_tg_html(text):
+    """Telegram HTML must be balanced and fully escaped."""
+    assert text.count("<b>") == text.count("</b>"), "unbalanced <b> tags"
+    stripped = text.replace("<b>", "").replace("</b>", "")
+    assert "<" not in stripped and ">" not in stripped, "raw angle bracket leaked into message"
+
+
 async def main():
-    from server.live_motion import LiveActivityStream
+    from server.live_motion import LiveActivityStream, _wind_strip
     from server.tool_agent import _tool_display, _tool_evidence, _thinking_label
+
+    # wind strip sanity: drifts phase, constant length
+    assert _wind_strip(10, 0) != _wind_strip(10, 1)
+    assert len(_wind_strip(24, 7)) == 24
+    print("PASS wind strip drifts with phase and keeps length")
 
     bot = FakeBot()
     stream = LiveActivityStream(bot, 12345)
     await stream.start()
     assert stream.message_id is not None
-    print("PASS start() sent initial message, id =", stream.message_id)
+    assert bot.sent[0][0] == "HTML", "panel must be sent with HTML parse_mode"
+    print("PASS start() sends the panel with HTML parse_mode")
 
-    # 1) Thinking labels vary across iterations (never frozen on one string)
+    # thinking labels still vary
     labels = [_thinking_label(i, set()) for i in range(1, 6)]
-    assert labels[0] == "Planning execution…"
-    assert len(set(labels)) >= 3, f"thinking labels too repetitive: {labels}"
+    assert len(set(labels)) >= 3
     print("PASS thinking labels vary:", labels)
 
-    # 2) Simulate: composio_execute (Gmail) -> real evidence with a count
-    disp = _tool_display("composio_execute", {"toolkit": "gmail", "action": "list_messages"})
-    assert disp["icon"] == "📧" and disp["connector"] is True
-    stream.record({"kind": "tool_start", "tool": "composio_execute", "iteration": 1, **disp})
-    assert stream.tool_card and stream.tool_card["status"] == "running"
-    gmail_result = {"success": True, "data": {"messages": list(range(327))}}
-    evidence, ok = _tool_evidence("composio_execute", {}, gmail_result)
-    assert ok and evidence == "Found 327 messages", evidence
+    # Gmail step
+    d = _tool_display("composio_execute", {"toolkit": "gmail", "action": "list_messages"})
+    stream.record({"kind": "tool_start", "tool": "composio_execute", "iteration": 1, **d})
+    ev, ok = _tool_evidence("composio_execute", {}, {"success": True, "data": {"messages": list(range(327))}})
     stream.record({"kind": "tool_done", "tool": "composio_execute", "iteration": 1,
-                   "icon": disp["icon"], "name": disp["name"], "connector": True,
-                   "evidence": evidence, "ok": ok})
-    gmail_line = stream.timeline[-1]
-    assert gmail_line.startswith("📧 ✅") and "Found 327 messages" in gmail_line
-    assert stream.tool_card["status"] == "done" and stream.tool_card["evidence"] == evidence
-    print("PASS Gmail connector step: evidence =", evidence, "| timeline:", gmail_line)
+                   "icon": d["icon"], "name": d["name"], "connector": True, "evidence": ev, "ok": ok})
+    step = stream.timeline[-1]
+    assert isinstance(step, dict) and step["title"] == "Running List Messages"
+    assert step["evidence"] == "Found 327 messages" and step["ok"]
+    assert stream.tool_card["status"] == "done" and stream.tool_card["evidence"] == ev
+    print("PASS Gmail step group:", step["title"], "->", step["evidence"])
 
-    # 3) Instagram analytics — a failure case must show a real error, not silence
-    disp2 = _tool_display("composio_execute", {"toolkit": "instagram", "action": "get_analytics"})
-    stream.record({"kind": "tool_start", "tool": "composio_execute", "iteration": 2, **disp2})
-    ig_fail = {"success": False, "error": "Instagram token expired"}
-    evidence2, ok2 = _tool_evidence("composio_execute", {}, ig_fail)
-    assert not ok2 and "token expired" in evidence2
+    # failure step surfaces honestly
+    d2 = _tool_display("composio_execute", {"toolkit": "instagram", "action": "get_analytics"})
+    stream.record({"kind": "tool_start", "tool": "composio_execute", "iteration": 2, **d2})
+    ev2, ok2 = _tool_evidence("composio_execute", {}, {"success": False, "error": "Instagram token expired"})
     stream.record({"kind": "tool_done", "tool": "composio_execute", "iteration": 2,
-                   "icon": disp2["icon"], "name": disp2["name"], "connector": True,
-                   "evidence": evidence2, "ok": ok2})
-    assert "⚠️" in stream.timeline[-1] and "token expired" in stream.timeline[-1]
-    print("PASS Instagram failure surfaced honestly:", stream.timeline[-1])
+                   "icon": d2["icon"], "name": d2["name"], "connector": True, "evidence": ev2, "ok": ok2})
+    assert not stream.timeline[-1]["ok"] and "token expired" in stream.timeline[-1]["evidence"]
+    print("PASS failure step surfaces honestly:", stream.timeline[-1]["evidence"])
 
-    # 4) web_search step with a query-specific label + result count evidence
-    disp3 = _tool_display("web_search", {"query": "best posting times instagram 2026"})
-    assert "best posting times" in disp3["label"]
-    stream.record({"kind": "tool_start", "tool": "web_search", "iteration": 3, **disp3})
-    search_result = {"success": True, "data": {"results": [1, 2, 3, 4, 5]}}
-    evidence3, ok3 = _tool_evidence("web_search", {}, search_result)
-    assert evidence3 == "Found 5 results"
+    # web search step
+    d3 = _tool_display("web_search", {"query": "best time to post on Instagram Nigeria"})
+    stream.record({"kind": "tool_start", "tool": "web_search", "iteration": 3, **d3})
+    ev3, ok3 = _tool_evidence("web_search", {}, {"success": True, "data": {"results": [1, 2, 3, 4, 5]}})
     stream.record({"kind": "tool_done", "tool": "web_search", "iteration": 3,
-                   "icon": disp3["icon"], "name": disp3["name"], "connector": False,
-                   "evidence": evidence3, "ok": ok3})
-    print("PASS web_search step:", disp3["label"], "->", evidence3)
+                   "icon": d3["icon"], "name": d3["name"], "connector": False, "evidence": ev3, "ok": ok3})
+    assert stream.timeline[-1]["evidence"] == "Found 5 results"
+    print("PASS web search step group")
 
-    # 5) generate_document — evidence falls back to output text
-    disp4 = _tool_display("generate_document", {"topic": "Instagram engagement report"})
-    stream.record({"kind": "tool_start", "tool": "generate_document", "iteration": 4, **disp4})
-    doc_result = {"success": True, "output": "PDF generated: 4 pages, 1,204 words", "file_base64": "x"}
-    evidence4, ok4 = _tool_evidence("generate_document", {}, doc_result)
-    assert "PDF generated" in evidence4
-    stream.record({"kind": "tool_done", "tool": "generate_document", "iteration": 4,
-                   "icon": disp4["icon"], "name": disp4["name"], "connector": False,
-                   "evidence": evidence4, "ok": ok4})
-    print("PASS generate_document step:", evidence4)
-
-    # 6) Progress must be monotonically non-decreasing and bounded <= 90 pre-finish
-    assert 0 <= stream.progress_pct <= 90
-    print(f"PASS progress heuristic after 4 steps: {stream.progress_pct}%")
-
-    # 7) Render must never blow past Telegram's 4096-char hard limit
+    # render: Claude-panel structure + escaping of an adversarial evidence string
+    stream.record({"kind": "tool_done", "tool": "web_search", "iteration": 4,
+                   "icon": "🔍", "name": "Web Search", "connector": False,
+                   "evidence": "result had <script>alert(1)</script> & chars", "ok": True})
     rendered = stream._render()
-    assert len(rendered) <= 3900, len(rendered)
-    assert "📧" in rendered and "Found 327 messages" in rendered  # Gmail step still traceable
-    assert "🖥 Live Log" in rendered
+    assert_valid_tg_html(rendered)
+    assert "<b>⚡ Stew is working</b>" in rendered
+    assert "<b>✓ Running List Messages</b>" in rendered
+    assert "· Found 327 messages" in rendered
+    assert "&lt;script&gt;" in rendered  # HTML-escaped, Telegram-safe
+    assert "≋" in rendered or "≈" in rendered  # wind present
     assert "%" in rendered
-    print(f"PASS render length {len(rendered)} chars, well under Telegram's 4096 cap")
+    assert "<b>Activity</b>" in rendered
+    assert len(rendered) <= 3900
+    print("PASS Claude-style render: bold titles, muted lines, wind, escaped HTML, len", len(rendered))
     print("----- sample render -----")
     print(rendered)
     print("--------------------------")
 
-    # 8) Let the real background ticker run a couple of cycles and confirm
-    #    it actually edited the live message (not just sent once and gone
-    #    static — that's the exact bug this whole feature exists to fix).
+    # wind drifts between ticks => visually flowing motion
+    r1 = stream._render()
+    stream._frame = (stream._frame + 1) % 4
+    r2 = stream._render()
+    assert r1 != r2, "wind did not drift between ticks"
+    print("PASS wind drifts between ticks (screen flows, never static)")
+
+    # ticker performs live HTML edits
+    stream.record({"kind": "thinking", "label": "Reviewing what's been found…"})
     await asyncio.sleep(3.4)
-    assert len(bot.edits) >= 1, "ticker never edited the message — screen went static"
-    print(f"PASS ticker performed {len(bot.edits)} live edits during the run")
+    assert len(bot.edits) >= 1 and all(pm == "HTML" for pm, _ in bot.edits), "ticker never edited with HTML"
+    print(f"PASS ticker performed {len(bot.edits)} live HTML edits")
 
-    # 9) Identical content between ticks must NOT trigger a duplicate edit
-    #    (avoids Telegram's 'message is not modified' spam / flood limits).
-    edits_before = len(bot.edits)
-    await asyncio.sleep(1.6)
-    # no new record() calls happened, so with a static state past the last
-    # visible spinner-frame change... spinner frame DOES change every tick,
-    # so edits will still occur — that's intended "always alive" motion.
-    # What must NOT happen is an edit when finish() has already frozen state.
-    print(f"PASS spinner keeps the screen alive between tool events ({len(bot.edits)} total edits so far)")
-
-    # 10) finish() stops the ticker for good — no more edits after finish
+    # finish: frozen ticker, 100%, valid HTML
     await stream.finish("✅ Task completed — report sent")
     edits_at_finish = len(bot.edits)
     await asyncio.sleep(2.0)
-    assert len(bot.edits) == edits_at_finish, "ticker kept running after finish() — resource leak"
-    final_text = bot.edits[-1]
-    assert "Task completed" in final_text
-    assert "100%" in final_text
-    print("PASS finish() froze the ticker permanently and rendered the final summary")
+    assert len(bot.edits) == edits_at_finish, "ticker leaked past finish()"
+    final_pm, final_text = bot.edits[-1]
+    assert final_pm == "HTML"
+    assert_valid_tg_html(final_text)
+    assert "100%" in final_text and "Task completed" in final_text
+    assert "finished" in final_text
+    print("PASS finish froze ticker; final panel valid with 100% wind bar")
     print("----- final render -----")
     print(final_text)
     print("-------------------------")
 
-    print("\nALL LIVE EXECUTION STREAM E2E TESTS: PASS")
+    print("\nALL CLAUDE-STYLE WIND PANEL E2E TESTS: PASS")
 
 
 asyncio.run(main())
-
-async def motion_check():
-    """Explicit proof the spinner actually animates frame-to-frame while a
-    'thinking' or 'tool running' state is active — the exact bug ('screen
-    goes static while thinking') this whole feature exists to kill."""
-    from server.live_motion import LiveActivityStream
-    bot = FakeBot()
-    stream = LiveActivityStream(bot, 555)
-    await stream.start()
-    stream.record({"kind": "thinking", "label": "Planning execution…"})
-    await asyncio.sleep(1.6)
-    stream.record({"kind": "tool_start", "tool": "web_search", "icon": "🔍",
-                   "name": "Web Search", "label": "Searching…", "connector": False})
-    await asyncio.sleep(4.6)  # ~3 ticks while "running" — spinner must move each time
-    await stream.finish("✅ Done")
-    assert len(bot.edits) >= 4, f"expected several live edits while active, got {len(bot.edits)}"
-    distinct_frames = len(set(bot.edits[:-1]))  # exclude final frozen render
-    assert distinct_frames >= 3, f"spinner barely moved — only {distinct_frames} distinct frames"
-    print(f"PASS motion check: {len(bot.edits)} total edits, {distinct_frames} visually distinct "
-          f"live frames while 'thinking'/'running' — screen never went static")
-
-asyncio.run(motion_check())

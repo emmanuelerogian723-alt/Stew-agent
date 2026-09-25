@@ -360,6 +360,28 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class AgentCheckIn(Base):
+    """Agent-initiated check-in — Stew wakes on a timer, pulls live state
+    (goal progress, outcomes, calendar, weather, news) and messages the user
+    first. Base44-superagent parity: the bot doesn't only answer, it reaches
+    out. kinds: 'goal' (progress digest), 'briefing' (daily For-You digest),
+    'custom' (agent-authored follow-up on any topic)."""
+    __tablename__ = "agent_check_ins"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # goal|briefing|custom
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")  # context/instruction for the agent
+    goal_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    interval_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class LocationPing(Base):
     """A single location update from a user — either a one-off share (used by
     /findme) or one ping of a live-location tracking session (used by /track).

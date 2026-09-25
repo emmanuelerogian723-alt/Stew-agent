@@ -155,12 +155,15 @@ class TelegramBot:
             resp = await client.get(f"{self.base}/getMe")
             return resp.json()
 
-    async def edit_message(self, chat_id: int, message_id: int, text: str, clear_keyboard: bool = False) -> dict:
+    async def edit_message(self, chat_id: int, message_id: int, text: str, clear_keyboard: bool = False, parse_mode: str = "") -> dict:
         """Edit a previously sent message (for live status motion). Pass
         clear_keyboard=True to also strip any inline buttons attached to it
-        (used after an Approve/Cancel tap so it can't be pressed twice)."""
+        (used after an Approve/Cancel tap so it can't be pressed twice).
+        parse_mode="HTML" enables bold titles for the live execution panel."""
         import json as _json
         payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         if clear_keyboard:
             payload["reply_markup"] = _json.dumps({"inline_keyboard": []})
         try:
