@@ -89,6 +89,7 @@ function renderDirectory(){
   const pro=PRO_APPS.has(slug);
   return `<div class="app ${on?'connected':''}" onclick="openApp('${slug}')">${pro?'<span class="prolock">🔒 PRO</span>':''}<span class="appicon" style="font-size:19px;background:#fdeaea">${emoji}</span><div class="apptext"><strong>${name}${on?' · connected':''}</strong><small>${desc}</small></div>${on?'<span class="ready"></span>':''}</div>`}).join('');
 }
+renderDirectory();
 function searchCatalog(){currentSearch=document.getElementById('searchInput').value.trim();loadCatalog(true)}document.getElementById('searchInput').addEventListener('input',e=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchCatalog,450)});async function loadMore(){if(cursor)await loadCatalog(false)}
 function go(v){haptic();['apps','detail','write','activity','goals','guides','mcp'].forEach(x=>document.getElementById(x+'View').classList.toggle('active',x===v));['apps','write','activity','goals','guides','mcp'].forEach(x=>document.getElementById('nav'+x[0].toUpperCase()+x.slice(1)).classList.toggle('active',x===v));window.scrollTo({top:0,behavior:'smooth'});if(v==='write'){renderWriteApps();loadPending(null)}if(v==='activity'){loadActivity();loadPending(null)}if(v==='goals')loadGoals();if(v==='mcp'){loadMcp();loadTrust()}}
 let pendingDisconnect=null;
