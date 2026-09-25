@@ -24,10 +24,6 @@ Tools available:
   16. composio_search_tools(query)    — Discover app tools for Gmail, Calendar, Slack, Notion, GitHub, etc.
   17. composio_connect(toolkit)       — Give this user a secure OAuth Connect Link
   18. composio_list_connections()    — Show this user's connected apps
-  19. mcp_list_servers()               — Show this user's connected MCP servers (open-ecosystem connectors: any platform with a remote MCP endpoint)
-  20. mcp_search_tools(query)          — Discover tools across the user's connected MCP servers
-  21. mcp_execute(server_id, tool_name, arguments) — Run an MCP tool.
-  22. schedule_check_in(kind, when, message, recurring, interval_seconds, goal_id) — Schedule Stew to reach out FIRST (agent-initiated check-in): a live goal-progress digest, a daily personal briefing, or a custom follow-up on any topic. when = ISO datetime or +90m style. Same trust model as apps: read/private-write runs instantly; destructive or public tools send a chat Approve/Cancel button
   19. composio_execute(tool_slug, arguments) — Execute a discovered app action
   20. prepare_social_video(video_url) — Add burned captions and create a public posting URL
 """
@@ -105,16 +101,14 @@ Rules:
 
 18b. CONNECTED APPS (COMPOSIO): For Gmail, Google Calendar, Drive, Sheets, Slack, Notion, GitHub, LinkedIn and other app requests, first call composio_search_tools with the user's exact goal. Use ONLY tool slugs and argument schemas returned by that search. Never invent a slug. If the app is not connected, call composio_connect with the discovered toolkit slug and return the Connect Link. After the user connects, search again and execute.
 18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
-18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular PRIVATE writes (send an email, update your own calendar, create a doc) execute immediately; the explicit chat request IS the approval. Two things still pause: permanently deleting/removing something (destructiveHint), and anything that PUBLISHES publicly where other people will see it (post, tweet, broadcast) — for those, the platform itself has already sent a real tappable Approve/Cancel button in the chat before your reply; do not ask the user to type APPROVE or CANCEL, just tell them briefly what you prepared and that you'll continue the instant they tap the button above.
+18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular writes (send, post, create, update, upload, schedule, pay) execute immediately; the explicit chat request IS the approval. Only permanently deleting/removing something (destructiveHint) pauses for a one-line confirm — everything else must not stall waiting for a second confirmation message.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
-18k. PROACTIVE CHECK-INS: If the user says anything like "check on me", "follow up with me", "check on my goal tomorrow", "ping me Friday about X", "give me a daily briefing" — schedule_check_in. kinds: goal (progress digest; pass goal_id if known), briefing (daily For-You digest; recurring=True, interval_seconds=86400, when=07:30 local), custom (any topic; put the topic in message). when can be ISO datetime or +90m relative. One check-in per request unless the user asks for recurring. Confirm to the user in one line when it fires. /checkins lists them, /checkin cancel <id> stops one.
-18j. MCP CONNECTORS: If the user's request is about a platform NOT in the app catalog (Higgsfield, Clay, an internal CRM, anything), check mcp_list_servers. If a relevant server exists, mcp_search_tools with the user's goal, then mcp_execute with the exact discovered server_id, tool_name and schema arguments in the SAME turn. Never invent a tool name — only use names returned by mcp_search_tools. If no MCP server matches, say so and suggest adding one in the Mini App's MCP tab (remote https MCP URL). If a TOOL_RESULT includes approval_required=true with prompt_sent_in_chat=true, the Approve/Cancel button is already in the chat — just summarize what's pending, do not ask them to type a reply.
 18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it.
 18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
-18h. Read-only app actions and private writes (send, reply, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. A permanent delete/remove, or anything that publishes/posts/broadcasts publicly, is intercepted by STEW's approval gateway — the system has already sent a real Approve/Cancel button in the chat by the time your TOOL_RESULT comes back (prompt_sent_in_chat=true); just summarize what's pending, don't ask them to type a reply. Never claim anything ran without a successful TOOL_RESULT confirming it.
+18h. Read-only app actions and regular writes (send, reply, post, publish, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. Only a permanent delete/remove is intercepted by STEW's approval gateway; for that one case, clearly show the prepared action and ask the user to reply APPROVE or CANCEL. Never claim anything ran without a successful TOOL_RESULT confirming it.
 
 TOOL_CALL: {"tool": "run_shell", "args": {"command": "pip install sympy && python3 -c 'import sympy; print(sympy.sqrt(8))'"}}
 TOOL_CALL: {"tool": "run_terminal_code", "args": {"code": "import requests\nr = requests.get('https://api.github.com')\nprint(r.json())"}}
@@ -544,64 +538,6 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         prompt = args.get("prompt", "") or args.get("description", "")
         if not prompt:
             return {"error": "No prompt provided"}
-
-        # ── Tier 1: HD image (high-quality model, plan-metered) ──
-        async def _try_hd_image(p: str):
-            """Premium-quality generation, metered monthly; None = unavailable."""
-            try:
-                import os as _os_img
-                from server.paywall import metered_feature_gate
-                from server.config import settings as _settings_img
-                gate = await metered_feature_gate(str(tg_user_id or ""), "hd_image")
-                if not gate.get("allowed"):
-                    return {"blocked": True, "message": gate.get("message")}
-                hf_key = _os_img.getenv("HUGGINGFACE_API_KEY") or _settings_img.HUGGINGFACE_API_KEY
-                if not hf_key:
-                    return None
-                import httpx as _httpx_hd
-                payload = {"inputs": p, "parameters": {"width": 1024, "height": 1024}}
-                for url in (
-                    "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
-                    "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
-                ):
-                    try:
-                        async with _httpx_hd.AsyncClient(timeout=60) as _client_hd:
-                            _r_hd = await _client_hd.post(
-                                url, json=payload,
-                                headers={"Authorization": f"Bearer {hf_key}"})
-                        if _r_hd.status_code == 200 and _r_hd.headers.get("content-type", "").startswith("image"):
-                            if len(_r_hd.content) > 5000:
-                                return {"bytes": _r_hd.content, "hd": True}
-                    except Exception:
-                        continue
-            except Exception as _hd_exc:
-                logger.warning("HD image tier skipped: %s", _hd_exc)
-            return None
-
-        _hd = None
-        try:
-            if tg_user_id:
-                _hd = await _try_hd_image(prompt)
-        except Exception:
-            _hd = None
-        if _hd and _hd.get("bytes"):
-            import base64 as _b64_hd, uuid as _uuid_hd
-            _public_hd = None
-            try:
-                from server.persistent_memory import upload_file as _upload_hd
-                _stored_hd = await _upload_hd(_hd["bytes"], f"{_uuid_hd.uuid4().hex}.jpg", "image/jpeg", "agent-media")
-                if _stored_hd:
-                    _public_hd = _stored_hd
-            except Exception as _up_exc_hd:
-                logger.warning("HD image upload fallback: %s", _up_exc_hd)
-            return {"tool": tool, "success": True, "quality": "hd",
-                    "output": f"HD image generated for: {prompt[:100]}" + (f"\nPublic media URL: {_public_hd}" if _public_hd else ""),
-                    "public_url": _public_hd,
-                    "figures": [{"base64": _b64_hd.b64encode(_hd["bytes"]).decode()}]}
-        _hd_note = ""
-        if isinstance(_hd, dict) and _hd.get("blocked"):
-            _hd_note = "\n\n" + str(_hd.get("message") or "")
-
         try:
             import httpx as _httpx_img
             import urllib.parse as _urlparse_img
@@ -633,8 +569,7 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                 return {
                     "tool": tool,
                     "success": True,
-                    "quality": "standard",
-                    "output": f"Image generated for: {prompt[:100]}\nPublic media URL for connected-app posting: {public_url}" + _hd_note,
+                    "output": f"Image generated for: {prompt[:100]}\nPublic media URL for connected-app posting: {public_url}",
                     "public_url": public_url,
                     "figures": [{"base64": _b64_img.b64encode(content).decode()}],
                 }
@@ -755,10 +690,18 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                     if act and act.get("permission") == "read_only" and isinstance(supplied_args, dict) and all(
                         field in supplied_args and supplied_args[field] not in (None, "") for field in required
                     ):
-                        exec_result = await execute_action(
-                            tg_user_id or chat_id, primary,
-                            supplied_args,
-                        )
+                        # Monetization v3: reads count against the daily quota too
+                        _auto_gate = await _connector_quota_gate(tg_user_id, chat_id)
+                        if _auto_gate is not None:
+                            data["auto_executed"] = None
+                            data["quota_blocked"] = _auto_gate["output"]
+                        else:
+                            exec_result = await execute_action(
+                                tg_user_id or chat_id, primary,
+                                supplied_args,
+                            )
+                            if exec_result.get("success"):
+                                await _connector_quota_bump(tg_user_id, chat_id)
                         data["auto_executed"] = {
                             "tool_slug": primary,
                             "toolkit": toolkit,
@@ -810,7 +753,10 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                             _arg_spec = "\nARGUMENTS the tool expects: " + json.dumps(_params, ensure_ascii=False, default=str)[:2500]
                     except Exception as _spec_exc:
                         logger.debug(f"arg-spec lookup skipped: {_spec_exc}")
-                next_hint = (f"NEXT STEP REQUIRED: the request is NOT complete. "
+                _quota_note = ""
+                if data.get("quota_blocked"):
+                    _quota_note = str(data["quota_blocked"])[:600] + "\n\n"
+                next_hint = (_quota_note + f"NEXT STEP REQUIRED: the request is NOT complete. "
                              f"Call composio_execute with tool_slug {_slug} in your next "
                              f"TOOL_CALL, filling its required arguments from the "
                              f"ARGUMENTS spec below (or composio_connect if the app is "
@@ -861,85 +807,6 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
             logger.warning("Composio connection failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"Could not start app connection: {exc}"}
 
-    elif tool == "mcp_list_servers":
-        from server.mcp_service import list_servers
-        try:
-            servers = await list_servers(tg_user_id or chat_id)
-            if not servers:
-                return {"tool": tool, "success": True, "output": "No MCP servers connected yet. The user can add one in the Mini App's MCP tab with any remote MCP server URL.",
-                        "data": {"servers": []}}
-            return {"tool": tool, "success": True,
-                    "output": json.dumps(servers, ensure_ascii=False, default=str)[:20000],
-                    "data": {"servers": servers}}
-        except Exception as exc:
-            logger.warning("MCP server listing failed: %s", exc)
-            return {"tool": tool, "success": False, "error": f"Could not list MCP servers: {exc}"}
-
-    elif tool == "mcp_search_tools":
-        from server.mcp_service import search_tools
-        try:
-            hits = await search_tools(tg_user_id or chat_id, args.get("query", ""))
-            if not hits:
-                return {"tool": tool, "success": True, "output": "No matching MCP tools found on the user's connected MCP servers.",
-                        "data": {"tools": []}}
-            return {"tool": tool, "success": True,
-                    "output": json.dumps(hits, ensure_ascii=False, default=str)[:25000],
-                    "data": {"tools": hits}}
-        except Exception as exc:
-            logger.warning("MCP tool search failed: %s", exc)
-            return {"tool": tool, "success": False, "error": f"Could not search MCP tools: {exc}"}
-
-    elif tool == "schedule_check_in":
-        from server.checkin_service import schedule_check_in
-        kind = str(args.get("kind", "custom")).strip().lower()
-        if kind not in ("custom", "goal", "briefing"):
-            kind = "custom"
-        when = args.get("when") or args.get("time")
-        in_minutes = args.get("in_minutes")
-        if not when and in_minutes is None:
-            return {"tool": tool, "success": False,
-                    "error": "Pass when (ISO datetime like 2026-09-25T17:30:00 or +90m) or in_minutes."}
-        try:
-            rec = await schedule_check_in(
-                tg_user_id or chat_id, str(chat_id), kind,
-                str(args.get("message", "") or args.get("topic", "") or ""),
-                when=when, in_minutes=in_minutes,
-                recurring=bool(args.get("recurring", False)),
-                interval_seconds=args.get("interval_seconds"),
-                goal_id=args.get("goal_id"))
-        except ValueError as exc:
-            return {"tool": tool, "success": False, "error": str(exc)}
-        except Exception as exc:
-            logger.warning("schedule_check_in failed: %s", exc)
-            return {"tool": tool, "success": False, "error": f"Could not schedule the check-in: {exc}"}
-        due = rec.get("due_at", "")
-        return {"tool": tool, "success": True,
-                "output": f"Check-in scheduled ({kind}), due {due}. Stew will message the user proactively then — no action needed from them.",
-                "data": rec}
-
-    elif tool == "mcp_execute":
-        from server.mcp_service import execute_mcp_tool
-        server_id = args.get("server_id", "")
-        tool_name = args.get("tool_name", "")
-        arguments = args.get("arguments", {})
-        try:
-            data = await execute_mcp_tool(tg_user_id or chat_id, server_id, tool_name, arguments)
-            if data.get("approval_required") and bot and chat_id:
-                try:
-                    await bot.send_approval_prompt(
-                        chat_id, data.get("approval_id"), data.get("tool") or tool_name,
-                        data.get("summary", ""), data.get("kind", "destructive"),
-                    )
-                    data["prompt_sent_in_chat"] = True
-                except Exception as prompt_exc:
-                    logger.warning("Could not send MCP in-chat approval prompt: %s", prompt_exc)
-            return {"tool": tool, "success": data.get("success", False),
-                    "output": json.dumps(data, ensure_ascii=False, default=str)[:30000],
-                    "data": data}
-        except Exception as exc:
-            logger.warning("MCP execution failed: %s", exc)
-            return {"tool": tool, "success": False, "error": f"MCP action failed: {exc}"}
-
     elif tool == "composio_list_connections":
         from server.composio_service import list_connections
         try:
@@ -962,6 +829,11 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         from server.composio_service import execute_action
         slug = args.get("tool_slug", "")
         arguments = args.get("arguments", {})
+        # Monetization v3: daily connected-app action quota (owner exempt).
+        _gate = await _connector_quota_gate(tg_user_id, chat_id)
+        if _gate is not None:
+            return {"tool": tool, "success": False, "error": _gate["error"],
+                    "output": _gate["output"]}
         try:
             data = await execute_action(
                 tg_user_id or chat_id,
@@ -969,19 +841,8 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                 arguments,
                 account=args.get("account"),
             )
-            # A destructive or publish-tier write paused for a real chat
-            # approval — send the actual tappable Approve/Cancel button right
-            # now, in this same turn, instead of leaving it stranded in a
-            # Mini App tab the user has to go find.
-            if data.get("approval_required") and bot and chat_id:
-                try:
-                    await bot.send_approval_prompt(
-                        chat_id, data.get("approval_id"), slug,
-                        data.get("summary", ""), data.get("kind", "destructive"),
-                    )
-                    data["prompt_sent_in_chat"] = True
-                except Exception as prompt_exc:
-                    logger.warning("Could not send in-chat approval prompt: %s", prompt_exc)
+            if data.get("success"):
+                await _connector_quota_bump(tg_user_id, chat_id)
             return {
                 "tool": tool,
                 "success": data.get("success", False),
@@ -1169,6 +1030,45 @@ def _summarize_tool_history(tool_history: list) -> str:
     if not lines:
         return ""
     return "Done! Here's what I produced:\n" + "\n".join(lines)
+
+
+async def _connector_quota_gate(tg_user_id, chat_id) -> dict | None:
+    """Monetization v3: daily connected-app action quota per plan.
+    Returns None when allowed (and leaves the user row committed), or a
+    fully-formed error dict when the free-tier limit is hit."""
+    try:
+        from server.database import AsyncSessionLocal
+        from server.models import User as _GateUser
+        from server.paywall import check_connector_action_quota
+        from sqlalchemy import select as _gsel
+        _email = f"tg_{re.sub(r'^tg_', '', str(tg_user_id or chat_id))}@telegram.stew"
+        async with AsyncSessionLocal() as _gdb:
+            _gu = (await _gdb.execute(_gsel(_GateUser).where(_GateUser.email == _email))).scalar_one_or_none()
+            if _gu is None:
+                return None
+            _ok, _used, _limit, _msg = await check_connector_action_quota(_gdb, _gu)
+            if not _ok:
+                return {"tool": "quota", "success": False, "error": _msg, "output": _msg}
+        return None
+    except Exception as _g_exc:
+        logger.warning("quota gate unavailable: %s", _g_exc)
+        return None
+
+
+async def _connector_quota_bump(tg_user_id, chat_id) -> None:
+    """Count one consumed connected-app action against the daily quota."""
+    try:
+        from server.database import AsyncSessionLocal
+        from server.models import User as _BumpUser
+        from server.paywall import bump_connector_action_usage
+        from sqlalchemy import select as _bsel
+        _email = f"tg_{re.sub(r'^tg_', '', str(tg_user_id or chat_id))}@telegram.stew"
+        async with AsyncSessionLocal() as _bdb:
+            _bu = (await _bdb.execute(_bsel(_BumpUser).where(_BumpUser.email == _email))).scalar_one_or_none()
+            if _bu is not None:
+                await bump_connector_action_usage(_bdb, _bu)
+    except Exception as _b_exc:
+        logger.debug("quota bump skipped: %s", _b_exc)
 
 
 async def run_agent_loop(

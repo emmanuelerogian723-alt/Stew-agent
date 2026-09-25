@@ -585,6 +585,62 @@ def _is_paid_or_admin(user) -> bool:
     return getattr(user, "plan", "free") != "free"
 
 
+async def _email_captured_confirm(chat_id: int, email: str, user_name: str) -> None:
+    """User shared an email: sync to Brevo + confirm with a thank-you."""
+    try:
+        from server.brevo_service import upsert_contact
+        sync = await upsert_contact(email, {"name": (user_name or "").split(" ")[0], "plan": "free"})
+        logger.info(f"Brevo capture sync for {email}: {sync.get('success')}")
+    except Exception as exc:
+        logger.warning(f"Brevo capture sync failed: {exc}")
+    try:
+        await _tg_send_plain(chat_id,
+            f"📧 Saved {email}! You're on the S.T.E.W update list, and your "
+            f"premium image bonus is active: +2 extra flagship-quality images "
+            f"daily. Reply with a different email anytime to change it.")
+    except Exception:
+        pass
+
+
+async def _email_capture_ask(chat_id: int) -> None:
+    """Once-a-day gentle ask for the user's email."""
+    try:
+        await _tg_send_plain(chat_id,
+            "💬 Quick one — what's your email? I'll send you S.T.E.W product "
+            "updates and unlock a thank-you bonus of +2 extra premium images "
+            "per day. Just reply with it whenever you like.")
+    except Exception:
+        pass
+
+
+async def _remember_media(user_id, kind: str, summary: str,
+                             assistant_reply: str = "") -> None:
+    """Media is part of the conversation too. Every image, document, video
+    and voice note a user sends is written to long-term memory (Mem0+Letta)
+    so 'what did I send you yesterday?' actually works. Never raises."""
+    try:
+        from server.memory_gateway import save_memory as _media_mem
+        await _media_mem(
+            f"tg_{user_id}", (summary or "")[:2000], mem_type=kind,
+            assistant_reply=(assistant_reply or "")[:2000],
+            metadata={"platform": "telegram", "media": kind},
+        )
+    except Exception as _mem_err:
+        logger.debug(f"media memory save skipped: {_mem_err}")
+
+
+async def _tg_send_plain(chat_id: int, text: str) -> None:
+    """Best-effort plain Telegram send used by the capture hooks."""
+    try:
+        token = get_settings().TELEGRAM_BOT_TOKEN
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as _c:
+            await _c.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                          json={"chat_id": chat_id, "text": text})
+    except Exception as exc:
+        logger.debug(f"plain send failed: {exc}")
+
+
 async def _check_quota(user: User, db: AsyncSession, feature: str = "chat") -> tuple[bool, int, int]:
     """Check if user has remaining quota. Returns (allowed, calls_used, limit).
     Once the monthly allowance is exhausted, S.T.E.W Coins are consumed
@@ -1244,115 +1300,6 @@ async def composio_prepare_api(request: Request):
     return result
 
 
-@app.post("/api/mcp/servers", include_in_schema=False)
-async def mcp_list_servers_api(request: Request):
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import list_servers
-    return {"servers": await list_servers(str(user["id"]))}
-
-
-@app.post("/api/mcp/connect", include_in_schema=False)
-async def mcp_connect_api(request: Request):
-    """Add a remote MCP server (any platform with an MCP endpoint — the open
-    ecosystem Claude supports and the fixed catalog doesn't). Tries the
-    connection immediately: initialize + tools/list, caches the tools."""
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import add_server
-    name = str(payload.get("name", "")).strip()
-    url = str(payload.get("url", "")).strip()
-    auth_header_name = str(payload.get("auth_header_name", "") or "").strip() or "Authorization"
-    auth_token = str(payload.get("auth_token", "") or "").strip() or None
-    try:
-        result = await add_server(str(user["id"]), name, url, auth_header_name, auth_token)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except Exception as exc:
-        raise HTTPException(400, f"Could not connect: {exc}")
-    if not result.get("success"):
-        # saved but errored — surface the server state so the user can fix creds
-        from server.mcp_service import list_servers as _ls
-        return {"saved": True, "success": False, "error": result.get("error"),
-                "servers": await _ls(str(user["id"]))}
-    from server.mcp_service import list_servers as _ls
-    return {"saved": True, "success": True, "tool_count": result.get("tool_count"),
-            "servers": await _ls(str(user["id"]))}
-
-
-@app.post("/api/mcp/test", include_in_schema=False)
-async def mcp_test_api(request: Request):
-    """Dry-run a URL + token without saving (Mini App 'Test' button)."""
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import test_server
-    try:
-        return await test_server(str(user["id"]), str(payload.get("url", "")),
-                                 str(payload.get("auth_header_name", "") or "").strip() or None,
-                                 str(payload.get("auth_token", "") or "").strip() or None)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-
-
-@app.post("/api/mcp/tools", include_in_schema=False)
-async def mcp_tools_api(request: Request):
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import list_server_tools
-    server_id = str(payload.get("server_id", ""))
-    if not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", server_id):
-        raise HTTPException(400, "Invalid server")
-    return await list_server_tools(str(user["id"]), server_id,
-                                   refresh=bool(payload.get("refresh", False)))
-
-
-@app.post("/api/mcp/delete", include_in_schema=False)
-async def mcp_delete_api(request: Request):
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import remove_server, list_servers
-    server_id = str(payload.get("server_id", ""))
-    if not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", server_id):
-        raise HTTPException(400, "Invalid server")
-    removed = await remove_server(str(user["id"]), server_id)
-    if not removed:
-        raise HTTPException(404, "MCP server not found")
-    return {"removed": True, "servers": await list_servers(str(user["id"]))}
-
-
-@app.post("/api/mcp/prepare", include_in_schema=False)
-async def mcp_prepare_api(request: Request):
-    """Run an MCP tool from the Mini App. Read/private-write executes
-    immediately; destructive/public lands in the shared approval queue (same
-    one the chat Approve/Cancel buttons drain)."""
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import execute_mcp_tool
-    server_id = str(payload.get("server_id", ""))
-    tool_name = str(payload.get("tool_name", ""))
-    arguments = payload.get("arguments")
-    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,120}", tool_name) or not isinstance(arguments, dict):
-        raise HTTPException(400, "Choose a tool and supply its parameters")
-    if len(json.dumps(arguments, default=str)) > 16000:
-        raise HTTPException(413, "Parameters are too large")
-    result = await execute_mcp_tool(str(user["id"]), server_id, tool_name, arguments)
-    if not result.get("success") and not result.get("approval_required") and not result.get("paywall"):
-        raise HTTPException(400, result.get("error") or "Could not run this tool")
-    return result
-
-
-@app.post("/api/permissions", include_in_schema=False)
-async def permissions_api(request: Request):
-    """Per-user 'Always allow' trust toggles — the Claude permission model.
-    GET-style: {"tool_key": ...} returns current state; setting:
-    {"tool_key": ..., "allow_always": true/false} promotes/demotes a tool
-    past the destructive/public approval pause."""
-    payload, user = await _verified_mini_app_user(request)
-    from server.mcp_service import get_always_allow, set_always_allow, list_trusted_tools
-    if payload.get("list"):
-        return {"items": await list_trusted_tools(str(user["id"]))}
-    tool_key = str(payload.get("tool_key", "")).strip()
-    if not tool_key or len(tool_key) > 255:
-        raise HTTPException(400, "A tool_key is required")
-    if "allow_always" in payload:
-        await set_always_allow(str(user["id"]), tool_key, bool(payload.get("allow_always")))
-    return {"tool_key": tool_key, "allow_always": await get_always_allow(str(user["id"]), tool_key)}
-
-
 @app.post("/api/composio/approval", include_in_schema=False)
 async def composio_approval(request: Request):
     payload, tg_user = await _verified_mini_app_user(request)
@@ -1606,7 +1553,7 @@ async def landing_page():
 h1{font-size:3em;background:linear-gradient(90deg,#7B2FBE,#00d4ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 p{color:#aaa;font-size:1.2em}.btn{display:inline-block;margin:10px;padding:14px 30px;border-radius:8px;text-decoration:none;font-weight:bold}
 .btn-primary{background:#7B2FBE;color:#fff}.btn-secondary{border:2px solid #7B2FBE;color:#7B2FBE}</style></head>
-<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Secret Task Execution Worker</p>
+<body><h1>S.T.E.W 3.0 ULTRA</h1><p>Smart Thinking Executive Worker</p>
 <p>Africa's Most Powerful AI Agent API</p>
 <a class="btn btn-primary" href="/docs">API Docs</a>
 <a class="btn btn-secondary" href="/heartbeat">Status</a>
@@ -1650,7 +1597,7 @@ async def llms_txt():
     """llms.txt v2 - AI-friendly docs for LLM agents (ChatGPT, Gemini, Perplexity, Claude)."""
     content = """# Stew Agent (S.T.E.W)
 
-> Stew Agent (S.T.E.W — Secret Task Execution Worker) is an AI agent API and Telegram bot built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
+> Stew Agent (S.T.E.W — Smart Thinking Executive Worker) is an AI agent API and Telegram bot built for the African market. Multi-model LLM access (Groq, OpenRouter, NVIDIA, OpenAI), 60+ skills, 100-agent swarm, document generation (PDF/DOCX/XLSX/PPTX), OCR, vision, Python code sandbox, web search, Telegram bot with tool-calling, Naira billing via Paystack. OpenAI-compatible at /v1/chat/completions. Best AI API for African developers, students, professionals, bankers, churches.
 
 ## Key Facts
 - Base URL: https://stew-agent.onrender.com
@@ -1895,188 +1842,6 @@ async def data_deletion_instructions_page():
 async def admin_dashboard_page():
     with open("admin.html", "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
-
-# ═══════════════ STEW HQ — the owner's personal control website ═══════════════
-# Only the admin secret opens HQ. From here the owner tracks Telegram users,
-# broadcasts announcements, syncs + emails captured contacts via Brevo, and
-# mints pass codes — no code, no Render dashboard needed.
-
-def _hq_authorized(request: Request) -> None:
-    key = request.headers.get("x-admin-key", "")
-    secret = (settings.STEW_ADMIN_SECRET or os.environ.get("STEW_ADMIN_SECRET", "")).strip()
-    if not secret or key.strip() != secret:
-        raise HTTPException(401, "Admin key required")
-
-
-@app.get("/hq", response_class=HTMLResponse, include_in_schema=False)
-async def stew_hq_page():
-    for path in ["stew_hq.html", "/app/stew_hq.html",
-                "/app/stew_deploy/stew_hq.html",
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stew_hq.html")]:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return HTMLResponse(f.read())
-    return HTMLResponse("<h1>STEW HQ not found</h1>", status_code=404)
-
-
-@app.get("/hq/api/stats", include_in_schema=False)
-async def hq_stats(request: Request, db: AsyncSession = Depends(get_db)):
-    _hq_authorized(request)
-    from datetime import datetime, timedelta
-    from server.models import ContactEmail, FeatureUsage, APICall
-    from server.paywall import current_period
-    now = datetime.utcnow()
-    week_ago = now - timedelta(days=7)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    tg_filter = User.email.like("tg\_%@telegram.stew", escape="\\")
-    total_users = (await db.execute(select(func.count(User.id)).where(tg_filter))).scalar() or 0
-    new_week = (await db.execute(select(func.count(User.id)).where(tg_filter, User.created_at >= week_ago))).scalar() or 0
-    plan_rows = (await db.execute(select(User.plan, func.count(User.id)).where(tg_filter).group_by(User.plan))).all()
-    plans = {p: c for p, c in plan_rows}
-    active_today = (await db.execute(
-        select(func.count(func.distinct(APICall.user_id))).where(
-            APICall.timestamp >= today,
-            APICall.user_id.in_(select(User.id).where(tg_filter))))).scalar() or 0
-    emails = (await db.execute(select(func.count(ContactEmail.id)))).scalar() or 0
-    month = current_period()
-    async def _feature_total(feature: str) -> int:
-        res = await db.execute(select(func.coalesce(func.sum(FeatureUsage.count), 0)).where(
-            FeatureUsage.feature == feature, FeatureUsage.period == month))
-        return res.scalar() or 0
-    connector_actions = await _feature_total("connector_action")
-    hd_images = await _feature_total("hd_image")
-    return {
-        "success": True,
-        "total_users": total_users, "new_this_week": new_week,
-        "active_today": active_today, "emails_captured": int(emails),
-        "plans": plans, "connector_actions_this_month": int(connector_actions),
-        "hd_images_this_month": int(hd_images),
-        "timestamp": now.isoformat() + "Z",
-    }
-
-
-@app.get("/hq/api/users", include_in_schema=False)
-async def hq_users(request: Request, search: str = "", plan: str = "",
-                  db: AsyncSession = Depends(get_db)):
-    _hq_authorized(request)
-    from datetime import datetime
-    from server.models import ContactEmail, APICall
-    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    tg_filter = User.email.like("tg\_%@telegram.stew", escape="\\")
-    q = select(User).where(tg_filter)
-    if plan:
-        q = q.where(User.plan == plan)
-    if search:
-        q = q.where(User.name.ilike(f"%{search}%"))
-    users = (await db.execute(q.order_by(User.created_at.desc()).limit(300))).scalars().all()
-    user_ids = [u.id for u in users]
-    usage = {}
-    if user_ids:
-        rows = (await db.execute(select(APICall.user_id, func.count(APICall.id)).where(
-            APICall.user_id.in_(user_ids), APICall.timestamp >= month_start).group_by(APICall.user_id))).all()
-        usage = {r[0]: r[1] for r in rows}
-    tg_ids = []
-    by_tg = {}
-    for u in users:
-        email = u.email or ""
-        tg = email[3:].split("@")[0] if email.startswith("tg_") and "@telegram.stew" in email else ""
-        tg_ids.append(tg)
-        by_tg[u.id] = tg
-    contacts = {}
-    if any(tg_ids):
-        rows = (await db.execute(select(ContactEmail).where(
-            ContactEmail.telegram_user_id.in_([t for t in tg_ids if t])))).scalars().all()
-        contacts = {c.telegram_user_id: c for c in rows}
-    items = []
-    for u in users:
-        tg = by_tg[u.id]
-        c = contacts.get(tg)
-        items.append({
-            "name": u.name, "telegram_id": tg, "plan": u.plan,
-            "calls_this_month": usage.get(u.id, 0),
-            "email": c.email if c else None,
-            "brevo_synced": bool(c and c.brevo_synced),
-            "credits": getattr(u, "credits_balance", 0) or 0,
-            "created_at": u.created_at.isoformat() if u.created_at else None,
-            "active": u.is_active,
-        })
-    return {"success": True, "items": items, "count": len(items)}
-
-
-@app.post("/hq/api/broadcast", include_in_schema=False)
-async def hq_broadcast(request: Request, db: AsyncSession = Depends(get_db)):
-    """Send a Telegram announcement from the HQ site to all (or one plan's) users."""
-    _hq_authorized(request)
-    body = await request.json()
-    text = str(body.get("text", "")).strip()
-    plan_filter = str(body.get("plan", "") or "").strip()
-    if not text:
-        raise HTTPException(400, "Broadcast text is required")
-    tg_filter = User.email.like("tg\_%@telegram.stew", escape="\\")
-    q = select(User).where(tg_filter, User.is_active == True)  # noqa: E712
-    if plan_filter:
-        q = q.where(User.plan == plan_filter)
-    users = (await db.execute(q.limit(5000))).scalars().all()
-    from server.telegram_bot import TelegramBot
-    bot = TelegramBot(settings.TELEGRAM_BOT_TOKEN)
-    sent = failed = 0
-    for u in users:
-        email = u.email or ""
-        tg = email[3:].split("@")[0] if email.startswith("tg_") and "@telegram.stew" in email else ""
-        if not tg.isdigit():
-            continue
-        try:
-            _res = await bot.send_message(int(tg), f"📣 *S.T.E.W Announcement*\n\n{text}\n\n— Stew HQ")
-            if isinstance(_res, dict) and _res.get("ok"):
-                sent += 1
-            else:
-                failed += 1
-        except Exception:
-            failed += 1
-        await asyncio.sleep(0.12)
-    return {"success": True, "sent": sent, "failed": failed}
-
-
-@app.post("/hq/api/brevo/sync", include_in_schema=False)
-async def hq_brevo_sync(request: Request):
-    _hq_authorized(request)
-    from server import brevo_service
-    if not brevo_service.brevo_enabled():
-        raise HTTPException(503, "BREVO_API_KEY is not configured on the server.")
-    return await brevo_service.sync_all_contacts()
-
-
-@app.post("/hq/api/brevo/campaign", include_in_schema=False)
-async def hq_brevo_campaign(request: Request):
-    """Send a product-update email to every captured contact via Brevo."""
-    _hq_authorized(request)
-    from server import brevo_service
-    body = await request.json()
-    subject = str(body.get("subject", "")).strip()[:150]
-    content = str(body.get("content", "")).strip()
-    if not subject or not content:
-        raise HTTPException(400, "Subject and content are required")
-    if "<" not in content:
-        content = (f'<div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto">'
-                   f'<p style="font-size:16px;line-height:1.6">{content}</p>'
-                   f'<p style="color:#888;font-size:12px">You receive this because you use '
-                   f'<b>S.T.E.W</b> on Telegram.</p></div>')
-    result = await brevo_service.send_campaign(subject, content)
-    return result
-
-
-@app.post("/hq/api/passcode", include_in_schema=False)
-async def hq_passcode(request: Request, db: AsyncSession = Depends(get_db)):
-    _hq_authorized(request)
-    body = await request.json()
-    plan = str(body.get("plan", "pro")).lower().strip()
-    note = str(body.get("note", "") or "")[:200]
-    from server.paywall import create_pass_code
-    result = await create_pass_code(db, plan, created_by="stew-hq", note=note)
-    if not result.get("success"):
-        raise HTTPException(400, result.get("error", "Could not create pass code"))
-    return result
-
 
 @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard_page():
@@ -5812,21 +5577,33 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
     if tg_user_early and tg_user_early.plan not in ("free", "owner"):
         await _ensure_plan_valid(tg_user_early, db)
 
+    # ── EMAIL CAPTURE (Monetization v3, 2026-09): Stew politely asks for the
+    # user's email until it has one (at most once a day, never on commands).
+    # A captured email syncs to Brevo for product updates and earns the user
+    # +2 daily premium images as a thank-you.
+    try:
+        if tg_user_early is not None and not _raw_text_early.startswith("/") and not _is_callback_early:
+            _cap_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", _raw_text_early)
+            _has_email = bool((getattr(tg_user_early, "marketing_email", None) or "").strip())
+            if _cap_match and not _has_email:
+                _cap_email = _cap_match.group(0).lower()
+                if not _cap_email.endswith("@telegram.stew"):
+                    tg_user_early.marketing_email = _cap_email
+                    tg_user_early.email_opt_in_at = datetime.utcnow()
+                    await db.commit()
+                    asyncio.create_task(_email_captured_confirm(chat_id, _cap_email, tg_user_early.name or ""))
+            elif not _has_email:
+                _asked_at = getattr(tg_user_early, "email_asked_at", None)
+                _need_ask = (not _asked_at) or ((datetime.utcnow() - _asked_at).total_seconds() > 86400)
+                if _need_ask:
+                    tg_user_early.email_asked_at = datetime.utcnow()
+                    await db.commit()
+                    asyncio.create_task(_email_capture_ask(chat_id))
+    except Exception as _email_cap_err:
+        logger.warning(f"email capture hook skipped: {_email_cap_err}")
+
     _raw_text_early = (msg.get("text") or "").strip()
     _is_callback_early = bool(msg.get("is_callback"))
-
-    # ── EMAIL CAPTURE (Brevo marketing list) ─────────────────────────────────
-    # Explicit intake (bare email, /setemail, /skip) consumes the message;
-    # everything else just counts toward the once-a-day polite ask.
-    if tg_user_early is not None and not _is_callback_early and _raw_text_early:
-        try:
-            from server.email_capture import capture_and_confirm, maybe_ask_email
-            _ec_handled = await capture_and_confirm(tg_user_early, chat_id, bot, _raw_text_early)
-            if _ec_handled:
-                return {"ok": True}
-            asyncio.create_task(maybe_ask_email(tg_user_early, chat_id, _raw_text_early, bot))
-        except Exception as _ec_exc:
-            logger.warning(f"Email capture skipped: {_ec_exc}")
 
     # ── S.T.E.W VIDEO EDITOR (video uploads) ─────────────────────────────────
     # /videoedit — menu; plain text + pending video + edit intent → editor
@@ -6090,65 +5867,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(cid, "Podcast generation failed — please try again.")
 
         asyncio.create_task(_run_podcast(chat_id, _topic))
-        return {"ok": True}
-
-    # ── AGENT-INITIATED CHECK-INS (Stew reaches out first) ──────────────────
-    if _raw_text_early.startswith("/checkin") and not _raw_text_early.startswith("/checkins"):
-        # /checkin cancel <id>
-        _m = re.match(r"^/checkin\s+cancel\s+(\S+)", _raw_text_early, re.I)
-        if _m:
-            from server.checkin_service import cancel_check_in
-            _done = await cancel_check_in(str(tg_user_early.id), _m.group(1))
-            await bot.send_message(chat_id, "✅ Check-in cancelled — I won't reach out for that anymore." if _done else "I couldn't find that check-in — /checkins shows the list.")
-            return {"ok": True}
-        await bot.send_message(chat_id, "Use /checkins to list your check-ins, then /checkin cancel <id>.")
-        return {"ok": True}
-
-    if _raw_text_early.startswith("/checkins"):
-        from server.checkin_service import list_check_ins
-        _items = await list_check_ins(str(tg_user_early.id))
-        if not _items:
-            await bot.send_message(chat_id, "📭 No active check-ins. Just tell me in chat — *check on me Friday about my thesis* or *give me a daily briefing* — and I'll reach out first.")
-        else:
-            _lines = ["🫡 *Your check-ins — I message you first:*"]
-            for _i, _c in enumerate(_items, 1):
-                _when = (_c.get("next_run_at") or "")[:16].replace("T", " ")
-                _label = {"goal": "🎯 Goal digest", "briefing": "📰 Daily briefing", "custom": "🧭 Custom check-in"}.get(_c["kind"], _c["kind"])
-                _topic = (" — " + _c["message"][:60]) if _c["message"] else (f" — goal {_c['goal_id'][:8]}" if _c.get("goal_id") else "")
-                _lines.append(f"{_i}. {_label}{_topic}\n   due {_when} UTC{' · repeats' if _c.get('recurring') else ''} · id `{_c['id'][:8]}`")
-            _lines.append("\nCancel: /checkin cancel <id>")
-            await bot.send_message(chat_id, "\n".join(_lines))
-        return {"ok": True}
-
-    if _raw_text_early.startswith("/briefing"):
-        from server.checkin_service import schedule_check_in, cancel_check_in, list_check_ins
-        _arg = _raw_text_early[len("/briefing"):].strip().lower()
-        if _arg in ("daily", "on", "auto"):
-            # next 07:30 WAT (UTC+1), then every 24h
-            _wat = timezone(timedelta(hours=1))
-            _now_wat = datetime.now(_wat)
-            _due = _now_wat.replace(hour=7, minute=30, second=0, microsecond=0)
-            if _due <= _now_wat:
-                _due += timedelta(days=1)
-            _utc_due = _due.astimezone(timezone.utc).replace(tzinfo=None)
-            await schedule_check_in(str(tg_user_early.id), str(chat_id), "briefing",
-                                    "daily personal briefing", when=_utc_due.isoformat(),
-                                    recurring=True, interval_seconds=86400)
-            await bot.send_message(chat_id, "📰 *Daily briefing on.* Every morning at 7:30 I'll reach out first — goals, calendar, weather, headlines. /briefing off stops it.")
-            return {"ok": True}
-        if _arg in ("off", "stop"):
-            _stopped = 0
-            for _c in await list_check_ins(str(tg_user_early.id)):
-                if _c["kind"] == "briefing":
-                    await cancel_check_in(str(tg_user_early.id), _c["id"])
-                    _stopped += 1
-            await bot.send_message(chat_id, "Daily briefing off." if _stopped else "You had no daily briefing on.")
-            return {"ok": True}
-        # on-demand: send one right now
-        await bot.send_message(chat_id, "📰 Pulling your morning briefing — one moment…")
-        from server.checkin_service import compose_daily_briefing
-        _brief = await compose_daily_briefing(str(tg_user_early.id))
-        await bot.send_message(chat_id, _brief or "I couldn't build the briefing right now — try again in a minute.")
         return {"ok": True}
 
     # ── STEW REMINDERS (natural language → scheduled Telegram pings) ─────────
@@ -6589,6 +6307,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     # Send in chunks if long
                     for i in range(0, len(reply), 3800):
                         await bot.send_message(chat_id, reply[i:i+3800])
+                    _vid_sum = "[USER SENT A VIDEO"
+                    if caption:
+                        _vid_sum += f" (caption: {caption[:200]})"
+                    _vid_sum += f"] Analysis: {reply[:900]}"
+                    await _remember_media(msg["user_id"], "video", _vid_sum, reply[:900])
                 else:
                     await bot.send_message(chat_id, "I couldn't extract enough information from that video. Try a clearer or longer clip.")
             except Exception as ve:
@@ -6632,6 +6355,11 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 reply = clean_response(vision_result.get("content", ""))
                 if reply:
                     await bot.send_message(chat_id, reply)
+                    _img_sum = "[USER SENT AN IMAGE"
+                    if caption:
+                        _img_sum += f" (caption: {caption[:200]})"
+                    _img_sum += f"] Visual description: {reply[:900]}"
+                    await _remember_media(msg["user_id"], "file", _img_sum, reply)
                     return {"ok": True}
                 # Empty reply — fall through to OCR fallback below
                 raise ValueError("Vision model returned empty content")
@@ -6667,11 +6395,15 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                         await bot.send_message(chat_id, reply)
                     else:
                         await bot.send_message(chat_id, "Extracted text:\n\n" + extracted_text[:3000])
+                    await _remember_media(msg["user_id"], "file",
+                        f"[USER SENT AN IMAGE — OCR text] {extracted_text[:900]}", reply or extracted_text[:900])
                 else:
                     preview = extracted_text[:3500]
                     if len(extracted_text) > 3500:
                         preview += "\n\n... (truncated)"
                     await bot.send_message(chat_id, f"*OCR Result* (confidence: {confidence}%, {word_count} words)\n\n{preview}")
+                    await _remember_media(msg["user_id"], "file",
+                        f"[USER SENT AN IMAGE — OCR text] {extracted_text[:900]}")
                 return {"ok": True}
 
         except Exception as e:
@@ -6726,6 +6458,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 if not transcript:
                     await bot.send_message(chat_id, f"Couldn't transcribe that audio ({error[:150]}). Please type your message instead.")
                     return {"ok": True}
+                _audio_mem_sum = f"[USER SENT AUDIO: {file_name}] Transcript: {transcript[:1200]}"
                 if caption:
                     await bot.send_message(chat_id, f'Transcript: "{transcript[:500]}"\nAnswering your question...')
                     await bot.send_typing(chat_id)
@@ -6735,11 +6468,13 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                         system="Answer the question based on the transcript. Be concise and accurate.",
                     )
                     await bot.send_message(chat_id, clean_response(reply))
+                    await _remember_media(msg["user_id"], "audio", _audio_mem_sum, reply)
                 else:
                     preview = transcript[:3500]
                     if len(transcript) > 3500:
                         preview += "\n\n... (truncated)"
                     await bot.send_message(chat_id, f'*Transcript of {file_name}*\n\n{preview}')
+                    await _remember_media(msg["user_id"], "audio", _audio_mem_sum)
                 return {"ok": True}
 
             await bot.send_message(chat_id, f"Reading {file_name}...")
@@ -6774,6 +6509,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "I couldn't extract any text from this file.")
                 return {"ok": True}
 
+            # Remember the document in long-term memory so the user can ask
+            # about it later ("what was in that PDF I sent you?")
+            _doc_mem_sum = (f"[USER SENT A DOCUMENT: {file_name}] "
+                            f"Extracted content: {extracted_text[:1200]}")
             # If user asked a question, answer it about the document
             if caption:
                 await bot.send_message(chat_id, f"Extracted {len(extracted_text)} chars. Analyzing...")
@@ -6784,12 +6523,15 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     system="Answer the question based on the document. Be concise and accurate.",
                 )
                 await bot.send_message(chat_id, clean_response(reply))
+                await _remember_media(msg["user_id"], "document",
+                    _doc_mem_sum + f" Question asked: {caption[:300]}", reply)
             else:
                 # Just return extracted text
                 preview = extracted_text[:3500]
                 if len(extracted_text) > 3500:
                     preview += "\n\n... (truncated)"
                 await bot.send_message(chat_id, f"*Extracted text from {file_name}*\n\n{preview}")
+                await _remember_media(msg["user_id"], "document", _doc_mem_sum)
             return {"ok": True}
 
         except Exception as e:
@@ -6915,37 +6657,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         async with httpx.AsyncClient(timeout=5) as cb_client:
             await cb_client.post(f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
                 json={"callback_query_id": callback_id})
-
-        # ── Chat-native human-in-the-loop: Approve/Cancel taps on a
-        # destructive-delete or publish-publicly action. This is the same
-        # atomic claim-then-execute path the Mini App's approve button uses
-        # (server/composio_service.py), so a second tap — from either
-        # surface — can never replay an already-completed send/post.
-        if callback_data.startswith("apr:") or callback_data.startswith("den:"):
-            action_id = callback_data.split(":", 1)[1]
-            approver_id = str(msg.get("user_id") or (tg_user.id if tg_user else chat_id))
-            from server.composio_service import approve_pending_action, cancel_pending_action
-            if callback_data.startswith("apr:"):
-                await bot.edit_message(chat_id, msg.get("message_id"), "⏳ Approved — running now…", clear_keyboard=True)
-                try:
-                    result = await approve_pending_action(approver_id, action_id)
-                except Exception as approve_exc:
-                    logger.warning("Chat approval execution failed: %s", approve_exc)
-                    result = {"success": False, "error": f"Outcome is uncertain: {approve_exc}. Check the provider before trying again."}
-                if result.get("success"):
-                    finish_text = "✅ Approved and done — " + (result.get("message") or "the action completed.")
-                elif result.get("scheduled_only"):
-                    finish_text = "✅ Approved — queued for its scheduled time, not published yet."
-                else:
-                    finish_text = "⚠️ " + (result.get("error") or "Could not complete the action. Nothing was published.")
-                await bot.send_message(chat_id, finish_text)
-            else:
-                await bot.edit_message(chat_id, msg.get("message_id"), "❌ Cancelled — nothing was run or published.", clear_keyboard=True)
-                try:
-                    await cancel_pending_action(approver_id, action_id)
-                except Exception as cancel_exc:
-                    logger.warning("Chat cancellation failed: %s", cancel_exc)
-            return {"ok": True}
 
         callback_map = {
             "menu_students": "students",
@@ -7430,11 +7141,8 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             for _u in _bc_users:
                 _tgnum = getattr(_u, "telegram_id", None) or str(_u.email).split("_")[1].split("@")[0]
                 try:
-                    _res_bc = await bot.send_message(int(_tgnum), _bc_text, parse_mode="")
-                    if isinstance(_res_bc, dict) and _res_bc.get("ok"):
-                        _sent += 1
-                    else:
-                        _failed += 1
+                    await bot.send_message(int(_tgnum), _bc_text, parse_mode="")
+                    _sent += 1
                 except Exception:
                     _failed += 1
                 await asyncio.sleep(0.12)  # stay under Telegram rate limits
@@ -9922,10 +9630,17 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
         await bot.send_chat_action(chat_id, "upload_photo")
         try:
             from server.image_gen import generate_image as _gen_img_v2
+            from server.paywall import check_hq_image_quota, bump_hq_image_usage
+            _hq_ok, _hq_used, _hq_limit, _hq_msg = await check_hq_image_quota(db, tg_user_early)
             img_bytes, _provider_used = await _gen_img_v2(
-                prompt, 1024, 1024, premium=_is_paid_or_admin(tg_user_early))
+                prompt, 1024, 1024,
+                premium=_is_paid_or_admin(tg_user_early) or _hq_ok)
+            if img_bytes and _hq_ok and not _is_paid_or_admin(tg_user_early):
+                await bump_hq_image_usage(db, tg_user_early)
             if img_bytes:
                 await bot.send_photo(chat_id, img_bytes, caption=f"AI Image: {prompt[:80]}")
+                if not _hq_ok and _hq_msg:
+                    await bot.send_message(chat_id, _hq_msg)
             else:
                 await bot.send_message(chat_id, "Image generation failed. Try a different prompt.")
         except Exception as e:
@@ -11579,15 +11294,24 @@ Requirements:
 
         try:
             # S.T.E.W Image Engine v2: Cloudflare FLUX-2 flagship, Pollinations fallback
+            # Monetization v3: free users get N flagship images/day, then the
+            # free engine takes over with a friendly upgrade note.
             from server.image_gen import generate_image as _gen_img_v2
+            from server.paywall import check_hq_image_quota, bump_hq_image_usage
+            _hq_ok, _hq_used, _hq_limit, _hq_msg = await check_hq_image_quota(db, tg_user_early)
             image_bytes, _img_provider = await _gen_img_v2(
-                image_prompt, 1024, 1024, premium=_is_paid_or_admin(tg_user_early))
+                image_prompt, 1024, 1024,
+                premium=_is_paid_or_admin(tg_user_early) or _hq_ok)
+            if image_bytes and _hq_ok and not _is_paid_or_admin(tg_user_early):
+                await bump_hq_image_usage(db, tg_user_early)
             if not image_bytes:
                 logger.warning("TG image gen: all engines failed")
 
             if image_bytes:
                 await bot.send_photo(chat_id, image_bytes,
                     caption=f"Generated by S.T.E.W\nPrompt: {image_prompt[:200]}")
+                if not _hq_ok and _hq_msg:
+                    await bot.send_message(chat_id, _hq_msg)
             else:
                 await bot.send_message(chat_id, "Sorry, image generation failed — all engines are busy. Please try again in a moment.")
         except Exception as e:
@@ -11966,14 +11690,41 @@ Requirements:
         "my tweet", "post on x", "post to twitter", "schedule tweet", "my tweets",
         "facebook page", "my facebook", "post on facebook",
         "my notion database", "my board", "my project", "my tasks",
-        # MCP connectors (any remote MCP server the user added in the Mini
-        # App) — missing this previously meant "check the mcp that's
-        # connected" fell through to plain chat, and the model answered
-        # from general knowledge about Microchip's MCP-series hardware
-        # chips instead of checking the user's actual MCP servers.
-        "mcp", "mcp server", "mcp servers", "mcp connector", "mcp connectors",
-        "mcp tool", "mcp tools", "connected mcp", "my mcp",
+        # 2026-09-24 owner report: "read my latest email and tell me what it is"
+        # fell through to plain chat and was answered from imagination.
+        # "read my email" is not a substring of "read my LATEST email" — the
+        # fixed keyword list silently missed every "latest/newest/last" email
+        # phrasing. Account-data requests must ALWAYS reach the tool agent.
+        "my email", "latest email", "last email", "newest email", "first email",
+        "recent email", "my mail", "latest mail", "last mail", "the email",
+        "read email", "read the email", "check email", "check the email",
+        "open email", "open the email", "see my email", "whats in my email",
+        "what's in my email", "any email", "new email", "emails today",
+        "my inbox", "read my inbox", "my dms", "my dm", "latest message",
+        "my messages", "read my messages", "unread message", "my notifications",
+        "latest notification", "my uploads", "latest upload", "my videos",
+        "latest video", "my posts", "latest post", "my comments",
     ])
+
+    # Anti-hallucination gate: "read my latest email", "check my dms",
+    # "what are my notifications" — any possessive account-data request gets
+    # the tool agent, even when the fixed lists above miss the exact phrasing.
+    # Plain chat must never invent account contents.
+    if not needs_tools and not user_lower.startswith("/"):
+        _possessive_thing = re.search(
+            r"\b(my|the)\s+(latest|last|newest|recent|unread|new|first)?\s*"
+            r"(email|mail|inbox|dm|dms|message|messages|notification|notifications|"
+            r"feed|post|posts|video|videos|upload|uploads|comment|comments|"
+            r"subscriber|subscribers|follower|followers|views|analytics)\b",
+            user_lower,
+        )
+        _data_verb = re.search(
+            r"\b(read|check|open|show|tell|see|look|fetch|get|find|summarize|"
+            r"reply|answer|whats|what's|how many|do i have|any)\b",
+            user_lower,
+        )
+        if _possessive_thing and _data_verb:
+            needs_tools = True
 
     _agent_extra_triggers = (
         "higgsfield", "generate a video with", "make a video with",
@@ -12007,20 +11758,6 @@ Requirements:
                         break
             except Exception as _route_exc:
                 logger.warning("Live connected-app routing unavailable: %s", _route_exc)
-            # Also match the user's own connected MCP servers by name, so
-            # "check <my custom server name>" routes to the agent even
-            # without the literal word "mcp" in the message.
-            if not needs_tools:
-                try:
-                    from server.mcp_service import list_servers as _list_mcp_servers
-                    _mcp_live = await _list_mcp_servers(str(msg['user_id']))
-                    for _srv in _mcp_live:
-                        _sname = str(_srv.get("name") or "").lower().strip()
-                        if _sname and re.search(r"(?<!\w)" + re.escape(_sname) + r"(?!\w)", user_lower):
-                            needs_tools = True
-                            break
-                except Exception as _mcp_route_exc:
-                    logger.warning("Live MCP-server routing unavailable: %s", _mcp_route_exc)
 
     if needs_tools:
         await bot.send_typing(chat_id)

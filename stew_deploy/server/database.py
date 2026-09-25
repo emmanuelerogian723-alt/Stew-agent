@@ -149,6 +149,14 @@ async def _postgres_migrate(conn):
     stmts = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS credits_balance INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMP NULL",
+        # Monetization v3 (2026-09): email capture + daily free-tier quotas
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_email VARCHAR(255) NULL",
+        "CREATE INDEX IF NOT EXISTS ix_users_marketing_email ON users (marketing_email)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_opt_in_at TIMESTAMP NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_asked_at TIMESTAMP NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS usage_day VARCHAR(10) NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS hq_images_used INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS connector_actions_used INTEGER NOT NULL DEFAULT 0",
     ]
     for s in stmts:
         try:

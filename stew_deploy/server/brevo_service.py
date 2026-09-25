@@ -1,200 +1,193 @@
-"""S.T.E.W Brevo integration — email list growth + product-update campaigns.
-
-Uses the account Brevo API key (BREVO_API_KEY env). Sender is discovered from
-the account's verified senders, so campaigns work without extra configuration.
 """
-from __future__ import annotations
+S.T.E.W Brevo Service — email marketing, product updates, and campaigns.
 
+Uses the Brevo (ex-Sendinblue) v3 REST API with BREVO_API_KEY.
+Powers:
+- Contact capture: every user who shares an email in chat is synced to a
+  Brevo contact list (STEW_USERS_LIST_ID) with plan/name attributes.
+- Transactional product-update emails (simple HTML send, no SMTP).
+- Campaign sending to all captured emails (owner-triggered from the admin
+  panel only — Stew never mass-emails on its own).
+- Account status probe so the admin panel can show Brevo connectivity.
+
+API reference: https://developers.brevo.com/reference
+"""
 import logging
 import os
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("stew.brevo")
 
-BASE_URL = "https://api.brevo.com/v3"
-STEW_LIST_NAME = os.environ.get("BREVO_LIST_NAME", "STEW Users")
+BASE = "https://api.brevo.com/v3"
 
-
-def _api_key() -> Optional[str]:
-    key = os.environ.get("BREVO_API_KEY") or os.environ.get("BREVO_SERVER_API_KEY") or ""
-    return key.strip() or None
+# Owner-editable list id (integer) for marketing contacts.
+def _list_id() -> Optional[int]:
+    raw = (os.environ.get("BREVO_USERS_LIST_ID") or "").strip()
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
 
 
 def _headers() -> Dict[str, str]:
+    key = (os.environ.get("BREVO_API_KEY") or "").strip()
     return {
-        "api-key": _api_key() or "",
+        "api-key": key,
         "content-type": "application/json",
         "accept": "application/json",
     }
 
 
-def brevo_enabled() -> bool:
-    return bool(_api_key())
+def configured() -> bool:
+    return bool((os.environ.get("BREVO_API_KEY") or "").strip())
 
 
-async def _get(path: str, params: Optional[dict] = None) -> Optional[dict]:
-    async with httpx.AsyncClient(timeout=25) as client:
-        r = await client.get(f"{BASE_URL}{path}", headers=_headers(), params=params)
-        if r.status_code >= 400:
-            logger.warning("Brevo GET %s -> %s %s", path, r.status_code, r.text[:200])
-            return None
-        return r.json()
+def _sanitize_html(html: str) -> str:
+    """Marketing emails still need to be tidy: strip script/iframe tags and
+    add a light default wrapper if the owner sent bare text."""
+    import re
+    clean = re.sub(r"<(script|iframe)[^>]*>.*?</\1>", "", html or "", flags=re.I | re.S)
+    if clean.strip() and "<" not in clean.strip()[:60]:
+        # plain text → wrap in basic HTML
+        body = clean.replace("\n", "<br/>")
+        clean = (
+            "<div style='font-family:Segoe UI,Arial,sans-serif;font-size:15px;"
+            "color:#111;max-width:600px;margin:0 auto'>"
+            f"{body}<br/><br/><span style='color:#888;font-size:12px'>"
+            "You receive this because you use S.T.E.W on Telegram. "
+            "Reply STOP to unsubscribe.</span></div>"
+        )
+    return clean
 
 
-async def _post(path: str, body: dict) -> Dict[str, Any]:
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{BASE_URL}{path}", headers=_headers(), json=body)
-        ok = r.status_code < 400
-        if not ok:
-            logger.warning("Brevo POST %s -> %s %s", path, r.status_code, r.text[:300])
-        data: Dict[str, Any] = {}
-        try:
-            data = r.json()
-        except Exception:
-            data = {}
-        return {"success": ok, "status": r.status_code, "data": data,
-                "error": None if ok else r.text[:300]}
+async def get_status() -> Dict[str, Any]:
+    """Admin: is the Brevo key valid + how many contacts/emails do we have."""
+    if not configured():
+        return {"configured": False, "success": False,
+                "error": "BREVO_API_KEY not set on the server"}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(f"{BASE}/account", headers=_headers())
+            if resp.status_code != 200:
+                return {"configured": True, "success": False,
+                        "error": f"Brevo API returned {resp.status_code}: {resp.text[:200]}"}
+            acct = resp.json()
+            plans = acct.get("plan", []) or [{}]
+            return {
+                "configured": True, "success": True,
+                "email": (acct.get("company") or {}).get("email"),
+                "plan_type": plans[0].get("type") if plans else None,
+                "credits": acct.get("plan", [{}])[0].get("credits", 0) if plans else None,
+                "list_id": _list_id(),
+            }
+    except Exception as exc:
+        logger.warning(f"Brevo status failed: {exc}")
+        return {"configured": True, "success": False, "error": str(exc)[:200]}
 
 
-# ───────────────────────────── Contacts & lists ─────────────────────────────
-
-_list_id_cache: Optional[int] = None
-
-
-async def get_stew_list_id() -> Optional[int]:
-    """Find (or create) the STEW contacts list."""
-    global _list_id_cache
-    if _list_id_cache:
-        return _list_id_cache
-    if not brevo_enabled():
-        return None
-    data = await _get("/contacts/lists", params={"limit": 50})
-    if data:
-        for item in data.get("lists", []):
-            if str(item.get("name", "")).strip().lower() == STEW_LIST_NAME.lower():
-                _list_id_cache = int(item["id"])
-                return _list_id_cache
-    result = await _post("/contacts/lists", {"name": STEW_LIST_NAME, "folderId": 1})
-    if result["success"]:
-        _list_id_cache = int(result["data"].get("id") or 0) or None
-    return _list_id_cache
-
-
-async def upsert_contact(email: str, name: str = "",
-                         telegram_user_id: str = "") -> Dict[str, Any]:
-    """Create or update a contact and add them to the STEW list."""
-    if not brevo_enabled():
-        return {"success": False, "error": "Brevo API key is not configured."}
-    email = email.strip().lower()
-    if "@" not in email:
-        return {"success": False, "error": "Invalid email"}
-    list_id = await get_stew_list_id()
-    body: Dict[str, Any] = {
+async def upsert_contact(email: str, attrs: Optional[Dict[str, Any]] = None,
+                         list_id: Optional[int] = None) -> Dict[str, Any]:
+    """Create-or-update a Brevo contact; adds them to the marketing list.
+    Called when a chat user shares their email (opt-in) or during a bulk sync."""
+    if not configured():
+        return {"success": False, "error": "Brevo not configured"}
+    if not list_id:
+        list_id = _list_id()
+    payload: Dict[str, Any] = {
         "email": email,
         "updateEnabled": True,
-        "attributes": {"FIRSTNAME": (name or "").split(" ")[0][:100],
-                       "SOURCE": "stew-telegram"},
+        "attributes": {
+            "FIRSTNAME": (attrs or {}).get("name", ""),
+            "PLAN": (attrs or {}).get("plan", "free"),
+            "SOURCE": "stew-telegram-bot",
+        },
     }
-    if telegram_user_id:
-        body["attributes"]["TELEGRAM_ID"] = str(telegram_user_id)[:60]
     if list_id:
-        body["listIds"] = [list_id]
-    result = await _post("/contacts", body)
-    return {"success": result["success"], "error": result.get("error")}
+        payload["listIds"] = [list_id]
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(f"{BASE}/contacts", headers=_headers(), json=payload)
+            if resp.status_code in (200, 201, 204):
+                return {"success": True}
+            # 400 with code "duplicate_parameter" → contact exists; still fine.
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"message": resp.text[:200]}
+            if body.get("code") == "duplicate_parameter" or "already" in str(body.get("message", "")).lower():
+                return {"success": True, "note": "contact already exists"}
+            logger.warning(f"Brevo upsert failed {resp.status_code}: {body}")
+            return {"success": False, "error": str(body)[:250]}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)[:250]}
 
 
-async def sync_all_contacts() -> Dict[str, Any]:
-    """Push every captured ContactEmail to Brevo. Returns counts."""
-    from server.database import AsyncSessionLocal
-    from server.models import ContactEmail
-    from sqlalchemy import select
-    if not brevo_enabled():
-        return {"success": False, "synced": 0, "failed": 0,
-                "error": "Brevo API key is not configured."}
-    async with AsyncSessionLocal() as db:
-        rows = (await db.execute(select(ContactEmail))).scalars().all()
-    synced = failed = 0
-    for row in rows:
-        result = await upsert_contact(row.email, row.name or "", row.telegram_user_id)
-        if result.get("success"):
-            synced += 1
-            row.brevo_synced = True
-        else:
-            failed += 1
-    async with AsyncSessionLocal() as db:
-        for row in rows:
-            if row.brevo_synced:
-                await db.merge(row)
-        await db.commit()
-    return {"success": True, "synced": synced, "failed": failed}
-
-
-# ───────────────────────────── Sending email ─────────────────────────────
-
-_sender_cache: Optional[dict] = None
-
-
-async def get_sender() -> Optional[dict]:
-    """First verified sender on the Brevo account."""
-    global _sender_cache
-    if _sender_cache:
-        return _sender_cache
-    data = await _get("/senders", params={"limit": 20})
-    if not data:
-        return None
-    senders = data.get("senders", [])
-    preferred = [s for s in senders if s.get("active", s.get("isActive", False))]
-    if not preferred and senders:
-        preferred = senders[:1]
-    if not preferred:
-        return None
-    s = preferred[0]
-    _sender_cache = {"name": s.get("name") or "S.T.E.W", "email": s.get("email")}
-    return _sender_cache
-
-
-async def send_email(to_email: str, subject: str, html_content: str,
-                     to_name: str = "") -> Dict[str, Any]:
-    """Transactional email via Brevo SMTP."""
-    if not brevo_enabled():
-        return {"success": False, "error": "Brevo API key is not configured."}
-    sender = await get_sender()
-    if not sender:
-        return {"success": False, "error": "No verified sender on this Brevo account. Add one in Brevo → Senders."}
-    body = {
-        "sender": sender,
-        "to": [{"email": to_email.strip().lower(), "name": to_name or to_email}],
-        "subject": subject[:150],
-        "htmlContent": html_content,
+async def send_email(to_email: str, subject: str, html: str,
+                     sender_name: str = "S.T.E.W") -> Dict[str, Any]:
+    """Send one transactional HTML email (product updates, confirmations)."""
+    if not configured():
+        return {"success": False, "error": "Brevo not configured"}
+    payload = {
+        "sender": {"name": sender_name, "email": (os.environ.get("BREVO_SENDER_EMAIL") or "noreply@stew-agent.onrender.com")},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": _sanitize_html(html),
     }
-    result = await _post("/smtp/email", body)
-    return {"success": result["success"], "message_id": (result["data"] or {}).get("messageId"),
-            "error": result.get("error")}
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            resp = await client.post(f"{BASE}/smtp/email", headers=_headers(), json=payload)
+            if resp.status_code in (200, 201):
+                return {"success": True, "message_id": resp.json().get("messageId")}
+            logger.warning(f"Brevo send failed {resp.status_code}: {resp.text[:200]}")
+            return {"success": False, "error": f"Brevo {resp.status_code}: {resp.text[:200]}"}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)[:250]}
 
 
-async def send_campaign(subject: str, html_content: str,
-                        recipients: Optional[List[dict]] = None) -> Dict[str, Any]:
-    """Broadcast a product update to captured contacts (transactional batch)."""
-    from server.database import AsyncSessionLocal
-    from server.models import ContactEmail
-    from sqlalchemy import select
-    if recipients is None:
-        async with AsyncSessionLocal() as db:
-            rows = (await db.execute(select(ContactEmail))).scalars().all()
-        recipients = [{"email": r.email, "name": r.name or ""} for r in rows]
-    sent = failed = 0
-    failures: List[str] = []
-    for r in recipients:
-        result = await send_email(r["email"], subject, html_content, r.get("name", ""))
-        if result.get("success"):
-            sent += 1
-        else:
-            failed += 1
-            failures.append(f"{r['email']}: {str(result.get('error'))[:120]}")
-        # Stay gentle with the Brevo throughput limits.
-        import asyncio
-        await asyncio.sleep(0.25)
-    return {"success": failed == 0, "sent": sent, "failed": failed,
-            "failures": failures[:20]}
+async def send_bulk(to_emails: List[str], subject: str, html: str,
+                    batch_size: int = 50) -> Dict[str, Any]:
+    """Sequential small-batch campaign send via the transactional endpoint.
+    Brevo SMTP batches recipients, but we chunk to stay inside rate limits
+    and to give the admin per-batch progress."""
+    results = {"success": True, "sent": 0, "failed": 0, "errors": []}
+    html = _sanitize_html(html)
+    for i in range(0, len(to_emails), batch_size):
+        chunk = [e for e in to_emails[i:i + batch_size] if e]
+        if not chunk:
+            continue
+        payload = {
+            "sender": {"name": "S.T.E.W", "email": (os.environ.get("BREVO_SENDER_EMAIL") or "noreply@stew-agent.onrender.com")},
+            "to": [{"email": e} for e in chunk],
+            "subject": subject,
+            "htmlContent": html,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(f"{BASE}/smtp/email", headers=_headers(), json=payload)
+            if resp.status_code in (200, 201):
+                results["sent"] += len(chunk)
+            else:
+                results["failed"] += len(chunk)
+                results["errors"].append(f"batch {i//batch_size}: {resp.status_code} {resp.text[:120]}")
+        except Exception as exc:
+            results["failed"] += len(chunk)
+            results["errors"].append(f"batch {i//batch_size}: {str(exc)[:120]}")
+    results["success"] = results["failed"] == 0 or results["sent"] > 0
+    return results
+
+
+async def create_list(name: str) -> Dict[str, Any]:
+    """Admin: create the STEW users marketing list once; returns its id."""
+    if not configured():
+        return {"success": False, "error": "Brevo not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(f"{BASE}/contacts/lists", headers=_headers(),
+                                     json={"name": name, "folderId": 1})
+            if resp.status_code in (200, 201):
+                return {"success": True, "list_id": resp.json().get("id")}
+            return {"success": False, "error": f"{resp.status_code}: {resp.text[:200]}"}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)[:250]}

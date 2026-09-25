@@ -96,6 +96,115 @@ async def check_connect_allowed(plan: str, user_id: str) -> Tuple[bool, int, int
     return (True, current, limit, "")
 
 
+# ───────────────── Monetization v3: daily free-tier quotas ─────────────────
+# 2026-09 owner spec: free users get a real taste of premium capability,
+# then hit a friendly upsell wall. Paid plans get generous daily allowances;
+# the owner/admin plan is unlimited.
+
+HQ_IMAGE_DAILY: Dict[str, int] = {
+    "free": 5,       # 5 flagship FLUX-2 images/day, then Pollinations fallback
+    "student": 20,
+    "pro": 100,
+    "business": 400,
+    "enterprise": 1000,
+    "owner": 1000000,
+}
+
+CONNECTOR_ACTIONS_DAILY: Dict[str, int] = {
+    "free": 40,      # 40 connected-app actions/day (reads + writes)
+    "student": 150,
+    "pro": 500,
+    "business": 2000,
+    "enterprise": 10000,
+    "owner": 1000000,
+}
+
+
+def _today() -> str:
+    from datetime import datetime
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+async def _ensure_usage_window(user) -> None:
+    """Reset daily counters when the UTC day rolls over. Caller commits."""
+    today = _today()
+    if getattr(user, "usage_day", None) != today:
+        user.usage_day = today
+        user.hq_images_used = 0
+        user.connector_actions_used = 0
+
+
+async def check_hq_image_quota(db, user) -> Tuple[bool, int, int, str]:
+    """May the user get a premium FLUX-2 image right now?
+    Returns (allowed, used_today, limit, message). Never raises."""
+    try:
+        if user is None:
+            return (False, 0, 0, "")
+        plan = getattr(user, "plan", "free") or "free"
+        if plan == "owner":
+            return (True, 0, 0, "")
+        limit = HQ_IMAGE_DAILY.get(plan, 5)
+        # Thank-you bonus: users who shared their email get +2 daily flagship
+        # images (email capture drives product-update reach).
+        if (getattr(user, "marketing_email", None) or "").strip():
+            limit += 2
+        await _ensure_usage_window(user)
+        used = int(getattr(user, "hq_images_used", 0) or 0)
+        if used < limit:
+            return (True, used, limit, "")
+        await db.commit()
+        return (False, used, limit,
+                f"🎨 You've used your {limit} daily premium images on the "
+                f"{plan.upper()} plan — this one uses the free engine instead.\n\n"
+                f"Upgrade with /upgrade for up to 100/day premium quality "
+                f"(Pro) — first images look noticeably sharper, faster.")
+    except Exception as exc:
+        logger.warning(f"hq image quota check failed: {exc}")
+        return (True, 0, 0, "")  # fail open — never block on counter errors
+
+
+async def bump_hq_image_usage(db, user) -> None:
+    try:
+        await _ensure_usage_window(user)
+        user.hq_images_used = int(getattr(user, "hq_images_used", 0) or 0) + 1
+        await db.commit()
+    except Exception as exc:
+        logger.warning(f"hq image bump failed: {exc}")
+
+
+async def check_connector_action_quota(db, user) -> Tuple[bool, int, int, str]:
+    """May the user run another connected-app action right now?"""
+    try:
+        if user is None:
+            return (True, 0, 0, "")
+        plan = getattr(user, "plan", "free") or "free"
+        if plan == "owner":
+            return (True, 0, 0, "")
+        limit = CONNECTOR_ACTIONS_DAILY.get(plan, 40)
+        await _ensure_usage_window(user)
+        used = int(getattr(user, "connector_actions_used", 0) or 0)
+        if used < limit:
+            return (True, used, limit, "")
+        await db.commit()
+        return (False, used, limit,
+                f"🔐 Daily connected-app limit reached ({used}/{limit} on "
+                f"{plan.upper()}).\n\nYour apps stay connected — upgrade "
+                f"with /upgrade to keep the actions flowing today "
+                f"(Pro = 500/day, Business = 2000/day).")
+    except Exception as exc:
+        logger.warning(f"connector quota check failed: {exc}")
+        return (True, 0, 0, "")
+
+
+async def bump_connector_action_usage(db, user) -> None:
+    try:
+        await _ensure_usage_window(user)
+        user.connector_actions_used = int(getattr(user, "connector_actions_used", 0) or 0) + 1
+        await db.commit()
+    except Exception as exc:
+        logger.warning(f"connector action bump failed: {exc}")
+
+
 # ───────────────────────── Pass codes ─────────────────────────
 
 def _gen_code() -> str:
@@ -213,108 +322,3 @@ class LiveStatus:
                 except Exception:
                     pass
         return False
-
-
-# ═══════════════════ Paywall v4: metered feature allowances ═══════════════════
-# Free users get REAL monthly allowances for every premium feature so they can
-# experience the value before paying (the #1 conversion driver used by Chatbase,
-# ManyChat and GoHighLevel freemium tiers). Allowances reset monthly.
-
-FEATURE_LIMITS: Dict[str, Dict[str, int]] = {
-    # Connected-app actions (Composio executes: reads, prepared/approved writes)
-    "connector_action": {"free": 30, "whatsapp": 30, "student": 150, "pro": 1000,
-                          "business": 5000, "enterprise": 20000, "owner": 10_000_000},
-    # High-quality FLUX images (before falling back to standard generation)
-    "hd_image": {"free": 10, "whatsapp": 10, "student": 40, "pro": 200,
-                  "business": 1000, "enterprise": 5000, "owner": 10_000_000},
-}
-
-
-def feature_limit(plan: str, feature: str) -> int:
-    return FEATURE_LIMITS.get(feature, {}).get(plan or "free",
-           FEATURE_LIMITS.get(feature, {}).get("free", 0))
-
-
-def current_period(daily: bool = False) -> str:
-    from datetime import datetime
-    now = datetime.utcnow()
-    return now.strftime("%Y-%m-%d") if daily else now.strftime("%Y-%m")
-
-
-async def feature_usage_count(telegram_user_id: str, feature: str, period: str) -> int:
-    from server.models import FeatureUsage
-    from server.database import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
-        row = (await db.execute(select(FeatureUsage).where(
-            FeatureUsage.telegram_user_id == str(telegram_user_id),
-            FeatureUsage.feature == feature,
-            FeatureUsage.period == period))).scalar_one_or_none()
-        return row.count if row else 0
-
-
-async def meter_feature(telegram_user_id: str, feature: str, period: str, amount: int = 1) -> int:
-    """Increment usage and return the new count (upsert)."""
-    from server.models import FeatureUsage
-    from server.database import AsyncSessionLocal
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from sqlalchemy import update as generic_update
-    async with AsyncSessionLocal() as db:
-        row = (await db.execute(select(FeatureUsage).where(
-            FeatureUsage.telegram_user_id == str(telegram_user_id),
-            FeatureUsage.feature == feature,
-            FeatureUsage.period == period))).scalar_one_or_none()
-        if row:
-            row.count += amount
-            await db.commit()
-            return row.count
-        db.add(FeatureUsage(telegram_user_id=str(telegram_user_id), feature=feature,
-                            period=period, count=amount))
-        try:
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            # Race: another worker created it — fall back to an increment.
-            await db.execute(generic_update(FeatureUsage).where(
-                FeatureUsage.telegram_user_id == str(telegram_user_id),
-                FeatureUsage.feature == feature,
-                FeatureUsage.period == period).values(count=FeatureUsage.count + amount))
-            await db.commit()
-        return amount
-
-
-async def user_plan_for_telegram(telegram_user_id: str) -> str:
-    """Plan for a Telegram user (users are keyed by email tg_<id>@telegram.stew)."""
-    from server.models import User
-    from server.database import AsyncSessionLocal
-    try:
-        async with AsyncSessionLocal() as db:
-            row = (await db.execute(select(User).where(
-                User.email == f"tg_{telegram_user_id}@telegram.stew"))).scalar_one_or_none()
-            return row.plan if row else "free"
-    except Exception as e:
-        logger.warning(f"user_plan_for_telegram failed: {e}")
-        return "free"
-
-
-async def check_feature(telegram_user_id: str, feature: str, daily: bool = False) -> Dict[str, Any]:
-    """Gate a feature by plan allowance. Returns allowed/used/limit/message."""
-    plan = await user_plan_for_telegram(telegram_user_id)
-    limit = feature_limit(plan, feature)
-    period = current_period(daily)
-    used = await feature_usage_count(telegram_user_id, feature, period)
-    if plan == "owner" or used < limit:
-        return {"allowed": True, "used": used, "limit": limit, "plan": plan}
-    return {"allowed": False, "used": used, "limit": limit, "plan": plan,
-            "message": (f"🔒 Monthly {feature.replace('_',' ')} limit reached ({used}/{limit} on "
-                        f"{plan.upper()}).\n\nYour allowance resets on the 1st, or upgrade with /upgrade "
-                        f"— Pro unlocks 1,000 connected-app actions and 200 HD images monthly.")}
-
-
-async def metered_feature_gate(telegram_user_id: str, feature: str) -> Dict[str, Any]:
-    """Check-and-charge atomically: consumes one unit if allowed."""
-    gate = await check_feature(telegram_user_id, feature)
-    if gate["allowed"] and gate["plan"] != "owner":
-        await meter_feature(telegram_user_id, feature, current_period())
-        gate["used"] += 1
-    return gate

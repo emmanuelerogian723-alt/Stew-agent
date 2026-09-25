@@ -429,6 +429,92 @@ async def admin_delete_memory(memory_id: str, token: str, db: AsyncSession = Dep
     return {"ok": True}
 
 
+@router.get("/brevo/status")
+async def admin_brevo_status(token: str):
+    """Brevo connectivity + how many user emails we've captured."""
+    _verify_admin(token)
+    from server.brevo_service import get_status
+    status = await get_status()
+    async with AsyncSessionLocal() as db:
+        captured = (await db.execute(
+            sql_text("SELECT COUNT(*) FROM users WHERE marketing_email IS NOT NULL AND marketing_email != ''")
+        )).scalar() or 0
+        total = (await db.execute(sql_text("SELECT COUNT(*) FROM users"))).scalar() or 0
+    return {**status, "captured_emails": captured, "total_users": total}
+
+
+@router.get("/contacts")
+async def admin_list_contacts(token: str, limit: int = 500):
+    """All captured marketing emails (for the admin panel's tracking table)."""
+    _verify_admin(token)
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(User.email, User.name, User.marketing_email, User.plan, User.email_opt_in_at, User.created_at)
+            .where(User.marketing_email.isnot(None), User.marketing_email != "")
+            .order_by(User.email_opt_in_at.desc())
+            .limit(min(limit, 2000))
+        )).all()
+    items = [
+        {"marketing_email": r[2], "name": r[1], "plan": r[3],
+         "opted_in_at": r[4].isoformat() if r[4] else None,
+         "created_at": r[5].isoformat() if r[5] else None,
+         "tg_email": r[0]}
+        for r in rows
+    ]
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/campaign/send")
+async def admin_campaign_send(request: Request, token: str):
+    """Owner-triggered product-update email blast via Brevo.
+    Body: {subject, html, test_to?} — test_to sends ONE email instead of all."""
+    admin = _verify_admin(token)
+    _require_role(admin, "admin")
+    body = await request.json()
+    subject = (body.get("subject") or "").strip()
+    html = (body.get("html") or "").strip()
+    test_to = (body.get("test_to") or "").strip()
+    if not subject or not html:
+        raise HTTPException(400, detail="subject and html are required")
+    from server.brevo_service import send_email, send_bulk, configured as brevo_configured
+    if not brevo_configured():
+        raise HTTPException(503, detail="BREVO_API_KEY is not set on the server")
+    if test_to:
+        result = await send_email(test_to, subject, html)
+        return {"mode": "test", "to": test_to, **result}
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            sql_text("SELECT marketing_email FROM users WHERE marketing_email IS NOT NULL AND marketing_email != ''")
+        )).scalars().all()
+    emails = [e for e in rows if e]
+    if not emails:
+        raise HTTPException(400, detail="No captured emails yet. Emails are captured as users share them in chat.")
+    result = await send_bulk(emails, subject, html)
+    return {"mode": "campaign", "recipients": len(emails), **result}
+
+
+@router.post("/campaign/sync-contacts")
+async def admin_sync_contacts(token: str):
+    """Push every captured email into the Brevo marketing list."""
+    admin = _verify_admin(token)
+    _require_role(admin, "admin")
+    from server.brevo_service import upsert_contact
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(User.marketing_email, User.name, User.plan)
+            .where(User.marketing_email.isnot(None), User.marketing_email != "")
+            .limit(2000)
+        )).all()
+    synced, failed = 0, 0
+    for email, name, plan in rows:
+        res = await upsert_contact(email, {"name": (name or "").split(" ")[0], "plan": plan or "free"})
+        if res.get("success"):
+            synced += 1
+        else:
+            failed += 1
+    return {"synced": synced, "failed": failed, "total": len(rows)}
+
+
 @router.get("/quotes/test")
 async def admin_quotes_test(token: str, chat_id: int = 0):
     """Preview the daily Morning Motivation: generates today's quote card and

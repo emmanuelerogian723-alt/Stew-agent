@@ -46,6 +46,14 @@ class User(Base):
     # ── Monetization v2 (2026): S.T.E.W Coins + plan expiry ──
     credits_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=text("0"))
     plan_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # ── Monetization v3 (2026-09): email capture + free-tier daily quotas ──
+    marketing_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    email_opt_in_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    email_asked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # One row per user; counters reset when usage_day rolls over
+    usage_day: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    hq_images_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=text("0"))
+    connector_actions_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -310,31 +318,6 @@ class ScheduledTask(Base):
 
 
 
-class AgentCheckIn(Base):
-    """Agent-initiated check-in — Stew wakes on a timer, pulls live state
-    (goal progress, outcomes, calendar, weather, news) and messages the user
-    first. Base44-superagent parity: the bot doesn't only answer, it reaches
-    out. kinds: 'goal' (progress digest), 'briefing' (daily For-You digest),
-    'custom' (agent-authored follow-up on any topic)."""
-    __tablename__ = "agent_check_ins"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # goal|briefing|custom
-    message: Mapped[str] = mapped_column(Text, nullable=False, default="")  # context/instruction for the agent
-    goal_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    recurring: Mapped[bool] = mapped_column(Boolean, default=False)
-    interval_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
-    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    last_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    sent_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
 class WebsiteVersion(Base):
     """Version snapshot of a /webbuild site — created before every /edit,
     enabling /versions listing and /rollback to any previous state."""
@@ -460,67 +443,5 @@ class AutomationGoal(Base):
     lease_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     approval_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-class FeatureUsage(Base):
-    """Generic monthly/daily meter for plan-gated features (hd_image, connector_action...)."""
-    __tablename__ = "feature_usage"
-    __table_args__ = ({"sqlite_autoincrement": True},)
-
-    id: Mapped[str] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    feature: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    period: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # YYYY-MM or YYYY-MM-DD
-    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-class ContactEmail(Base):
-    """Marketing-opt-in email captured from a Telegram user (Brevo sync target)."""
-    __tablename__ = "contact_emails"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    telegram_user_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    brevo_synced: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-class McpServer(Base):
-    """A user-connected remote MCP server (Model Context Protocol) — lets
-    Stew reach ANY platform beyond the fixed Composio catalog, the same
-    open-ecosystem pattern Claude supports with remote MCP connectors."""
-    __tablename__ = "mcp_servers"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(80), nullable=False)
-    url: Mapped[str] = mapped_column(String(500), nullable=False)
-    auth_header_name: Mapped[str] = mapped_column(String(64), default="Authorization")
-    auth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # sent as "<header>: Bearer <token>"
-    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending/active/error
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    tools: Mapped[list] = mapped_column(JSON, default=list)  # cached tools/list result
-    tool_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
-class ToolPermission(Base):
-    """Per-user 'Always allow' toggle for a specific risky tool — the Claude
-    permission model: users can promote a tool they trust past the approval
-    pause, or demote it back. tool_key examples: composio:TWITTER_CREATE_TWEET
-    or mcp:<server_id>:<tool_name>."""
-    __tablename__ = "tool_permissions"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    tool_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    allow_always: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
