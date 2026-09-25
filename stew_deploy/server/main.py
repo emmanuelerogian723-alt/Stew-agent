@@ -11892,43 +11892,18 @@ Requirements:
             await bot.set_message_reaction(chat_id, msg.get("message_id"), "👀")
         except Exception:
             pass
-        _ta_banner = None
+        _stream = None
         try:
-            from server.live_motion import WorkingBanner
-            _ta_banner = WorkingBanner(bot, chat_id, "⚡ Stew is on it")
-            await _ta_banner.start()
-            await _ta_banner.update("🧠 Planning the steps…")
+            from server.live_motion import LiveActivityStream
+            _stream = LiveActivityStream(bot, chat_id, "⚡ Stew is on it — Live Execution")
+            await _stream.start()
         except Exception:
             pass
-        # Live motion: translate real agent progress into human-readable
-        # banner stages so the user SEES each step as it happens.
-        _TOOL_STAGE_LABELS = {
-            "web_search": "🔍 Searching the web…",
-            "browse_url": "🌐 Reading a page…",
-            "run_python_code": "🧮 Crunching the numbers…",
-            "run_terminal_code": "💻 Running code…",
-            "generate_document": "📄 Writing your document…",
-            "generate_image": "🎨 Creating an image…",
-            "generate_qr_code": "🔳 Generating your QR code…",
-            "build_website": "🏗️ Building your website…",
-            "composio_search_tools": "🔎 Checking your connected apps…",
-            "composio_execute": "🛠️ Working on your connected app…",
-            "composio_connect": "🔗 Setting up an app connection…",
-            "prepare_social_video": "🎬 Preparing your video…",
-            "smart_clips": "✂️ Cutting your clips…",
-        }
-        def _agent_progress(event):
-            try:
-                _stage = (event or {}).get("stage")
-                if _stage == "thinking":
-                    _label = f"🧠 Thinking — step {event.get('iteration', 1)}…"
-                else:
-                    _label = _TOOL_STAGE_LABELS.get(
-                        event.get("tool"), f"⚙️ Working — step {event.get('iteration', 1)}…")
-                if _ta_banner:
-                    asyncio.get_event_loop().create_task(_ta_banner.update(_label))
-            except Exception:
-                pass
+        # progress_cb is the stream's own sync record() method — tool_agent
+        # feeds it structured {kind, tool, icon, name, label, evidence, ok}
+        # events (see _tool_display/_tool_evidence there); the stream's own
+        # background ticker turns that into the live animated message.
+        _agent_progress = _stream.record if _stream else None
         # Reply-awareness: if the user replied to a specific message, tell the
         # agent exactly which message is being answered.
         _agent_input = user_text
@@ -11942,8 +11917,6 @@ Requirements:
         try:
             from server.tool_agent import run_agent_loop
             agent_result = await run_agent_loop(_agent_input, bot=bot, chat_id=chat_id, max_iterations=8, tg_user_id=str(msg['user_id']), progress_cb=_agent_progress)
-            if _ta_banner:
-                await _ta_banner.update("🔧 Working with your connected apps…")
 
             # Send any generated figures (matplotlib charts, QR codes, etc.)
             if agent_result.get("figures"):
@@ -11996,8 +11969,8 @@ Requirements:
                 ))[:3]
                 for _vu in _vid_urls:
                     try:
-                        if _ta_banner:
-                            await _ta_banner.update("🎬 Fetching your generated video…")
+                        if _stream:
+                            _stream.note("🎬 Fetching your generated video…")
                         _vresp = await asyncio.to_thread(http_requests.get, _vu, timeout=60)
                         if _vresp.status_code == 200 and len(_vresp.content) > 1000:
                             await bot.send_video(chat_id, _vresp.content, caption="🎬 Your AI-generated video — by Stew")
@@ -12019,13 +11992,13 @@ Requirements:
                 )
             except Exception:
                 pass
-            if _ta_banner:
+            if _stream:
                 _BANNER_FINISH = {
                     "done": "✅ Done ✨",
                     "needs_confirmation": "⏸️ Paused — needs your confirmation",
                     "failed": "⚠️ Hit an error — nothing changed",
                 }
-                await _ta_banner.finish(_BANNER_FINISH.get(agent_result.get("outcome"), "✅ Done ✨"))
+                await _stream.finish(_BANNER_FINISH.get(agent_result.get("outcome"), "✅ Done ✨"))
 
             # Log
             if tg_user:
@@ -12034,6 +12007,11 @@ Requirements:
             return {"ok": True}
         except Exception as e:
             logger.error(f"Tool agent error: {e}", exc_info=True)
+            if _stream:
+                try:
+                    await _stream.finish("⚠️ Hit an error — switching to regular mode…")
+                except Exception:
+                    pass
             await bot.send_message(chat_id, "Agent encountered an error. Trying regular mode...")
             # Fall through to regular chat
 
@@ -12344,6 +12322,11 @@ Requirements:
 
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
+        if locals().get('_gw_banner'):
+            try:
+                await _gw_banner.finish("⚠️ Hit an error")
+            except Exception:
+                pass
         await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")
 
     return {"ok": True}

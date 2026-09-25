@@ -1127,6 +1127,140 @@ async def _connector_quota_bump(tg_user_id, chat_id) -> None:
                 await bump_connector_action_usage(_bdb, _bu)
     except Exception as _b_exc:
         logger.debug("quota bump skipped: %s", _b_exc)
+# ─────────────────────────────────────────────────────────────────────────
+# Live Execution Streaming — helpers that turn a tool call into something a
+# user can actually watch happen: an icon+name+action label (_tool_display),
+# real evidence extracted from what the tool actually returned rather than
+# a bare "Working…" (_tool_evidence), and varied "thinking" labels so
+# planning never looks like a frozen spinner (_thinking_label). Feeds
+# server.live_motion.LiveActivityStream via progress_cb.
+# ─────────────────────────────────────────────────────────────────────────
+
+_APP_ICONS = {
+    "gmail": "📧", "google_calendar": "📅", "googlecalendar": "📅",
+    "google_drive": "📁", "googledrive": "📁", "google_sheets": "📊",
+    "google_docs": "📄", "googledocs": "📄", "slack": "💬", "notion": "📝",
+    "github": "🐙", "linear": "📐", "trello": "🗂️", "asana": "✅",
+    "dropbox": "📦", "hubspot": "🧡", "salesforce": "☁️", "linkedin": "💼",
+    "youtube": "▶️", "facebook": "📘", "twitter": "🐦", "x": "🐦",
+    "instagram": "📸", "pinterest": "📌", "reddit": "👽", "discord": "🎮",
+    "shopify": "🛍️", "stripe": "💳", "airtable": "🗄️", "twitch": "🎥",
+    "whatsapp": "🟢", "whatsapp_business": "🟢", "wordpress": "📰",
+    "medium": "✍️", "google_ads": "📣", "googleads": "📣",
+    "google_analytics": "📈", "googleanalytics": "📈", "canva": "🎨",
+    "zoom": "🎦", "calendly": "🗓️", "mailchimp": "🐵", "monday": "🧩",
+    "jira": "🧵", "clickup": "🧩",
+}
+
+_THINKING_LABELS = [
+    "Planning execution…", "Finding the best strategy…",
+    "Checking available connectors…", "Selecting the right tool…",
+    "Choosing the fastest workflow…", "Reviewing what's been found…",
+    "Deciding the next step…", "Optimizing the approach…",
+]
+
+
+def _icon_for_app(name) -> str:
+    key = str(name or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return _APP_ICONS.get(key, "🔌")
+
+
+def _thinking_label(iteration: int, tools_used: set) -> str:
+    if iteration <= 1:
+        return "Planning execution…"
+    if not tools_used:
+        return _THINKING_LABELS[(iteration - 1) % len(_THINKING_LABELS)]
+    return _THINKING_LABELS[(iteration + len(tools_used)) % len(_THINKING_LABELS)]
+
+
+def _tool_display(tool: str, args: dict) -> dict:
+    """Icon + friendly name + a human action label for the live tool card.
+    Returns {"icon", "name", "label", "connector", "app"}."""
+    args = args or {}
+    if tool == "composio_execute":
+        app = args.get("toolkit") or args.get("app") or args.get("slug") or "Connected App"
+        action = str(args.get("action") or args.get("tool_slug") or "action").replace("_", " ").title()
+        return {"icon": _icon_for_app(app), "name": str(app).replace("_", " ").title(),
+                "label": f"Running {action}…", "connector": True, "app": app}
+    if tool == "composio_search_tools":
+        return {"icon": "🔎", "name": "Connected Apps", "label": "Searching available tools…",
+                "connector": True, "app": None}
+    if tool == "composio_connect":
+        app = args.get("app") or args.get("toolkit") or "app"
+        return {"icon": _icon_for_app(app), "name": str(app).replace("_", " ").title(),
+                "label": "Connecting…", "connector": True, "app": app}
+    if tool == "mcp_execute":
+        return {"icon": "🧩", "name": args.get("server_id") or "MCP Server",
+                "label": f"Running {args.get('tool_name', 'tool')}…", "connector": True,
+                "app": args.get("server_id")}
+    if tool in ("mcp_search_tools", "mcp_list_servers"):
+        return {"icon": "🧩", "name": "MCP", "label": "Checking connected MCP servers…",
+                "connector": True, "app": None}
+    if tool == "web_search":
+        q = str(args.get("query", ""))[:40]
+        return {"icon": "🔍", "name": "Web Search", "label": f'Searching "{q}"…' if q else "Searching the web…",
+                "connector": False, "app": None}
+    if tool == "browse_url":
+        return {"icon": "🌐", "name": "Browser", "label": "Reading a page…", "connector": False, "app": None}
+    if tool == "run_python_code":
+        return {"icon": "🧮", "name": "Python", "label": "Crunching the numbers…", "connector": False, "app": None}
+    if tool == "run_terminal_code":
+        return {"icon": "💻", "name": "Terminal", "label": "Running code…", "connector": False, "app": None}
+    if tool == "generate_document":
+        return {"icon": "📄", "name": "Document Studio", "label": "Writing your document…", "connector": False, "app": None}
+    if tool == "generate_image":
+        return {"icon": "🎨", "name": "Image Studio", "label": "Creating an image…", "connector": False, "app": None}
+    if tool == "generate_qr_code":
+        return {"icon": "🔳", "name": "QR Code", "label": "Generating your QR code…", "connector": False, "app": None}
+    if tool == "build_website":
+        return {"icon": "🏗️", "name": "Website Builder", "label": "Building your website…", "connector": False, "app": None}
+    if tool == "schedule_check_in":
+        return {"icon": "⏰", "name": "Check-in", "label": "Scheduling a follow-up…", "connector": False, "app": None}
+    if tool in ("prepare_social_video", "smart_clips"):
+        return {"icon": "🎬", "name": "Video Studio", "label": "Preparing your video…", "connector": False, "app": None}
+    if tool in ("get_crypto_price", "get_stock_price", "get_exchange_rate"):
+        return {"icon": "📈", "name": "Market Data", "label": "Fetching live prices…", "connector": False, "app": None}
+    if tool == "get_weather":
+        return {"icon": "🌤️", "name": "Weather", "label": "Checking the forecast…", "connector": False, "app": None}
+    if tool == "wikipedia_search":
+        return {"icon": "📚", "name": "Wikipedia", "label": "Looking up facts…", "connector": False, "app": None}
+    if tool == "ocr_image":
+        return {"icon": "🖼️", "name": "OCR", "label": "Reading the image…", "connector": False, "app": None}
+    return {"icon": "⚙️", "name": tool.replace("_", " ").title(), "label": "Working…", "connector": False, "app": None}
+
+
+def _tool_evidence(tool: str, args: dict, result: dict) -> tuple:
+    """Best-effort real evidence string from a completed tool result —
+    never a bare 'Working…'. Returns (evidence_text, ok_bool)."""
+    result = result or {}
+    ok = bool(result.get("success", True))
+    if not ok:
+        return str(result.get("error") or "Ran into an issue")[:110], False
+
+    data = result.get("data")
+    if isinstance(data, dict):
+        if data.get("approval_required"):
+            return "Waiting for your approval…", True
+        ax = data.get("auto_executed")
+        if isinstance(ax, dict) and ax.get("success") is False:
+            return f"Ran into an issue: {str(ax.get('error') or '')[:70]}", False
+        for key in ("items", "messages", "emails", "files", "events", "results",
+                    "tools", "servers", "hits", "records", "rows", "comments",
+                    "connections", "videos", "posts"):
+            v = data.get(key)
+            if isinstance(v, list):
+                return f"Found {len(v)} {key}", True
+    if isinstance(data, list):
+        return f"Found {len(data)} results", True
+
+    out = str(result.get("output") or "").strip()
+    if out:
+        return out.splitlines()[0][:120], True
+    if result.get("file_base64") or result.get("files"):
+        return "File generated", True
+    if result.get("figures"):
+        return f"Generated {len(result['figures'])} chart(s)", True
+    return "Completed", True
 
 
 async def run_agent_loop(
@@ -1247,8 +1381,9 @@ async def run_agent_loop(
     for iteration in range(max_iterations):
         if progress_cb:
             try:
-                progress_cb({"stage": "thinking", "iteration": iteration + 1,
-                             "tools_used": sorted(tools_used)})
+                progress_cb({"kind": "thinking", "stage": "thinking", "iteration": iteration + 1,
+                             "tools_used": sorted(tools_used),
+                             "label": _thinking_label(iteration + 1, tools_used)})
             except Exception:
                 pass
         # Get LLM response
@@ -1397,6 +1532,13 @@ async def run_agent_loop(
         # Execute each tool call
         for call in tool_calls:
             tool_name = call.get("tool", "unknown")
+            _disp = _tool_display(tool_name, call.get("args"))
+            if progress_cb:
+                try:
+                    progress_cb({"kind": "tool_start", "tool": tool_name, "iteration": iteration + 1,
+                                 **_disp})
+                except Exception:
+                    pass
             if bot and chat_id:
                 # Don't leak tool names to users — just show typing indicator
                 await bot.send_chat_action(chat_id, "typing")
@@ -1404,9 +1546,11 @@ async def run_agent_loop(
             tool_result = await execute_tool(call, bot, chat_id, tg_user_id)
             if progress_cb:
                 try:
-                    progress_cb({"stage": "executing", "tool": call.get("tool", "?"),
-                                 "iteration": iteration + 1,
-                                 "tools_used": sorted(tools_used | {call.get("tool", "?")})})
+                    _evidence, _ok = _tool_evidence(tool_name, call.get("args"), tool_result)
+                    progress_cb({"kind": "tool_done", "tool": tool_name, "iteration": iteration + 1,
+                                 "icon": _disp["icon"], "name": _disp["name"],
+                                 "connector": _disp["connector"], "evidence": _evidence, "ok": _ok,
+                                 "tools_used": sorted(tools_used | {tool_name})})
                 except Exception:
                     pass
             tool_history.append({
