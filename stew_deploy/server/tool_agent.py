@@ -1185,6 +1185,7 @@ async def run_agent_loop(
     tools_used = set()  # Track tools already called to prevent loops
     trace = []  # per-iteration raw model output (debug visibility only)
     _anti_hallucination_retries = 0  # self-correction pushes, capped at 2
+    _executed_sigs = set()  # (slug, args) signatures of composio_execute calls
 
     for iteration in range(max_iterations):
         if progress_cb:
@@ -1296,6 +1297,21 @@ async def run_agent_loop(
             if tool_name == "build_website" and list(tools_used).count("build_website") >= 2:
                 skipped_calls.append(call)
                 continue
+            # composio_execute: never run the exact same slug+arguments twice —
+            # the model once emitted identical GMAIL_CREATE_EMAIL_DRAFT calls
+            # twice in one turn and created two duplicate drafts. Posting,
+            # sending, or creating something twice is a real-world side
+            # effect, so identical repeats are dropped before execution.
+            if tool_name == "composio_execute":
+                _sig = json.dumps(
+                    [(call.get("args") or {}).get("tool_slug"),
+                     (call.get("args") or {}).get("arguments")],
+                    sort_keys=True, default=str)
+                if _sig in _executed_sigs:
+                    skipped_calls.append(call)
+                    logger.info("Skipping duplicate composio_execute of %s (identical slug+args)" % ((call.get("args") or {}).get("tool_slug"),))
+                    continue
+                _executed_sigs.add(_sig)
             new_calls.append(call)
             tools_used.add(tool_name)
 
