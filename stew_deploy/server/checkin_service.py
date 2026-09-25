@@ -231,7 +231,18 @@ async def compose_daily_briefing(telegram_user_id: str) -> str:
     if news != "__SKIP__":
         parts.append(news)
     parts.append("(If calendar data is missing, do not mention calendars at all.)")
-    return _llm_complete("Write the user's personal daily briefing from this live data:\n" + "\n\n".join(parts))
+    text = _llm_complete("Write the user's personal daily briefing from this live data:\n" + "\n\n".join(parts))
+    if not text or not text.strip():
+        # All AI providers rate-limited/down: still deliver the real live data
+        # instead of silently skipping (the scheduler would count 0 sends and
+        # the user wakes up to nothing).
+        fallback = ["🌅 *Your daily briefing*"]
+        for part in parts:
+            if part and not part.startswith("(If calendar"):
+                fallback.append(str(part))
+        fallback.append("Have a great day — S.T.E.W 🫡")
+        return "\n\n".join(fallback)
+    return text
 
 
 async def compose_custom_followup(telegram_user_id: str, message: str) -> str:

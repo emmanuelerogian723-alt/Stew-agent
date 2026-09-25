@@ -256,6 +256,14 @@ def parse_edit_request(text: str) -> list[dict]:
 
 
 def is_edit_intent(text: str) -> bool:
+    t = " " + (text or "").lower() + " "
+    # Capcut/Canva-style conversational edit asks — the user thinks in editing
+    # apps; Stew maps them to its real ffmpeg editing engine.
+    if any(k in t for k in (" capcut", "canva", "edit this video", "edit this clip",
+                           "edit it with", "edit the video", "edit the clip",
+                           "add captions to this", "caption this video",
+                           "make this vertical", "make it 9:16", "make it vertical")):
+        return True
     return len(parse_edit_request(text)) > 0
 
 

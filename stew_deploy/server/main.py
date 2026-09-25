@@ -5454,6 +5454,56 @@ async def _handle_tg_poster(chat_id: int, kind: str, brief: str):
             pass
 
 
+async def _handle_media_task(chat_id: int, instruction: str, kind: str,
+                                filename: str, user_id: Optional[str]):
+    """A user sent a file with a DO-something caption: post it to social,
+    email it, share it. The file is already in the user_media registry;
+    the tool agent fetches its public URL via get_user_media and executes
+    the real connected-app action (with the Approve/Cancel gateway for
+    public posts)."""
+    from server.tool_agent import run_agent_loop
+    from server.live_motion import LiveActivityStream
+    try:
+        stream = LiveActivityStream(bot, chat_id)
+        await stream.start()
+        goal = (f"The user sent a {kind} ({filename}) with this instruction: \"{instruction}\"\n"
+                f"[USER_MEDIA: the file is registered under key tg:{chat_id} — call get_user_media() "
+                f"first to get its public URL, then follow prompt rule 18l to complete the instruction "
+                f"with their connected apps.]")
+        result = await run_agent_loop(goal, bot=bot, chat_id=chat_id,
+                                     max_iterations=12, tg_user_id=user_id,
+                                     progress_cb=stream.record)
+        await stream.finish()
+        files = result.get("files") or []
+        import base64 as _b64_mt
+        for f in files:
+            try:
+                raw = _b64_mt.b64decode(f["base64"])
+                if str(f.get("mime_type", "")).startswith("image/"):
+                    await bot.send_photo(chat_id, raw)
+                else:
+                    await bot.send_document(chat_id, raw, f.get("filename", "stew_media"),
+                                            "S.T.E.W processed your file")
+            except Exception as fe:
+                logger.error(f"media task file send error: {fe}")
+        response = result.get("response", "")
+        if response:
+            import re as _re_mt
+            response = _re_mt.sub(r'TOOL_CALL:\s*\{.*?\}', '', response, flags=_re_mt.DOTALL).strip()
+            response = _re_mt.sub(r'TOOL_RESULT[\s\S]*', '', response).strip()
+            if response:
+                for i in range(0, len(response), 3800):
+                    await bot.send_message(chat_id, clean_response(response[i:i+3800]))
+        if not files and not response:
+            await bot.send_message(chat_id, "I couldn't complete that — try rephrasing, or check the app is connected with /apps.")
+    except Exception as e:
+        logger.error(f"media task error: {e}", exc_info=True)
+        try:
+            await bot.send_message(chat_id, "Something went wrong handling your file. Please try again.")
+        except Exception:
+            pass
+
+
 async def _handle_tg_video_edit(chat_id: int, vid_path: str, text: str, user_id: Optional[str]):
     """S.T.E.W Video Editor worker (Telegram): runs the requested edits on a
     previously uploaded video and sends the result. Runs detached with its own
@@ -5718,6 +5768,23 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     _raw_text_early = (msg.get("text") or "").strip()
     _is_callback_early = bool(msg.get("is_callback"))
+
+    # ── AGENTIC MEDIA (text follow-up): the user sent a file earlier and now
+    # types "post this to my youtube" / "email it to x@y.com" as a NEW message.
+    # The file sits in the user_media registry — route the instruction to the
+    # tool agent instead of plain chat.
+    if not _raw_text_early.startswith("/") and not _is_callback_early:
+        try:
+            from server.user_media import get_media as _um_get, is_media_task_intent as _um_intent_t
+            _um_media = _um_get(f"tg:{chat_id}")
+            if _um_media and _um_intent_t(_raw_text_early):
+                await bot.send_message(chat_id, "🚀 On it — handling your file with your connected apps…")
+                asyncio.create_task(_handle_media_task(chat_id, _raw_text_early, _um_media["kind"],
+                                                       _um_media["filename"],
+                                                       tg_user_early.id if tg_user_early else None))
+                return {"ok": True}
+        except Exception as _um_route_err:
+            logger.warning(f"media task text route skipped: {_um_route_err}")
 
     # ── S.T.E.W VIDEO EDITOR (video uploads) ─────────────────────────────────
     # /videoedit — menu; plain text + pending video + edit intent → editor
@@ -6461,6 +6528,16 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 _vf.write(file_bytes)
             from server.video_editor import store_pending as _ve_store, is_edit_intent as _ve_intent
             _ve_store(f"tg:{chat_id}", _vid_path)
+            # ── AGENTIC MEDIA: register the video so get_user_media can host it,
+            # then route upload/share/email captions to the tool agent ──
+            from server.user_media import store_media as _um_store, is_media_task_intent as _um_intent
+            _vname = msg.get("file_name") or "video.mp4"
+            _um_store(f"tg:{chat_id}", _vid_path, _vname, "video/mp4", "video")
+            if caption and _um_intent(caption):
+                await bot.send_message(chat_id, "🚀 On it — posting/sharing your video with your connected apps…")
+                asyncio.create_task(_handle_media_task(chat_id, caption, "video", _vname,
+                                                       tg_user_early.id if tg_user_early else None))
+                return {"ok": True}
             if caption and _ve_intent(caption):
                 if tg_user_early is not None:
                     _ve_allowed, _ve_used, _ve_limit = await _check_quota(tg_user_early, db, "video")
@@ -6621,6 +6698,29 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 elif _status:
                     await bot.send_message(chat_id, _status, parse_mode="Markdown")
                 return {"ok": True}
+
+            # ── AGENTIC MEDIA: register the document so get_user_media can host it,
+            # then route "email/send this to X" captions to the tool agent ──
+            if ext not in _AUDIO_EXTENSIONS:
+                import tempfile as _tmp_doc
+                _doc_dir = _tmp_doc.mkdtemp(prefix="stew_tgdoc_")
+                _doc_path = os.path.join(_doc_dir, file_name)
+                with open(_doc_path, "wb") as _df:
+                    _df.write(file_bytes)
+                from server.user_media import store_media as _um_store_d, is_media_task_intent as _um_intent_d
+                _MIME_BY_EXT = {"pdf": "application/pdf", "doc": "application/msword",
+                                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                "xls": "application/vnd.ms-excel", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                "ppt": "application/vnd.ms-powerpoint", "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                "txt": "text/plain", "csv": "text/csv", "png": "image/png", "jpg": "image/jpeg",
+                                "jpeg": "image/jpeg", "zip": "application/zip"}
+                _um_store_d(f"tg:{chat_id}", _doc_path, file_name,
+                             _MIME_BY_EXT.get(ext, "application/octet-stream"), "document")
+                if caption and _um_intent_d(caption):
+                    await bot.send_message(chat_id, "🚀 On it — sending your document as instructed…")
+                    asyncio.create_task(_handle_media_task(chat_id, caption, "document", file_name,
+                                                           tg_user_early.id if tg_user_early else None))
+                    return {"ok": True}
 
             # Songs/audio sent via the file picker land here as "document" instead of
             # "voice"/"audio" — detect and route to transcription instead of text extraction.
@@ -8481,7 +8581,10 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     try:
                         file_bytes = _b64_agent.b64decode(f["base64"])
                         filename = f.get("filename", f"stew_document.{f.get('doc_type','pdf')}")
-                        await bot.send_document(chat_id, file_bytes, filename, "S.T.E.W generated this for you")
+                        if str(f.get("mime_type", "")).startswith("image/"):
+                            await bot.send_photo(chat_id, file_bytes)
+                        else:
+                            await bot.send_document(chat_id, file_bytes, filename, "S.T.E.W generated this for you")
                     except Exception as fe:
                         logger.error(f"Agent file send error: {fe}")
 
@@ -11884,6 +11987,14 @@ Requirements:
         # chips instead of checking the user's actual MCP servers.
         "mcp", "mcp server", "mcp servers", "mcp connector", "mcp connectors",
         "mcp tool", "mcp tools", "connected mcp", "my mcp",
+        # Agentic media intents — real internet images, social audits.
+        # Missing these meant "get me images of X" and "which of my videos
+        # are not improving" fell through to knowledge answers.
+        "get me images of", "get images of", "download images of", "find me pictures of",
+        "find images of", "pictures of", "images of", "photos of",
+        "audit my videos", "audit my", "not getting views", "not improving",
+        "improve my videos", "improve my video", "why is my video", "why are my videos",
+        "grow my views", "more views on my", "my worst videos", "underperforming videos",
     ])
 
     # Anti-hallucination gate: "read my latest email", "check my dms",

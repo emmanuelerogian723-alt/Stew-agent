@@ -29,6 +29,9 @@ Tools available:
   21. mcp_search_tools(query)         — Discover tools on the user's own connected MCP servers
   22. mcp_execute(server_id, tool_name, arguments) — Run a discovered MCP tool
   23. schedule_check_in(kind, when, message, recurring, interval_seconds, goal_id) — Schedule Stew to reach out FIRST (agent-initiated check-in): a live goal-progress digest, a daily personal briefing, or a custom follow-up on any topic. when = ISO datetime or +90m style.
+  24. get_user_media() — Fetch the LAST file (video/document/photo) the user sent in chat. Returns its public URL, filename, kind and size. Use it when the user references "this video/document/photo" they just sent (post it to social, email it, edit it).
+  25. search_web_images(query, count) — Search the REAL internet for images matching a query, download them, and deliver them to the user in chat. Use for "get me images of X", "find me pictures of Y", "download images of Z".
+  26. audit_my_videos(platform) — Thoroughly audit the user's connected social account (youtube/instagram/tiktok): pull their videos and real view/engagement stats, rank the underperformers, and return concrete improvement advice to grow views.
 """
 import json
 import re
@@ -114,6 +117,9 @@ Rules:
 18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it. The same rule covers mcp_execute: never claim an MCP tool ran, or report data from it, unless a real successful mcp_execute TOOL_RESULT confirms it.
 18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
 18k. PROACTIVE CHECK-INS: If the user says anything like "check on me", "follow up with me", "check on my goal tomorrow", "ping me Friday about X", "give me a daily briefing" — schedule_check_in. kinds: goal (progress digest; pass goal_id if known), briefing (daily For-You digest; recurring=True, interval_seconds=86400, when=07:30 local), custom (any topic; put the topic in message). when can be ISO datetime or +90m relative. One check-in per request unless the user asks for recurring. Confirm to the user in one line when it fires. /checkins lists them, /checkin cancel <id> stops one.
+18l. USER-SENT MEDIA (video/document/photo): When the user sends a file with an instruction ("post this video to my YouTube", "upload this to TikTok/Instagram with title X and hashtags Y", "email this document to name@x.com"), the goal text will contain [USER_MEDIA: ...] with the hosted public URL. Flow: discover the platform's upload/post action with composio_search_tools (e.g. "youtube upload video", "tiktok post video", "instagram create media"), then composio_execute with the user's exact title, description and hashtags from their message. Public posting pauses for the Approve/Cancel button — that is expected; never post without it. For email requests use the gmail send action, putting the hosted URL in the attachment/body so the recipient can download the document.
+18m. REAL INTERNET IMAGES: For "get/download images of X", call search_web_images, then deliver every downloaded image to the user and briefly list sources. Never fabricate an image URL. If nothing is found, say so and offer AI-generated images instead.
+18n. SOCIAL VIDEO AUDIT: For "which of my videos are not improving / how do I get more views", call audit_my_videos with the platform the user names (default: their connected video platform). Summarize the ranked underperformers with their REAL numbers and give specific, actionable fixes (hook length, title/keyword, posting time, captions, format) referencing each video's actual stats. Never invent stats — only report numbers returned by the tool.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
 18h. Read-only app actions and regular writes (send, reply, post, publish, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. Only a permanent delete/remove is intercepted by STEW's approval gateway; for that one case, clearly show the prepared action and ask the user to reply APPROVE or CANCEL. Never claim anything ran without a successful TOOL_RESULT confirming it.
@@ -956,6 +962,104 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                 + (f" around {due[:16].replace('T', ' ')} UTC." if due else ".")
                 + (" It repeats until you cancel (/checkin cancel <id>)." if args.get("recurring") else ""))
         return {"tool": tool, "success": True, "output": _msg, "data": rec}
+
+    elif tool == "get_user_media":
+        from server.user_media import get_media, host_media
+        key = f"tg:{chat_id}"
+        meta = get_media(key)
+        if not meta:
+            return {"tool": tool, "success": False,
+                    "output": "The user hasn't sent a file recently (or it expired after 45 minutes). Ask them to send the video/document/photo again with their instruction."}
+        import os as _os
+        size = 0
+        try:
+            size = _os.path.getsize(meta["path"])
+        except Exception:
+            pass
+        url, _ = await host_media(key)
+        if not url:
+            return {"tool": tool, "success": False,
+                    "error": "Could not host the user's file publicly right now (storage unavailable). Ask them to retry in a minute."}
+        return {"tool": tool, "success": True,
+                "output": (f"User's last file: {meta['filename']} ({meta['kind']}, {size/1024/1024:.1f} MB). "
+                           f"Public URL for upload/email actions: {url}"),
+                "data": {"url": url, "filename": meta["filename"], "kind": meta["kind"], "size_bytes": size}}
+
+    elif tool == "search_web_images":
+        from server import web_images as _wi
+        query = str(args.get("query", "")).strip()
+        count = int(args.get("count", 4) or 4)
+        if not query:
+            return {"tool": tool, "success": False, "error": "A search query is required, e.g. {'query': 'solar panels on African rooftops'}."}
+        hits = _wi.search_images(query, count)
+        if not hits:
+            return {"tool": tool, "success": False,
+                    "output": f"No images found on the open web for '{query}'. Tell the user, and offer to generate images with AI instead."}
+        import base64 as _b64img
+        files, srcs, failed = [], [], 0
+        for h in hits:
+            raw = _wi.download_image(h["url"])
+            if not raw:
+                failed += 1
+                continue
+            ext = _wi.guess_ext(h["url"], raw)
+            files.append({"base64": _b64img.b64encode(raw).decode(),
+                          "filename": f"{query.replace(' ', '_')[:30]}_{len(files)+1}.{ext}",
+                          "mime_type": f"image/{'jpeg' if ext=='jpg' else ext}"})
+            srcs.append({"url": h["url"], "title": h.get("title", ""), "source": h.get("source", "")})
+        if not files:
+            return {"tool": tool, "success": False,
+                    "output": f"Found {len(hits)} image(s) for '{query}' but none could be downloaded. Offer AI-generated images instead."}
+        return {"tool": tool, "success": True,
+                "output": (f"Downloaded {len(files)} image(s) for '{query}' from the open web"
+                           + (f" ({failed} failed to download)" if failed else "")
+                           + ". Deliver them to the user in chat and list the source links. SOURCES:\n"
+                           + "\n".join(f"- {s['title'] or 'image'} — {s['url']}" for s in srcs)),
+                "files": files, "data": {"sources": srcs, "query": query}}
+
+    elif tool == "audit_my_videos":
+        from server.composio_service import search_tools as _csearch, execute_action as _cexec
+        platform = str(args.get("platform", "") or "").strip().lower()
+        if platform not in ("youtube", "instagram", "tiktok", "facebook"):
+            platform = "youtube"
+        _gate = await _connector_quota_gate(tg_user_id, chat_id)
+        if _gate is not None:
+            return {"tool": tool, "success": False, "error": _gate["error"], "output": _gate["output"]}
+        try:
+            found = await _csearch(tg_user_id or chat_id, f"{platform} list my videos with view statistics and engagement")
+        except Exception as exc:
+            return {"tool": tool, "success": False, "error": f"Could not search {platform} tools: {exc}"}
+        results = found.get("results") or []
+        primary = (results[0].get("primary_tool_slugs") or [None])[0] if results else None
+        toolkit = (results[0].get("toolkits") or [None])[0] if results else None
+        statuses = found.get("toolkit_connection_statuses") or []
+        st = next((x for x in statuses if isinstance(x, dict) and x.get("toolkit") == toolkit), None)
+        if not (primary and st and st.get("has_active_connection")):
+            return {"tool": tool, "success": False,
+                    "output": f"{platform.capitalize()} isn't connected yet, or no video-listing action was found. Tell the user to connect it first (/connect {platform}), then ask again."}
+        try:
+            data = await _cexec(tg_user_id or chat_id, primary, {})
+        except Exception as exc:
+            return {"tool": tool, "success": False, "error": f"{platform.capitalize()} audit failed: {exc}"}
+        await _connector_quota_bump(tg_user_id, chat_id)
+        import json as _json_audit
+        blob = _json_audit.dumps(data, ensure_ascii=False, default=str)[:25000]
+        from server.llm_client import get_llm_client
+        _audit_prompt = (
+            "You are a social media growth strategist. Below are the REAL stats pulled from the user's "
+            f"connected {platform} account. Rank the underperforming videos (worst views/engagement first), "
+            "and for EACH underperformer give 3-5 concrete, specific fixes (hook in first 3s, title keywords, "
+            "posting time, captions, format, call-to-action, topic angle). Reference each video's actual "
+            "numbers. End with 3 account-level growth actions. Only use the numbers in the data.\n\nDATA:\n" + blob)
+        try:
+            analysis = get_llm_client().chat(
+                [{"role": "user", "content": _audit_prompt}], max_tokens=1600)
+        except Exception as exc:
+            analysis = f"(LLM analysis unavailable: {exc})\n\nRAW STATS:\n{blob[:6000]}"
+        return {"tool": tool, "success": True,
+                "output": (f"{platform.capitalize()} video audit complete. Here is the ranked underperformer "
+                           f"analysis and growth plan — present it to the user, video by video, with their real numbers:\n\n{analysis}"),
+                "data": {"platform": platform, "raw": data, "analysis": analysis}}
 
     elif tool == "run_shell":
         command = args.get("command", "")
