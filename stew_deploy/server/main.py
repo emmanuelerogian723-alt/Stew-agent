@@ -1396,6 +1396,120 @@ async def composio_youtube_analytics(request: Request):
         raise HTTPException(502, detail) from exc
 
 
+@app.post("/api/mcp/test", include_in_schema=False)
+async def mcp_test_api(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.mcp_service import test_server
+    try:
+        return await test_server(
+            str(tg_user["id"]),
+            str(payload.get("url", "")),
+            payload.get("auth_header_name") or None,
+            payload.get("auth_token") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.error("MCP test failed: %s", exc)
+        raise HTTPException(502, "Could not reach that server") from exc
+
+
+@app.post("/api/mcp/connect", include_in_schema=False)
+async def mcp_connect_api(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.mcp_service import add_server, list_servers
+    try:
+        existing = await list_servers(str(tg_user["id"]))
+        if len(existing) >= 10:
+            raise HTTPException(400, "Up to 10 MCP servers per user. Remove one first.")
+        return await add_server(
+            str(tg_user["id"]),
+            str(payload.get("name", "")),
+            str(payload.get("url", "")),
+            payload.get("auth_header_name") or None,
+            payload.get("auth_token") or None,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.error("MCP connect failed: %s", exc)
+        raise HTTPException(502, "Could not connect that server") from exc
+
+
+@app.post("/api/mcp/servers", include_in_schema=False)
+async def mcp_servers_api(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    from server.mcp_service import list_servers
+    return {"success": True, "servers": await list_servers(str(tg_user["id"]))}
+
+
+@app.post("/api/mcp/tools", include_in_schema=False)
+async def mcp_tools_api(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    server_id = str(payload.get("server_id", ""))
+    if not server_id:
+        raise HTTPException(400, "server_id is required")
+    from server.mcp_service import sync_server, get_server, _tool_public
+    try:
+        if payload.get("refresh"):
+            return await sync_server(str(tg_user["id"]), server_id)
+        row = await get_server(str(tg_user["id"]), server_id)
+        if not row:
+            raise HTTPException(404, "MCP server not found")
+        if row.status != "active" or not row.tools:
+            return await sync_server(str(tg_user["id"]), server_id)
+        return {"success": True, "status": row.status, "tool_count": row.tool_count,
+                "tools": [_tool_public(t) for t in (row.tools or [])]}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/mcp/delete", include_in_schema=False)
+async def mcp_delete_api(request: Request):
+    payload, tg_user = await _verified_mini_app_user(request)
+    server_id = str(payload.get("server_id", ""))
+    from server.mcp_service import remove_server
+    try:
+        ok = await remove_server(str(tg_user["id"]), server_id)
+        if not ok:
+            raise HTTPException(404, "MCP server not found")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/mcp/oauth/callback", response_class=HTMLResponse, include_in_schema=False)
+async def mcp_oauth_callback(state: str = "", code: str = "", error: str = ""):
+    """The user's browser lands here after signing in with the MCP server's
+    own OAuth provider. No Telegram auth here by design — the provider,
+    not Telegram, is what authenticated this request; `state` ties it back
+    to the one pending connection attempt that requested it."""
+    def _page(title: str, body: str) -> str:
+        return (f"<html><body style='font-family:sans-serif;text-align:center;padding:60px 20px;"
+                f"background:#0a0e1a;color:#f5f7fb;'><h2>{title}</h2><p style='color:#96a0af'>{body}</p>"
+                f"<p style='color:#5b7cfa;margin-top:30px'>You can close this tab and return to Telegram.</p>"
+                f"</body></html>")
+    if error:
+        return HTMLResponse(_page("Sign-in was cancelled", error[:300]), status_code=200)
+    if not state or not code:
+        return HTMLResponse(_page("Missing information", "This link is incomplete."), status_code=400)
+    from server.mcp_service import complete_oauth_callback
+    try:
+        result = await complete_oauth_callback(state, code)
+    except Exception as exc:
+        logger.error("MCP OAuth callback failed: %s", exc)
+        return HTMLResponse(_page("Connection failed", "Something went wrong finishing this sign-in."), status_code=200)
+    if result.get("success"):
+        return HTMLResponse(_page("Connected!", f"{result.get('server_name','Your MCP server')} is ready — {result.get('tool_count',0)} tools found."))
+    return HTMLResponse(_page("Connection failed", str(result.get("error") or "Unknown error")[:300]))
+
+
 @app.get("/site/{site_id}", response_class=HTMLResponse, include_in_schema=False)
 async def serve_generated_website(site_id: str, db: AsyncSession = Depends(get_db)):
     """Serve a /webbuild-generated motion-design website — publicly viewable, no auth needed."""

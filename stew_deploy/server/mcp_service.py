@@ -26,18 +26,21 @@ Composio path uses, so free-tier limits and paywall behavior stay identical.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 import httpx
 from sqlalchemy import select, delete
 
 from server.database import AsyncSessionLocal
-from server.models import McpServer, PendingAgentAction
+from server.models import McpServer, McpOAuthState, PendingAgentAction
 from server.agent_activity import (
     queue_approval,
     record_activity,
@@ -116,6 +119,14 @@ def _parse_response(resp: httpx.Response) -> Dict[str, Any]:
                 "error": {"code": -32603, "message": f"Non-JSON MCP reply ({resp.status_code}): {body[:200]}"}}
 
 
+class McpAuthRequired(ValueError):
+    """The server rejected us with 401/403 — carries the raw response so the
+    caller can attempt real OAuth discovery instead of just failing."""
+    def __init__(self, response: httpx.Response):
+        super().__init__("Authentication required — this server needs OAuth sign-in.")
+        self.response = response
+
+
 class McpClient:
     """Minimal Streamable HTTP JSON-RPC client for one server connection."""
 
@@ -151,7 +162,7 @@ class McpClient:
                 "Stdio/other transports are not supported."
             )
         if resp.status_code == 401 or resp.status_code == 403:
-            raise ValueError("Authentication failed — check the server's access token.")
+            raise McpAuthRequired(resp)
         if resp.status_code >= 400:
             raise ValueError(f"HTTP {resp.status_code}: {(resp.text or '')[:200]}")
         sid = resp.headers.get("mcp-session-id")
@@ -212,6 +223,231 @@ def _content_to_text(content: Any) -> str:
         else:
             parts.append(str(item)[:500])
     return "\n".join(parts)[:20000]
+
+
+# ── OAuth 2.1 discovery, Dynamic Client Registration & PKCE ─────────────────
+# Per the MCP Authorization spec (2025-06-18): a protected MCP server answers
+# 401 with `WWW-Authenticate: Bearer resource_metadata="<url>"` (RFC 9728).
+# That URL's JSON names the real Authorization Server(s); THAT server's own
+# `.well-known/oauth-authorization-server` (RFC 8414) gives the actual
+# authorize/token/registration endpoints. Dynamic Client Registration
+# (RFC 7591) then gets Stew a client_id without any manual app-console setup
+# — so "tap Connect" really does route the user through their provider's own
+# login page, exactly like Composio's OAuth apps do.
+
+def _redirect_uri() -> str:
+    from server.config import settings
+    base = (settings.APP_BASE_URL or "").rstrip("/")
+    if not base:
+        raise ValueError("Server misconfigured: APP_BASE_URL is not set, so OAuth callbacks have nowhere to land.")
+    return base + "/api/mcp/oauth/callback"
+
+
+def _pkce_pair() -> tuple[str, str]:
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(40)).rstrip(b"=").decode()
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+async def _discover_protected_resource(mcp_url: str, resp: httpx.Response) -> Dict[str, Any]:
+    """RFC 9728: find the protected-resource metadata document for this MCP
+    server, either from the 401's WWW-Authenticate header or the well-known
+    fallback path on the same origin."""
+    origin = f"{urlparse(mcp_url).scheme}://{urlparse(mcp_url).netloc}"
+    meta_url = None
+    www_auth = resp.headers.get("www-authenticate", "") if resp is not None else ""
+    m = re.search(r'resource_metadata="([^"]+)"', www_auth)
+    if m:
+        meta_url = m.group(1)
+    if not meta_url:
+        meta_url = origin + "/.well-known/oauth-protected-resource"
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        r = await client.get(meta_url)
+        if r.status_code >= 400:
+            # Some servers publish the resource metadata at a path-suffixed
+            # location (RFC 9728 §3.1) instead of the bare origin.
+            path = urlparse(mcp_url).path.rstrip("/")
+            if path:
+                r = await client.get(origin + "/.well-known/oauth-protected-resource" + path)
+        r.raise_for_status()
+        return r.json()
+
+
+async def _discover_authorization_server(as_issuer: str) -> Dict[str, Any]:
+    """RFC 8414 (falls back to OIDC discovery) — authorize/token/registration
+    endpoints for the authorization server that guards this MCP resource."""
+    issuer = as_issuer.rstrip("/")
+    candidates = [
+        issuer + "/.well-known/oauth-authorization-server",
+        issuer + "/.well-known/openid-configuration",
+    ]
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        last_exc: Optional[Exception] = None
+        for c in candidates:
+            try:
+                r = await client.get(c)
+                if r.status_code < 400:
+                    return r.json()
+            except Exception as exc:
+                last_exc = exc
+        raise ValueError(f"Could not discover the authorization server's endpoints ({last_exc or 'no metadata found'}).")
+
+
+async def _register_oauth_client(registration_endpoint: str, redirect_uri: str) -> Dict[str, Any]:
+    """RFC 7591 Dynamic Client Registration — gets Stew a client_id (and
+    client_secret, for servers that issue one) with no manual setup."""
+    payload = {
+        "client_name": "S.T.E.W Agent",
+        "redirect_uris": [redirect_uri],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(registration_endpoint, json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+async def start_oauth_connect(user_id: str, name: str, url: str, resp: httpx.Response) -> Dict[str, Any]:
+    """Called when a plain connect attempt hits 401/403. Runs the full
+    discovery -> DCR -> PKCE chain and returns an authorize_url for the user
+    to open — completing the sign-in lands on our callback and finishes
+    the connection automatically."""
+    resource_meta = await _discover_protected_resource(url, resp)
+    as_list = resource_meta.get("authorization_servers") or []
+    if not as_list:
+        raise ValueError("This server's protected-resource metadata lists no authorization server.")
+    as_meta = await _discover_authorization_server(str(as_list[0]))
+    authorize_endpoint = as_meta.get("authorization_endpoint")
+    token_endpoint = as_meta.get("token_endpoint")
+    if not authorize_endpoint or not token_endpoint:
+        raise ValueError("The authorization server's metadata is missing authorize/token endpoints.")
+    redirect_uri = _redirect_uri()
+    client_id = None
+    client_secret = None
+    reg_endpoint = as_meta.get("registration_endpoint")
+    if reg_endpoint:
+        try:
+            reg = await _register_oauth_client(reg_endpoint, redirect_uri)
+            client_id = reg.get("client_id")
+            client_secret = reg.get("client_secret")
+        except Exception as exc:
+            logger.warning("MCP dynamic client registration failed: %s", exc)
+    if not client_id:
+        raise ValueError(
+            "This server needs OAuth sign-in but doesn't support automatic client "
+            "registration. Ask the provider for a client_id (and add it as the "
+            "server's access token field) or use their manual API token instead."
+        )
+    scope = " ".join(as_meta.get("scopes_supported") or []) or None
+    verifier, challenge = _pkce_pair()
+    state_row = McpOAuthState(
+        telegram_user_id=str(user_id), name=(name or "My MCP")[:MAX_NAME_LEN], url=url,
+        authorization_endpoint=authorize_endpoint, token_endpoint=token_endpoint,
+        client_id=client_id, client_secret=client_secret, code_verifier=verifier,
+        redirect_uri=redirect_uri, resource=resource_meta.get("resource") or url, scope=scope,
+    )
+    async with AsyncSessionLocal() as db:
+        db.add(state_row)
+        await db.commit()
+        await db.refresh(state_row)
+    params = {
+        "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
+        "state": state_row.id, "code_challenge": challenge, "code_challenge_method": "S256",
+        "resource": state_row.resource,
+    }
+    if scope:
+        params["scope"] = scope
+    authorize_url = authorize_endpoint + ("&" if "?" in authorize_endpoint else "?") + urlencode(params)
+    return {"success": False, "oauth_required": True, "authorize_url": authorize_url,
+            "message": "This MCP server needs you to sign in with your own account. "
+                       "Open the link, approve access, and I'll finish connecting automatically."}
+
+
+async def complete_oauth_callback(state_id: str, code: str) -> Dict[str, Any]:
+    """Provider redirected the browser back here with an authorization code.
+    Exchange it for tokens, then create (or refresh) the real McpServer row
+    and do the first tool sync."""
+    async with AsyncSessionLocal() as db:
+        state_row = (await db.execute(select(McpOAuthState).where(
+            McpOAuthState.id == state_id, McpOAuthState.status == "pending"
+        ))).scalars().first()
+        if not state_row:
+            return {"success": False, "error": "This connection link already expired or was used. Start over in the Mini App."}
+        state_row.status = "used"
+        await db.commit()
+
+    token_payload = {
+        "grant_type": "authorization_code", "code": code,
+        "redirect_uri": state_row.redirect_uri, "client_id": state_row.client_id,
+        "code_verifier": state_row.code_verifier, "resource": state_row.resource,
+    }
+    if state_row.client_secret:
+        token_payload["client_secret"] = state_row.client_secret
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(state_row.token_endpoint, data=token_payload,
+                              headers={"Accept": "application/json"})
+    if r.status_code >= 400:
+        return {"success": False, "error": f"Token exchange failed (HTTP {r.status_code}): {(r.text or '')[:300]}"}
+    tokens = r.json()
+    access_token = tokens.get("access_token")
+    if not access_token:
+        return {"success": False, "error": "Provider did not return an access token."}
+
+    dup = await list_servers(state_row.telegram_user_id)
+    existing = next((s for s in dup if s["url"] == state_row.url), None)
+    async with AsyncSessionLocal() as db:
+        if existing:
+            row = await get_server(state_row.telegram_user_id, existing["id"])
+        else:
+            row = McpServer(telegram_user_id=state_row.telegram_user_id, name=state_row.name, url=state_row.url)
+            db.add(row)
+        row.auth_header_name = "Authorization"
+        row.auth_token = access_token
+        row.oauth_authorization_endpoint = state_row.authorization_endpoint
+        row.oauth_token_endpoint = state_row.token_endpoint
+        row.oauth_client_id = state_row.client_id
+        row.oauth_client_secret = state_row.client_secret
+        row.oauth_refresh_token = tokens.get("refresh_token")
+        row.oauth_scope = state_row.scope
+        row.oauth_resource = state_row.resource
+        row.status = "pending"
+        await db.commit()
+        await db.refresh(row)
+    sync_result = await sync_server(state_row.telegram_user_id, row.id)
+    sync_result["server_id"] = row.id
+    sync_result["server_name"] = row.name
+    return sync_result
+
+
+async def _refresh_oauth_token(row: McpServer) -> bool:
+    """Silently renew an expired access token before surfacing an auth error
+    to the user — mirrors how Composio's own OAuth apps behave."""
+    if not row.oauth_refresh_token or not row.oauth_token_endpoint:
+        return False
+    payload = {"grant_type": "refresh_token", "refresh_token": row.oauth_refresh_token,
+               "client_id": row.oauth_client_id}
+    if row.oauth_client_secret:
+        payload["client_secret"] = row.oauth_client_secret
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(row.oauth_token_endpoint, data=payload, headers={"Accept": "application/json"})
+        if r.status_code >= 400:
+            return False
+        tokens = r.json()
+        if not tokens.get("access_token"):
+            return False
+        async with AsyncSessionLocal() as db:
+            row.auth_token = tokens["access_token"]
+            if tokens.get("refresh_token"):
+                row.oauth_refresh_token = tokens["refresh_token"]
+            db.add(row)
+            await db.commit()
+        return True
+    except Exception as exc:
+        logger.warning("MCP OAuth token refresh failed for %s: %s", row.name, exc)
+        return False
 
 
 # ── classification (mirrors the Composio risk tiers) ────────────────────────
@@ -290,6 +526,17 @@ async def add_server(user_id: str, name: str, url: str,
         raise ValueError("That MCP server URL is already connected.")
     if len(dup) >= 10:
         raise ValueError("Up to 10 MCP servers per user. Remove one first.")
+    if not auth_token:
+        # No token was supplied — probe the server first. If it needs real
+        # sign-in, route through OAuth discovery instead of saving a broken
+        # "error" row and telling the user to paste a token they don't have.
+        try:
+            probe = McpClient(url, auth_header_name, None)
+            await probe.connect()
+        except McpAuthRequired as exc:
+            return await start_oauth_connect(user_id, name, url, exc.response)
+        except Exception:
+            pass  # any other failure surfaces normally from sync_server below
     row = McpServer(telegram_user_id=str(user_id), name=name, url=url,
                     auth_header_name=(auth_header_name or "Authorization")[:64],
                     auth_token=auth_token or None, status="pending")
@@ -358,6 +605,36 @@ async def sync_server(user_id: str, server_id: str) -> Dict[str, Any]:
             await db.commit()
         return {"success": True, "status": "active", "tool_count": len(tools),
                 "tools": [_tool_public(t) for t in tools]}
+    except McpAuthRequired:
+        # An OAuth access token can expire between syncs. Try a silent
+        # refresh_token renewal first (no user interaction) before asking
+        # them to reconnect through the browser again.
+        if await _refresh_oauth_token(row):
+            try:
+                client = McpClient(row.url, row.auth_header_name, row.auth_token)
+                await client.connect()
+                tools = await client.list_tools()
+                async with AsyncSessionLocal() as db:
+                    row.status = "active"
+                    row.last_error = None
+                    row.tools = tools
+                    row.tool_count = len(tools)
+                    row.last_synced_at = _utcnow()
+                    db.add(row)
+                    await db.commit()
+                return {"success": True, "status": "active", "tool_count": len(tools),
+                        "tools": [_tool_public(t) for t in tools]}
+            except Exception as exc2:
+                msg = str(exc2)[:500]
+        else:
+            msg = "Your sign-in expired and couldn't be silently renewed. Remove and reconnect this server."
+        async with AsyncSessionLocal() as db:
+            row.status = "error"
+            row.last_error = msg
+            row.tool_count = 0
+            db.add(row)
+            await db.commit()
+        return {"success": False, "status": "error", "error": msg, "needs_reauth": True}
     except Exception as exc:
         msg = str(exc)[:500]
         async with AsyncSessionLocal() as db:
@@ -499,6 +776,25 @@ async def execute_mcp_tool(user_id: str, server_id: str, tool_name: str,
         client = McpClient(row.url, row.auth_header_name, row.auth_token)
         await client.connect()
         result = await client.call_tool(tool_name, arguments)
+    except McpAuthRequired:
+        if await _refresh_oauth_token(row):
+            try:
+                client = McpClient(row.url, row.auth_header_name, row.auth_token)
+                await client.connect()
+                result = await client.call_tool(tool_name, arguments)
+            except Exception as exc2:
+                logger.warning("MCP call failed after token refresh (%s/%s): %s", row.name, tool_name, exc2)
+                try:
+                    await record_activity(stable_user_id, slug, "failed", arguments)
+                except Exception:
+                    pass
+                return {"success": False, "error": f"MCP call failed: {exc2}"}
+        else:
+            try:
+                await record_activity(stable_user_id, slug, "failed", arguments)
+            except Exception:
+                pass
+            return {"success": False, "error": "Your sign-in expired and couldn't be renewed. Reconnect this server in the Mini App.", "needs_reauth": True}
     except Exception as exc:
         logger.warning("MCP call failed (%s/%s): %s", row.name, tool_name, exc)
         try:
@@ -547,5 +843,12 @@ async def test_server(user_id: str, url: str, auth_header_name: Optional[str],
         tools = await client.list_tools()
         return {"success": True, "tool_count": len(tools),
                 "sample": [t.get("name") for t in tools[:8]]}
+    except McpAuthRequired as exc:
+        if auth_token:
+            return {"success": False, "error": "That token was rejected — check it, or leave it blank to sign in with OAuth instead."}
+        try:
+            return await start_oauth_connect(user_id, "My MCP", url, exc.response)
+        except Exception as exc2:
+            return {"success": False, "error": f"This server needs sign-in and OAuth discovery failed: {exc2}"[:400]}
     except Exception as exc:
         return {"success": False, "error": str(exc)[:400]}

@@ -310,19 +310,6 @@ async def execute_action(
 
     from server.agent_activity import is_write_action, queue_approval, record_activity
     stable_user_id = str(user_id or "anonymous")
-    # Paywall v4: every connected-app action consumes a monthly allowance so
-    # free users experience the feature, then convert when they love it.
-    meter_gate = None
-    if approved is not True:
-        try:
-            from server.paywall import metered_feature_gate
-            meter_gate = await metered_feature_gate(stable_user_id, "connector_action")
-            if not meter_gate.get("allowed"):
-                return {"success": False, "paywall": True,
-                        "error": meter_gate.get("message"),
-                        "message": meter_gate.get("message")}
-        except Exception as meter_exc:
-            logger.warning("Connector metering skipped: %s", meter_exc)
     # Consult provider behavior tags as well as conservative name classification.
     # This blocks mutating actions even if their names look read-only.
     # Slugs like HIGGSFIELD_MCP_BALANCE belong to the "higgsfield_mcp" toolkit;
@@ -340,32 +327,13 @@ async def execute_action(
             break
     if not action:
         return {"success": False, "error": "Action is not available in the current Composio catalog."}
-    # Autonomous by default: an explicit chat request for a regular PRIVATE
-    # write (send an email, update your own calendar, create a doc) IS the
-    # user's approval — it runs immediately, no separate confirmation
-    # round-trip. Two risk tiers still pause for a real chat approval: a
-    # genuinely irreversible action (Composio's "destructiveHint": permanently
-    # delete/remove), and anything that becomes visible to OTHER people
-    # (post, publish, broadcast) — one bad slot-fill there can't be quietly
-    # undone. Both send an actual tappable Approve/Cancel button in the chat
-    # (see telegram_bot.send_approval_prompt), the same pattern Claude/ChatGPT
-    # connectors use for a sensitive tool call — not a "reply APPROVE" text.
-    from server.agent_activity import is_public_action
-    approval_kind = None
-    if action["permission"] == "approval_destructive":
-        approval_kind = "destructive"
-    elif action["permission"] == "approval_publish" or is_public_action(slug, arguments):
-        approval_kind = "publish"
-    # Per-user "Always allow" trust toggle (Claude-style permission model):
-    # a user who explicitly promoted this tool past the pause isn't re-asked.
-    if approval_kind is not None:
-        try:
-            from server.mcp_service import get_always_allow
-            if await get_always_allow(stable_user_id, f"composio:{slug}"):
-                approval_kind = None
-        except Exception:
-            pass  # trust-store hiccup must never block the normal approval flow
-    requires_approval = approval_kind is not None
+    # Autonomous by default: an explicit chat request for a regular write
+    # (send email, post, upload, create, update) IS the user's approval — it
+    # runs immediately, no separate confirmation round-trip. The one thing
+    # that still pauses is a genuinely irreversible action (Composio's
+    # "destructiveHint" tier: permanently delete/remove) — one bad slot-fill
+    # by the model there can't be undone, so that alone gets a quick confirm.
+    requires_approval = action["permission"] == "approval_destructive"
     connection = await list_connections(stable_user_id, toolkits=[toolkit])
     if not any(item.get("slug") == toolkit and (item.get("connection") or {}).get("is_active") for item in connection.get("items", [])):
         return {"success": False, "error": f"{toolkit} is not connected for this user. Connect it first."}
@@ -375,18 +343,13 @@ async def execute_action(
             await record_activity(stable_user_id, slug, "awaiting_approval", arguments, approval_required=True)
         except Exception as audit_exc:
             logger.warning("Approval audit write failed: %s", audit_exc)
-        wording = {
-            "destructive": "This permanently deletes/removes something and can't be undone.",
-            "publish": "This publishes something publicly — other people will see it.",
-        }[approval_kind]
         return {
             "success": False,
             "approval_required": True,
             "approval_id": pending.id,
-            "kind": approval_kind,
             "tool_slug": slug,
             "summary": pending.summary,
-            "message": f"{wording} I've sent an Approve/Cancel button in the chat — tap it and I'll continue right away.",
+            "message": "This permanently deletes/removes something and can't be undone, so I paused it. Reply APPROVE to go ahead, or CANCEL to discard it.",
         }
 
     session = await get_session(user_id)
@@ -452,12 +415,15 @@ async def approve_pending_action(user_id: str | int, action_id: Optional[str] = 
         result = {"success": True, "scheduled_only": True, "approved_arguments": pending.arguments or {},
                   "tool_slug": pending.tool_slug, "message": "Approved for the scheduled time; not executed yet."}
     elif pending.toolkit == "mcp":
-        # User-connected MCP server action — same approval queue, different executor.
+        # A remote-MCP action (slug MCP__<server_id>__<tool_name>), not a
+        # Composio one — dispatch to the MCP executor so approving a
+        # destructive/public MCP tool actually runs it instead of erroring
+        # out against the Composio catalog.
         try:
             from server.mcp_service import resume_approved_mcp
             result = await resume_approved_mcp(str(user_id), pending)
         except Exception as exc:
-            result = {"success": False, "error": f"Outcome is uncertain: {exc}. Check the server before trying again."}
+            result = {"success": False, "error": f"Outcome is uncertain: {exc}. Check the provider before trying again."}
     else:
         try:
             result = await execute_action(
@@ -619,7 +585,7 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
         )
 
     raw = await asyncio.to_thread(_list)
-    from server.agent_activity import is_write_action, is_public_action
+    from server.agent_activity import is_write_action
     items = []
     for tool in raw:
         data = _plain(tool)
@@ -630,9 +596,6 @@ async def list_app_actions(toolkit: str, limit: int = 500) -> Dict[str, Any]:
         if "destructiveHint" in tags:
             permission = "approval_destructive"
             permission_label = "Approval required · destructive"
-        elif is_public_action(slug):
-            permission = "approval_publish"
-            permission_label = "Approval required · goes public"
         elif any(x in tags for x in ("createHint", "updateHint")) or is_write_action(slug):
             permission = "approval_required"
             permission_label = "Approval required"

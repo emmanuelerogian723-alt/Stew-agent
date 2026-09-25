@@ -428,6 +428,73 @@ class PassCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class McpServer(Base):
+    """A remote MCP server the user connected — official Composio-style OAuth
+    apps live in the pool below; ANY other public/authenticated MCP endpoint
+    (Higgsfield, Clay, an internal CRM, a personal tool) plugs in here."""
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    auth_header_name: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    auth_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # OAuth 2.1 (RFC 8414/9728/7591) — populated when the server requires a
+    # real sign-in instead of a pasted static token. refresh_token lets Stew
+    # renew the access token silently when a call gets a 401.
+    oauth_authorization_endpoint: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    oauth_token_endpoint: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    oauth_client_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    oauth_client_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    oauth_refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    oauth_scope: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    oauth_resource: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    tools: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    tool_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class McpOAuthState(Base):
+    """Short-lived PKCE/state row bridging 'tap Connect in chat' to the
+    provider's browser redirect back to our public callback — the callback
+    has no Telegram session, only this row identifies who it's for."""
+    __tablename__ = "mcp_oauth_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    authorization_endpoint: Mapped[str] = mapped_column(String(500), nullable=False)
+    token_endpoint: Mapped[str] = mapped_column(String(500), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    code_verifier: Mapped[str] = mapped_column(String(255), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(String(500), nullable=False)
+    resource: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    scope: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ToolPermission(Base):
+    """Per-user 'Always allow' trust toggle for a destructive/public MCP
+    tool (Claude-style permission memory) so the same confirm isn't asked
+    every single time once the user has opted in."""
+    __tablename__ = "tool_permissions"
+    __table_args__ = ()
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tool_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    allow_always: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class AutomationGoal(Base):
     """Durable, per-Telegram-user cross-app goal run."""
     __tablename__ = "automation_goals"

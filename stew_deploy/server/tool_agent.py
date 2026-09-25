@@ -26,6 +26,8 @@ Tools available:
   18. composio_list_connections()    — Show this user's connected apps
   19. composio_execute(tool_slug, arguments) — Execute a discovered app action
   20. prepare_social_video(video_url) — Add burned captions and create a public posting URL
+  21. mcp_search_tools(query)         — Discover tools on the user's own connected MCP servers
+  22. mcp_execute(server_id, tool_name, arguments) — Run a discovered MCP tool
 """
 import json
 import re
@@ -73,6 +75,8 @@ TOOL_CALL: {"tool": "composio_search_tools", "args": {"query": "find my latest u
 TOOL_CALL: {"tool": "composio_connect", "args": {"toolkit": "gmail"}}
 TOOL_CALL: {"tool": "composio_list_connections", "args": {}}
 TOOL_CALL: {"tool": "composio_execute", "args": {"tool_slug": "EXACT_DISCOVERED_TOOL_SLUG", "arguments": {}}}
+TOOL_CALL: {"tool": "mcp_search_tools", "args": {"query": "what the user wants done"}}
+TOOL_CALL: {"tool": "mcp_execute", "args": {"server_id": "EXACT_DISCOVERED_SERVER_ID", "tool_name": "EXACT_DISCOVERED_TOOL_NAME", "arguments": {}}}
 TOOL_CALL: {"tool": "prepare_social_video", "args": {"video_url": "https://example.com/video.mp4", "aspect_ratio": "9:16"}}
 
 Rules:
@@ -101,11 +105,12 @@ Rules:
 
 18k. CONNECTOR SUPERPOWERS: composio_search_tools searches the ENTIRE Composio app catalog (1000+ apps), not just the apps already connected. When the user asks for ANY capability — edit a video, make a cartoon animation with Blender, transcribe, render, design, publish anywhere — call composio_search_tools with their exact goal. If the best app for the job is not yet connected, call composio_connect with its toolkit slug and hand back the connect link; once connected, search again and execute. Never say "I can't do that" before you have searched the catalog. For render/media jobs the provider may return a queued or processing status with a job id — report the job as submitted with its id honestly; do not claim the finished media exists until a successful result says so.
 18b. CONNECTED APPS (COMPOSIO): For Gmail, Google Calendar, Drive, Sheets, Slack, Notion, GitHub, LinkedIn and other app requests, first call composio_search_tools with the user's exact goal. Use ONLY tool slugs and argument schemas returned by that search. Never invent a slug. If the app is not connected, call composio_connect with the discovered toolkit slug and return the Connect Link. After the user connects, search again and execute.
+18l. USER'S OWN MCP SERVERS: separately from the Composio catalog, a user may have connected their own custom MCP server(s) (Mini App, MCP tab — personal tools, internal APIs, niche providers Composio doesn't carry). These are invisible to composio_search_tools. Whenever a request might be served by one of the user's own connectors, or composio_search_tools comes up empty, call mcp_search_tools with the same goal before saying you can't do it. If it finds a match, call mcp_execute with the exact server_id and tool_name it returned in the SAME turn — never invent either. If the user has no MCP servers connected yet, tell them to add one in the Mini App MCP tab.
 18c. App accounts are strictly user-scoped. Never reuse or mention another user's connection, account ID, or data.
 18d. Execute app actions only when the user's current message explicitly requests them. Never add recipients, broaden scope, send messages, publish content, create purchases, or perform financial actions the user did not ask for. For ambiguous requests, ask one concise question first instead of guessing. Once the request is clear, DO IT — call composio_execute in the same turn. Regular writes (send, post, create, update, upload, schedule, pay) execute immediately; the explicit chat request IS the approval. Only permanently deleting/removing something (destructiveHint) pauses for a one-line confirm — everything else must not stall waiting for a second confirmation message.
 18e. Keep OAuth links intact in the final answer so the user can tap them. Never ask for an app password or OAuth token in chat.
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
-18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it.
+18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it. The same rule covers mcp_execute: never claim an MCP tool ran, or report data from it, unless a real successful mcp_execute TOOL_RESULT confirms it.
 18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
@@ -854,6 +859,58 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
             logger.warning("Composio execution failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"Connected-app action failed: {exc}"}
 
+    elif tool == "mcp_search_tools":
+        from server.mcp_service import search_tools as _mcp_search
+        query = args.get("query", "")
+        try:
+            hits = await _mcp_search(tg_user_id or chat_id, query)
+        except Exception as exc:
+            logger.warning("MCP tool search failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"MCP search failed: {exc}"}
+        if not hits:
+            return {"tool": tool, "success": True,
+                    "output": "No matching tool on any of the user's connected MCP servers. "
+                              "If they haven't connected one yet, tell them to add it in the Mini App (MCP tab).",
+                    "data": {"results": []}}
+        top = hits[0]
+        next_hint = (
+            "NEXT STEP REQUIRED: the request is NOT complete. Call mcp_execute with server_id "
+            + json.dumps(top["server_id"]) + " and tool_name " + json.dumps(top["name"])
+            + " in your next TOOL_CALL, filling its \"arguments\" from this tool's parameter "
+              "schema below. Do NOT claim the task is done and do NOT stop to ask the user to "
+              "confirm a regular write \u2014 executing it IS the confirmation.\n\nMATCHING TOOLS:\n"
+        )
+        return {
+            "tool": tool, "success": True,
+            "output": (next_hint + json.dumps(hits, ensure_ascii=False, default=str))[:30000],
+            "data": {"results": hits},
+        }
+
+    elif tool == "mcp_execute":
+        from server.mcp_service import execute_mcp_tool as _mcp_run
+        server_id = args.get("server_id", "")
+        tool_name = args.get("tool_name", "")
+        arguments = args.get("arguments", {}) or {}
+        if not server_id or not tool_name:
+            return {"tool": tool, "success": False,
+                    "error": "server_id and tool_name are required \u2014 call mcp_search_tools first to discover them."}
+        _gate = await _connector_quota_gate(tg_user_id, chat_id)
+        if _gate is not None:
+            return {"tool": tool, "success": False, "error": _gate["error"], "output": _gate["output"]}
+        try:
+            data = await _mcp_run(tg_user_id or chat_id, server_id, tool_name, arguments)
+            if data.get("success"):
+                await _connector_quota_bump(tg_user_id, chat_id)
+            return {
+                "tool": tool,
+                "success": data.get("success", False),
+                "output": json.dumps(data, ensure_ascii=False, default=str)[:30000],
+                "data": data,
+            }
+        except Exception as exc:
+            logger.warning("MCP execution failed: %s", exc)
+            return {"tool": tool, "success": False, "error": f"MCP tool execution failed: {exc}"}
+
     elif tool == "run_shell":
         command = args.get("command", "")
         if not command:
@@ -1310,6 +1367,17 @@ async def run_agent_loop(
                 if _sig in _executed_sigs:
                     skipped_calls.append(call)
                     logger.info("Skipping duplicate composio_execute of %s (identical slug+args)" % ((call.get("args") or {}).get("tool_slug"),))
+                    continue
+                _executed_sigs.add(_sig)
+            if tool_name == "mcp_execute":
+                _sig = json.dumps(
+                    [(call.get("args") or {}).get("server_id"),
+                     (call.get("args") or {}).get("tool_name"),
+                     (call.get("args") or {}).get("arguments")],
+                    sort_keys=True, default=str)
+                if _sig in _executed_sigs:
+                    skipped_calls.append(call)
+                    logger.info("Skipping duplicate mcp_execute of %s (identical server+tool+args)" % ((call.get("args") or {}).get("tool_name"),))
                     continue
                 _executed_sigs.add(_sig)
             new_calls.append(call)
