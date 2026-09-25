@@ -97,9 +97,13 @@ async def fire(rule: TriggerRule, payload: dict) -> None:
     """Wake the agent: run the stored instruction with the event payload.
     Runs the normal tool-agent loop, so approvals and quotas apply."""
     import asyncio
-    from server.telegram_bot import get_bot
+    from server.config import get_settings
+    from server.telegram_bot import TelegramBot
     chat_id = int(rule.chat_id) if str(rule.chat_id).lstrip("-").isdigit() else rule.chat_id
-    bot = get_bot()
+    try:
+        bot = TelegramBot(get_settings().TELEGRAM_BOT_TOKEN)
+    except Exception:
+        bot = None
 
     async def _run():
         from server.tool_agent import run_agent_loop
