@@ -1273,8 +1273,10 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
                 if auto.get('log_id'):
                     receipt += ' (log ' + str(auto['log_id'])[:80] + ')'
                 receipts.append(receipt)
-        if receipts:
-            text = (text or 'Read completed.') + '\n\nVerified app action: ' + ', '.join(receipts[:3])
+        if receipts and not (text or '').strip():
+            # Only used when the model's own wrap-up text is empty — the
+            # real answer should always win over a technical receipt line.
+            text = 'Read completed (' + ', '.join(receipts[:2]) + ').'
     elif 'composio_search_tools' in tools_run and 'composio_execute' not in tools_run and 'composio_connect' not in tools_run:
         # The model discovered the right action but never executed it — yet
         # models in this situation routinely write "Done! I've fetched your
@@ -1302,8 +1304,8 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
             if result.get('log_id'):
                 name += ' (log ' + str(result['log_id'])[:80] + ')'
             receipts.append(name)
-        if receipts:
-            text = (text or 'Action completed.') + '\n\nVerified app action: ' + ', '.join(receipts[:3])
+        if receipts and not (text or '').strip():
+            text = 'Action completed (' + ', '.join(receipts[:2]) + ').'
     return text
 
 
