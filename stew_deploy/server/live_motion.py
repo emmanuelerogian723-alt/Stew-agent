@@ -84,7 +84,7 @@ class WorkingBanner:
         try:
             await self.bot.send_chat_action(self.chat_id, "typing")
             res = await self.bot.send_message(self.chat_id, self._render(_FRAMES[0]))
-            self.message_id = (res or {}).get("message_id")
+            self.message_id = (res or {}).get("result", {}).get("message_id")
         except Exception as e:
             logger.debug(f"banner start skipped: {e}")
         try:
@@ -312,7 +312,7 @@ class LiveActivityStream:
             await self.bot.send_chat_action(self.chat_id, "typing")
             self.current = {"type": "thinking", "label": "Starting…"}
             res = await self.bot.send_message(self.chat_id, self._render(), parse_mode="HTML")
-            self.message_id = (res or {}).get("message_id")
+            self.message_id = (res or {}).get("result", {}).get("message_id")
         except Exception as e:
             logger.debug(f"LiveActivityStream start skipped: {e}")
         try:

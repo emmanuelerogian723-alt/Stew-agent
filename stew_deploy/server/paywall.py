@@ -279,7 +279,7 @@ class LiveStatus:
         try:
             await self.bot.send_chat_action(self.chat_id, "typing")
             res = await self.bot.send_message(self.chat_id, f"{self.title}\n⠋ Starting…")
-            self.message_id = (res or {}).get("message_id")
+            self.message_id = (res or {}).get("result", {}).get("message_id")
         except Exception:
             self.message_id = None
         return self
