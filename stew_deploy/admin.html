@@ -874,7 +874,7 @@ async function loadObservability() {
   const tools = document.getElementById('obsTools');
   summary.innerHTML = '<p style="color:var(--text-dim)">Loading tool health…</p>';
   try {
-    const d = await api('/api/admin/observability?');
+    const d = await api('/admin/api/observability?');
     const ok = d.overall_success_rate >= 95 ? 'var(--green)' : (d.overall_success_rate >= 80 ? 'var(--yellow)' : 'var(--red)');
     summary.innerHTML = `
       <div class="stat-card" style="flex:1;min-width:140px"><div style="font-size:26px;font-weight:700">${d.total_tool_calls}</div><div style="color:var(--text-dim);font-size:12px">Total tool calls</div></div>
