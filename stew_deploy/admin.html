@@ -6,14 +6,14 @@
 <title>S.T.E.W Admin Control Center</title>
 <style>
 :root {
-  --bg: #0a0e1a;
-  --bg-card: #111827;
-  --bg-hover: #1a2332;
-  --border: #1e2d3f;
-  --text: #e5e7eb;
-  --text-dim: #6b7280;
-  --accent: #3b82f6;
-  --accent-glow: rgba(59,130,246,0.15);
+  --bg: #f7f7f8;
+  --bg-card: #ffffff;
+  --bg-hover: #f0f0f2;
+  --border: #e5e5ea;
+  --text: #151517;
+  --text-dim: #6f6f78;
+  --accent: #a31212;
+  --accent-glow: rgba(163,18,18,0.12);
   --green: #10b981;
   --red: #ef4444;
   --yellow: #f59e0b;
@@ -29,13 +29,13 @@ input,textarea,select { font-family:inherit; }
 a { color:var(--accent); text-decoration:none; }
 
 /* Login */
-#loginScreen { display:flex; align-items:center; justify-content:center; width:100%; min-height:100vh; background:radial-gradient(circle at 50% 50%, #0d1521, #0a0e1a); }
+#loginScreen { display:flex; align-items:center; justify-content:center; width:100%; min-height:100vh; background:radial-gradient(circle at 50% 50%, #ffffff, #f7f7f8); }
 .login-box { background:var(--bg-card); border:1px solid var(--border); border-radius:20px; padding:40px; width:400px; max-width:90vw; }
-.login-box h1 { font-size:24px; margin-bottom:8px; background:linear-gradient(135deg,#3b82f6,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.login-box h1 { font-size:24px; margin-bottom:8px; background:linear-gradient(135deg,#a31212,#d42b2b); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
 .login-box p { color:var(--text-dim); margin-bottom:24px; font-size:14px; }
 .login-box input { width:100%; padding:12px 16px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; margin-bottom:12px; outline:none; transition:border 0.2s; }
 .login-box input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
-.login-box button { width:100%; padding:12px; background:linear-gradient(135deg,#3b82f6,#2563eb); border:none; border-radius:8px; color:#fff; font-size:15px; font-weight:600; cursor:pointer; transition:opacity 0.2s; }
+.login-box button { width:100%; padding:12px; background:linear-gradient(135deg,#a31212,#7a0c0c); border:none; border-radius:8px; color:#fff; font-size:15px; font-weight:600; cursor:pointer; transition:opacity 0.2s; }
 .login-box button:hover { opacity:0.9; }
 .login-error { color:var(--red); font-size:13px; margin-top:8px; display:none; }
 .login-logo { width:60px; height:60px; border-radius:16px; background:linear-gradient(135deg,#3b82f6,#8b5cf6); display:flex; align-items:center; justify-content:center; font-size:28px; margin-bottom:20px; }
@@ -210,6 +210,7 @@ tr:hover { background:var(--bg-hover); }
 <div class="nav-section">System</div>
 <div class="nav-item" onclick="showPage('security',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg> Security</div>
 <div class="nav-item" onclick="showPage('health',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg> System Health</div>
+<div class="nav-item" onclick="showPage('observability',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 18.49l5.5-5.5 4 4L21 6.87l-1.41-1.41-6.59 7.13-4-4L2 15.5l1.5 2.99z"/></svg> Observability</div>
 <div class="nav-item" onclick="showPage('audit',this)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg> Audit Log</div>
 </div>
 <div class="sidebar-footer">
@@ -422,6 +423,14 @@ tr:hover { background:var(--bg-hover); }
 </div>
 
 <!-- Audit Page -->
+<div class="page" id="page-observability">
+  <div class="table-card">
+    <h3>Connector Observability</h3>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">Per-tool health across all Stew agent tools (Composio, MCP, built-ins): success rate, latency, top errors, busiest users.</p>
+    <div id="obsSummary" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
+    <div id="obsTools" style="overflow-x:auto"></div>
+  </div>
+</div>
 <div class="page" id="page-audit">
 <div class="table-card">
 <div class="header"><h3>Active Admin Sessions</h3></div>
@@ -499,7 +508,7 @@ function showPage(page, el) {
   document.getElementById(`page-${page}`).classList.add('active');
   if (el) el.classList.add('active');
   currentPage = page;
-  const titles = {dashboard:'Dashboard', users:'User Management', payments:'Payments & Revenue', telegram:'Telegram Bot', features:'Feature Requests', ads:'Ad Campaigns', security:'Security', health:'System Health', audit:'Audit Log'};
+  const titles = {dashboard:'Dashboard', users:'User Management', payments:'Payments & Revenue', telegram:'Telegram Bot', features:'Feature Requests', ads:'Ad Campaigns', security:'Security', health:'System Health', audit:'Audit Log', observability:'Observability'};
   document.getElementById('pageTitle').textContent = titles[page] || page;
   if (page === 'dashboard') loadDashboard();
   if (page === 'users') loadUsers();
@@ -510,6 +519,7 @@ function showPage(page, el) {
   if (page === 'security') loadSecurity();
   if (page === 'health') loadHealth();
   if (page === 'audit') loadAudit();
+  if (page === 'observability') loadObservability();
 }
 
 function refreshCurrent() { showPage(currentPage, null); reapplyActiveNav(); }
@@ -858,6 +868,35 @@ async function loadSecurity(page=1) {
 }
 
 // Health
+
+async function loadObservability() {
+  const summary = document.getElementById('obsSummary');
+  const tools = document.getElementById('obsTools');
+  summary.innerHTML = '<p style="color:var(--text-dim)">Loading tool health…</p>';
+  try {
+    const d = await api('/api/admin/observability?');
+    const ok = d.overall_success_rate >= 95 ? 'var(--green)' : (d.overall_success_rate >= 80 ? 'var(--yellow)' : 'var(--red)');
+    summary.innerHTML = `
+      <div class="stat-card" style="flex:1;min-width:140px"><div style="font-size:26px;font-weight:700">${d.total_tool_calls}</div><div style="color:var(--text-dim);font-size:12px">Total tool calls</div></div>
+      <div class="stat-card" style="flex:1;min-width:140px"><div style="font-size:26px;font-weight:700;color:var(--red)">${d.failed_calls}</div><div style="color:var(--text-dim);font-size:12px">Failed calls</div></div>
+      <div class="stat-card" style="flex:1;min-width:140px"><div style="font-size:26px;font-weight:700;color:${ok}">${d.overall_success_rate}%</div><div style="color:var(--text-dim);font-size:12px">Overall success rate</div></div>`;
+    if (!d.tools || !d.tools.length) {
+      tools.innerHTML = '<p style="color:var(--text-dim)">No tool activity logged yet.</p>';
+      return;
+    }
+    let rows = d.tools.map(t => {
+      const sr = t.success_rate >= 95 ? 'var(--green)' : (t.success_rate >= 80 ? 'var(--yellow)' : 'var(--red)');
+      const errs = (t.top_errors||[]).map(e => `${esc(e.error)} ×${e.count}`).join('<br>') || '—';
+      return `<tr><td><b>${esc(t.tool)}</b></td><td>${t.calls}</td><td style="color:${sr};font-weight:600">${t.success_rate}%</td><td>${t.avg_ms} ms</td><td style="font-size:12px;color:var(--text-dim)">${errs}</td></tr>`;
+    }).join('');
+    tools.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <tr style="text-align:left;color:var(--text-dim)"><th style="padding:8px;border-bottom:1px solid var(--border)">Tool</th><th style="padding:8px;border-bottom:1px solid var(--border)">Calls</th><th style="padding:8px;border-bottom:1px solid var(--border)">Success</th><th style="padding:8px;border-bottom:1px solid var(--border)">Avg latency</th><th style="padding:8px;border-bottom:1px solid var(--border)">Top errors</th></tr>${rows}</table>`;
+  } catch (e) {
+    summary.innerHTML = ''; tools.innerHTML = `<p style="color:var(--red)">Failed to load: ${e.message}</p>`;
+  }
+}
+function esc(x) { return String(x??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
 async function loadHealth() {
   try {
     const data = await api('/admin/api/system/health?');

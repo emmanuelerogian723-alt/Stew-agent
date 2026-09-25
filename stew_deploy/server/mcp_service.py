@@ -208,8 +208,38 @@ class McpClient:
         res = result.get("result") or {}
         if res.get("isError"):
             return {"success": False, "error": _content_to_text(res.get("content")) or "The tool reported an error."}
-        return {"success": True, "content": res.get("content") or [],
-                "structuredContent": res.get("structuredContent")}
+        # Hardening: cap total payload size so a hostile/looping MCP server
+        # can't balloon memory or the Telegram reply.
+        content = res.get("content") or []
+        if content and len(_content_to_text(content)) > 24000:
+            content = [{"type": "text",
+                        "text": _content_to_text(content)[:20000]
+                                + "\n…(response truncated: MCP server returned an oversized payload)"}]
+        structured = res.get("structuredContent")
+        if structured and len(json.dumps(structured, default=str)) > 24000:
+            structured = {"note": "structured content dropped: oversized payload"}
+        return {"success": True, "content": content, "structuredContent": structured}
+
+
+# ── Hardening: per-user MCP rate limit (token bucket) ───────────────────────
+# 2026's MCP security flaws showed untrusted remote servers must be throttled.
+# 30 calls per rolling hour per user — plenty for real work, stops runaway loops.
+_MCP_RATE: Dict[str, list] = {}
+MCP_RATE_LIMIT = 30
+MCP_RATE_WINDOW = 3600.0
+
+
+def _mcp_rate_check(user_id: str) -> bool:
+    import time as _t
+    key = str(user_id)
+    now = _t.time()
+    hits = [h for h in _MCP_RATE.get(key, []) if now - h < MCP_RATE_WINDOW]
+    if len(hits) >= MCP_RATE_LIMIT:
+        _MCP_RATE[key] = hits
+        return False
+    hits.append(now)
+    _MCP_RATE[key] = hits
+    return True
 
 
 def _content_to_text(content: Any) -> str:
@@ -544,7 +574,12 @@ async def add_server(user_id: str, name: str, url: str,
         db.add(row)
         await db.commit()
         await db.refresh(row)
-    return await sync_server(user_id, row.id)
+    result = await sync_server(user_id, row.id)
+    # Security notice for custom servers (Stew doesn't verify third-party MCPs)
+    if isinstance(result, dict):
+        result["security_note"] = ("Custom MCP servers are NOT verified by Stew — only connect servers you trust. "
+                                   "Review the tools and permissions it asks for; you can remove it anytime in the ⚡MCP tab.")
+    return result
 
 
 async def remove_server(user_id: str, server_id: str) -> bool:
@@ -720,6 +755,11 @@ async def execute_mcp_tool(user_id: str, server_id: str, tool_name: str,
     tool_name = (tool_name or "").strip()
     if not tool_name or not isinstance(arguments, dict):
         return {"success": False, "error": "A tool name and a JSON arguments object are required."}
+
+    # Hardening: rolling per-user rate limit (stops runaway loops / hostile servers)
+    if not _mcp_rate_check(stable_user_id):
+        return {"success": False,
+                "error": "MCP rate limit reached (30 calls/hour). Try again later — this protects you from runaway loops and untrusted servers."}
 
     row = await get_server(stable_user_id, server_id)
     if not row:

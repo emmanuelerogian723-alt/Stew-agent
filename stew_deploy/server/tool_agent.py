@@ -32,9 +32,17 @@ Tools available:
   24. get_user_media() — Fetch the LAST file (video/document/photo) the user sent in chat. Returns its public URL, filename, kind and size. Use it when the user references "this video/document/photo" they just sent (post it to social, email it, edit it).
   25. search_web_images(query, count) — Search the REAL internet for images matching a query, download them, and deliver them to the user in chat. Use for "get me images of X", "find me pictures of Y", "download images of Z".
   26. audit_my_videos(platform) — Thoroughly audit the user's connected social account (youtube/instagram/tiktok): pull their videos and real view/engagement stats, rank the underperformers, and return concrete improvement advice to grow views.
+  27. create_trigger(source, name, instruction, config) — Create an event-driven automation: when source fires (source="gmail": new email, optional config {"from": "...", "subject": "..."}; source="webhook": any service POSTs JSON to the user's personal webhook URL), the instruction runs automatically with the event payload. The instruction must describe what to DO each time.
+  28. search_knowledge(query) — Retrieve the user's indexed Google Drive/Sheets files (RAG). Use when the user asks about "my files", "my documents", "my sheets", "what did I write about X".
+  29. sync_knowledge(source) — Index the user's connected Google Drive ("gdrive") or Google Sheets ("gsheets") files so search_knowledge can answer over them.
+  30. create_invoice(email, amount_ngn, description) — Create a real payment link on the USER'S OWN Paystack account (their customers pay THEM). Requires they first set their key with /setpaystack.
+  31. check_payment(reference) — Verify a Paystack payment on the user's own account.
+  32. my_transactions() — List the user's recent Paystack transactions.
 """
 import json
 import re
+import time
+import os
 import asyncio
 import logging
 from typing import Optional
@@ -120,6 +128,10 @@ Rules:
 18l. USER-SENT MEDIA (video/document/photo): When the user sends a file with an instruction ("post this video to my YouTube", "upload this to TikTok/Instagram with title X and hashtags Y", "email this document to name@x.com"), the goal text will contain [USER_MEDIA: ...] with the hosted public URL. Flow: discover the platform's upload/post action with composio_search_tools (e.g. "youtube upload video", "tiktok post video", "instagram create media"), then composio_execute with the user's exact title, description and hashtags from their message. Public posting pauses for the Approve/Cancel button — that is expected; never post without it. For email requests use the gmail send action, putting the hosted URL in the attachment/body so the recipient can download the document.
 18m. REAL INTERNET IMAGES: For "get/download images of X", call search_web_images, then deliver every downloaded image to the user and briefly list sources. Never fabricate an image URL. If nothing is found, say so and offer AI-generated images instead.
 18n. SOCIAL VIDEO AUDIT: For "which of my videos are not improving / how do I get more views", call audit_my_videos with the platform the user names (default: their connected video platform). Summarize the ranked underperformers with their REAL numbers and give specific, actionable fixes (hook length, title/keyword, posting time, captions, format) referencing each video's actual stats. Never invent stats — only report numbers returned by the tool.
+18o. EVENT TRIGGERS (Business Autopilot): When the user says "when <event>, do <thing>" (e.g. "when I get an email from boss@x.com, summarize it and ping me", "when my form gets a submission, draft a reply"), call create_trigger with source ("gmail" for email events, "webhook" for form/app events — the tool returns their personal webhook URL to share), a short name, and a complete instruction describing the recurring action. Confirm the setup in one line and tell them /triggers lists them, /trigger off <id> cancels.
+18p. BROWSING: When the user asks to read/open a specific web page, portal, or dashboard, call browse_url with the URL and a short what_to_find (e.g. "the registration deadline"). Summarize what the page ACTUALLY says — never invent content.
+18q. USER KNOWLEDGE (Drive/Sheets RAG): For questions about the user's own files/docs/sheets, call search_knowledge. If nothing is indexed, tell them to connect Google Drive/Sheets in the Apps tab, then run /knowledge sync, and answer from general knowledge meanwhile.
+18r. USER PAYSTACK: For "create an invoice for X for N5,000", "send a payment link to x@y.com for 20000", call create_invoice (amount_ngn in NAIRA) and give them the payment link. If no key is set, tell them to run /setpaystack with their Paystack secret key (paystack.com → Settings → API Keys). check_payment verifies a reference; my_transactions lists recent payments.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
 18h. Read-only app actions and regular writes (send, reply, post, publish, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. Only a permanent delete/remove is intercepted by STEW's approval gateway; for that one case, clearly show the prepared action and ask the user to reply APPROVE or CANCEL. Never claim anything ran without a successful TOOL_RESULT confirming it.
@@ -262,18 +274,22 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         }
 
     elif tool == "browse_url":
-        url = args.get("url", "")
-        if not url:
-            return {"error": "No URL provided"}
-        from server.browser import StewBrowser
-        browser = StewBrowser()
-        result = await browser.fetch(url)
-        content = result.get("content", "")[:8000]
+        url = str(args.get("url", "")).strip()
+        what = str(args.get("what_to_find") or "the main content").strip()
+        if not url or not url.startswith("http"):
+            return {"tool": tool, "success": False, "error": "A full http(s) URL is required, e.g. {'url': 'https://jamb.gov.ng', 'what_to_find': 'registration deadline'}."}
+        from server.browser import get_browser
+        try:
+            result = await get_browser().fetch(url[:500], timeout=25)
+        except Exception as exc:
+            return {"tool": tool, "success": False, "error": f"could not open {url}: {exc}"}
+        content = str(result.get("content", ""))[:8000]
         title = result.get("title", "Unknown")
         return {
             "tool": tool,
             "success": bool(content),
-            "output": f"Title: {title}\nURL: {url}\n\n{content}",
+            "output": (f"Title: {title}\nURL: {url}\nFocus on: {what}.\n"
+                       "Summarize the REAL page content below; never invent what isn't there.\n\n" + content),
         }
 
     elif tool == "generate_document":
@@ -1061,6 +1077,93 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
                            f"analysis and growth plan — present it to the user, video by video, with their real numbers:\n\n{analysis}"),
                 "data": {"platform": platform, "raw": data, "analysis": analysis}}
 
+    elif tool == "create_trigger":
+        from server.trigger_service import create_trigger, create_trigger as _ct
+        source = str(args.get("source", "webhook")).lower().strip()
+        name = str(args.get("name") or "").strip() or "My trigger"
+        instruction = str(args.get("instruction") or args.get("do") or "").strip()
+        config = args.get("config") or {}
+        if not instruction:
+            return {"tool": tool, "success": False,
+                    "error": "An instruction is required, e.g. {'source': 'gmail', 'instruction': 'summarize the email and message me'}."}
+        if source not in ("webhook", "gmail", "email"):
+            return {"tool": tool, "success": False, "error": "source must be 'webhook' or 'gmail'."}
+        try:
+            rec = await create_trigger(tg_user_id or chat_id, chat_id, name,
+                                       "gmail" if source in ("gmail", "email") else "webhook",
+                                       instruction, config if isinstance(config, dict) else {})
+        except ValueError as ve:
+            return {"tool": tool, "success": False, "output": str(ve)}
+        except Exception as exc:
+            return {"tool": tool, "success": False, "error": f"could not create trigger: {exc}"}
+        out = (f"✅ Trigger '{rec['name']}' is LIVE ({'new Gmail' if rec['source']=='gmail' else 'webhook'} → your instruction).\n"
+               f"It fires automatically and runs: {instruction[:200]}\n"
+               f"Manage: /triggers (list), /trigger off {rec['id'][:8]}")
+        if rec.get("webhook_token"):
+            _base = os.environ.get("APP_BASE_URL", "https://stew-agent.onrender.com").rstrip("/")
+            out += (f"\nPersonal webhook URL (point any form/service at it, POST JSON):\n"
+                    f"{_base}/api/triggers/hook/{rec['webhook_token']}")
+        return {"tool": tool, "success": True, "output": out, "data": rec}
+
+    elif tool == "sync_knowledge":
+        from server.knowledge_service import sync_knowledge as _ks
+        source = str(args.get("source") or "gdrive").lower().strip()
+        if source not in ("gdrive", "drive", "gsheets", "sheets"):
+            source = "gsheets" if "sheet" in source else "gdrive"
+        res = await _ks(tg_user_id or chat_id, source)
+        return {"tool": tool, "success": bool(res.get("ok")),
+                "output": res.get("note") or res.get("error"),
+                "data": res}
+
+    elif tool == "search_knowledge":
+        from server.knowledge_service import search_knowledge as _sk
+        query = str(args.get("query") or "").strip()
+        res = await _sk(tg_user_id or chat_id, query, int(args.get("top_k", 4) or 4))
+        if not res.get("ok"):
+            return {"tool": tool, "success": False, "output": res.get("error")}
+        hits = res.get("hits") or []
+        if not hits:
+            return {"tool": tool, "success": True,
+                    "output": res.get("note") or "No match in the indexed files."}
+        blocks = [f"From '{h['title']}' ({h['source']}):\n{h['text']}" for h in hits]
+        return {"tool": tool, "success": True,
+                "output": "Retrieved from the user's indexed files. Answer using ONLY this content where it applies, and cite which file each fact came from.\n\n" + "\n\n".join(blocks)}
+
+    elif tool == "create_invoice":
+        from server.paystack_connector import create_invoice as _ci
+        res = await _ci(tg_user_id or chat_id, str(args.get("email") or ""),
+                       float(args.get("amount_ngn") or 0), str(args.get("description") or ""))
+        if not res.get("ok"):
+            return {"tool": tool, "success": False, "output": res.get("error")}
+        return {"tool": tool, "success": True,
+                "output": (f"Payment link created on the USER'S OWN Paystack account:\n{res['payment_link']}\n"
+                           f"Amount: ₦{res['amount_ngn']:,.0f} · Reference: {res['reference']}\n"
+                           f"{res['note']} — give the user the link to share with their customer."),
+                "data": res}
+
+    elif tool == "check_payment":
+        from server.paystack_connector import check_payment as _cp
+        reference = str(args.get("reference") or "").strip()
+        if not reference:
+            return {"tool": tool, "success": False, "error": "A payment reference is required."}
+        res = await _cp(tg_user_id or chat_id, reference)
+        return {"tool": tool, "success": bool(res.get("ok")),
+                "output": (f"Payment status: {res.get('status')} · ₦{res.get('amount_ngn') or 0:,.0f} · "
+                           f"customer {res.get('customer') or 'n/a'} · paid at {res.get('paid_at') or 'not yet'}"),
+                "data": res}
+
+    elif tool == "my_transactions":
+        from server.paystack_connector import my_transactions as _mt
+        res = await _mt(tg_user_id or chat_id)
+        if not res.get("ok"):
+            return {"tool": tool, "success": False, "output": res.get("error")}
+        rows = res.get("transactions") or []
+        if not rows:
+            return {"tool": tool, "success": True, "output": "No transactions found on their Paystack account yet."}
+        lines = [f"{r['status']} · ₦{r['amount_ngn']:,.0f} · {r['email'] or 'n/a'} · {r['paid_at'] or 'pending'}" for r in rows]
+        return {"tool": tool, "success": True,
+                "output": "Their recent Paystack transactions (newest first):\n" + "\n".join(lines)}
+
     elif tool == "run_shell":
         command = args.get("command", "")
         if not command:
@@ -1693,7 +1796,24 @@ async def run_agent_loop(
                 # Don't leak tool names to users — just show typing indicator
                 await bot.send_chat_action(chat_id, "typing")
 
+            _t0 = time.time()
             tool_result = await execute_tool(call, bot, chat_id, tg_user_id)
+            try:
+                # HQ observability: every agent tool call is logged with
+                # success, latency and error so /hq can show failure rates.
+                from server.database import AsyncSessionLocal as _ASL
+                from server.models import ToolLog as _TL
+                async def _log_tool():
+                    async with _ASL() as _db:
+                        _db.add(_TL(telegram_user_id=str(tg_user_id or chat_id),
+                                    tool=str(tool_name)[:64],
+                                    ok=bool(tool_result.get("success", True)),
+                                    duration_ms=int((time.time() - _t0) * 1000),
+                                    error=(str(tool_result.get("error") or "")[:500] or None)))
+                        await _db.commit()
+                await _log_tool()
+            except Exception:
+                pass
             if progress_cb:
                 try:
                     _evidence, _ok = _tool_evidence(tool_name, call.get("args"), tool_result)

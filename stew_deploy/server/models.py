@@ -534,3 +534,69 @@ class AutomationGoal(Base):
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TriggerRule(Base):
+    """Event-driven automation trigger — 'when this happens, do that'.
+
+    Sources:
+      • webhook  — anything on the internet can POST JSON to the user's
+                   personal URL: /api/triggers/hook/<token>
+      • gmail    — polled: fire when a new message arrives (optionally from
+                   a specific sender / with a subject keyword)
+    When a trigger fires, the stored agent_instruction runs through the full
+    agent loop (same approval gateway — external actions still need a human).
+    """
+    __tablename__ = "trigger_rules"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source: Mapped[str] = mapped_column(String(24), nullable=False, default="webhook")
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    instruction: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    webhook_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    last_check_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_fired_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fire_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ToolLog(Base):
+    """Per-tool execution log for HQ observability: success rate, latency,
+    top errors, per-user action counts. Written on every agent tool call."""
+    __tablename__ = "tool_logs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tool: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class KnowledgeChunk(Base):
+    """RAG chunk of the user's connected knowledge sources (Google Drive
+    docs, Sheets rows). Pulled via Composio on /knowledge sync, retrieved
+    by the search_knowledge agent tool."""
+    __tablename__ = "knowledge_chunks"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_app: Mapped[str] = mapped_column(String(32), nullable=False, default="gdrive")
+    source_id: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    keywords: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UserSecret(Base):
+    """A user-provided API credential (e.g. their own Paystack secret key),
+    stored encrypted at rest. Never shown back in chat after being set."""
+    __tablename__ = "user_secrets"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    value_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

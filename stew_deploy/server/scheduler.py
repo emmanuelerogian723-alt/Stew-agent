@@ -236,6 +236,10 @@ async def scheduler_loop():
             await tick_goals()
             from server.checkin_service import run_due_check_ins
             await run_due_check_ins()
+            # Event-driven triggers (gmail polling; webhook hits arrive via HTTP)
+            from server.trigger_service import poll_gmail_triggers, mark_initial_checks
+            await mark_initial_checks()
+            await poll_gmail_triggers()
         except asyncio.CancelledError:
             logger.info("Scheduler engine stopping")
             break

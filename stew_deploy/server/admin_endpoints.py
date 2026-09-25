@@ -16,11 +16,13 @@ import logging
 from server.database import get_db, AsyncSessionLocal
 from server.models import (
     MoodEntry, User, Conversation, APICall, Document, PaymentTransaction,
-    DeviceFingerprint, SecurityEvent, AdCampaign, FeatureRequest, UserMemory
+    DeviceFingerprint, SecurityEvent, AdCampaign, FeatureRequest, UserMemory, ToolLog
 )
 from server.config import get_settings
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__,
+    ToolLog,
+)
 settings = get_settings()
 router = APIRouter(prefix="/admin/api", tags=["Admin"])
 
@@ -127,6 +129,46 @@ async def admin_dashboard(token: str, db: AsyncSession = Depends(get_db)):
         "plan_prices": {"free": 0, "student": 2000, "pro": 9900, "business": 29000, "enterprise": 49000},
         "plan_limits": {"free": 50, "student": 400, "pro": 10000, "business": 100000, "enterprise": 50000},
     }
+
+@router.get("/observability")
+async def admin_observability(token: str, db: AsyncSession = Depends(get_db)):
+    """Per-tool health: success rate, latency, top errors, busiest users —
+    see which connectors break most before students do."""
+    admin = _verify_admin(token)
+    rows = (await db.execute(select(ToolLog))).scalars().all()
+    tools = {}
+    for r in rows:
+        t = tools.setdefault(r.tool, {"calls": 0, "ok": 0, "fail": 0, "ms": 0, "errors": {}})
+        t["calls"] += 1
+        if r.ok:
+            t["ok"] += 1
+        else:
+            t["fail"] += 1
+            err = (r.error or "unknown")[:120]
+            t["errors"][err] = t["errors"].get(err, 0) + 1
+        t["ms"] += r.duration_ms or 0
+    tool_stats = []
+    for name, t in sorted(tools.items(), key=lambda kv: -kv[1]["calls"]):
+        top_errors = sorted(t["errors"].items(), key=lambda kv: -kv[1])[:3]
+        tool_stats.append({
+            "tool": name, "calls": t["calls"], "ok": t["ok"], "fail": t["fail"],
+            "success_rate": round(100 * t["ok"] / t["calls"], 1) if t["calls"] else 0,
+            "avg_ms": round(t["ms"] / t["calls"], 0) if t["calls"] else 0,
+            "top_errors": [{"error": e, "count": c} for e, c in top_errors],
+        })
+    user_counts = {}
+    for r in rows:
+        user_counts[r.telegram_user_id] = user_counts.get(r.telegram_user_id, 0) + 1
+    busiest = sorted(user_counts.items(), key=lambda kv: -kv[1])[:10]
+    total = len(rows)
+    fails = sum(1 for r in rows if not r.ok)
+    return {
+        "total_tool_calls": total, "failed_calls": fails,
+        "overall_success_rate": round(100 * (total - fails) / total, 1) if total else 100,
+        "tools": tool_stats,
+        "busiest_users": [{"user_id": u, "tool_calls": c} for u, c in busiest],
+    }
+
 
 @router.get("/users")
 async def admin_list_users(token: str, page: int = 1, limit: int = 50, search: str = "", plan: str = "", status: str = "", db: AsyncSession = Depends(get_db)):

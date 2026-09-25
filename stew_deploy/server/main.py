@@ -514,6 +514,23 @@ async def agent_status_endpoint(job_id: str, api_key: str = "", db: AsyncSession
 app.include_router(openai_router)
 app.include_router(whatsapp_router)
 
+# ── EVENT TRIGGER WEBHOOKS (Feature: Business Autopilot) ─────────────────────
+@app.post("/api/triggers/hook/{token}")
+async def trigger_webhook(token: str, request: Request):
+    """Any internet service POSTs JSON here; the user's agent instruction
+    fires with the payload. Public by design (secret token = the auth)."""
+    from server.trigger_service import get_by_token, fire
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    rule = await get_by_token(token)
+    if not rule:
+        return {"ok": False, "error": "unknown or inactive trigger"}
+    await fire(rule, payload if isinstance(payload, dict) else {"payload": payload})
+    return {"ok": True, "fired": rule.name}
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -1170,6 +1187,24 @@ async def composio_mini_connect(request: Request):
     if not toolkit:
         raise HTTPException(400, "Choose an app to connect")
     from server.composio_service import connect_app
+    # Pro-gated advanced connectors (Claude-style directory tiers): money and
+    # business-critical apps are Pro+. Owner/admin bypasses for testing.
+    _ADVANCED_TOOLKITS = {"stripe", "shopify", "hubspot", "airtable", "calendly",
+                          "zoom", "mailchimp", "monday", "clickup", "jira"}
+    try:
+        from server.database import AsyncSessionLocal as _AdvDB
+        from sqlalchemy import select as _asel
+        async with _AdvDB() as _adb:
+            _au = (await _adb.execute(_asel(User).where(
+                User.email == f"tg_{tg_user['id']}@telegram.stew"))).scalars().first()
+            _aplan = (_au.plan if _au and _au.plan else "free")
+    except Exception:
+        _aplan = "free"
+    if toolkit in _ADVANCED_TOOLKITS and _aplan not in ("pro", "business", "owner"):
+        raise HTTPException(
+            402,
+            "⚡ Advanced connector. Stripe, Shopify, HubSpot and other business-grade "
+            "apps are part of the Pro plan. Send /upgrade in STEW chat to unlock them.")
     # Paywall v3: free users can connect at most 7 apps.
     # The connected-app COUNT (provider-based, fail-closed) is the real gate;
     # the plan lookup only raises the limit for paid users, so a DB hiccup must
@@ -5601,6 +5636,42 @@ async def telegram_webhook(request: Request):
     return {"ok": True}
 
 
+@app.post("/api/admin/simulate-message")
+async def admin_simulate_message(request: Request):
+    """Owner-only test harness: injects a synthetic Telegram update through
+    the REAL message pipeline (classifier → agent loop → tools → replies)
+    for a given telegram user id. Guarded by the admin secret header. Used to
+    live-test connectors, write/publish/read access and triggers as a real
+    user without touching Telegram's servers."""
+    secret = request.headers.get("x-admin-secret", "")
+    if not settings.STEW_ADMIN_SECRET or secret != settings.STEW_ADMIN_SECRET:
+        raise HTTPException(403, "admin secret required")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON body required")
+    user_id = str(body.get("user_id", "")).strip()
+    text = str(body.get("text", "")).strip()
+    first = str(body.get("first_name") or "Admin")
+    last = str(body.get("last_name") or "Test")
+    if not user_id.isdigit() or not text:
+        raise HTTPException(400, "user_id (numeric telegram id) and text are required")
+    import time as _time
+    update = {
+        "update_id": int(_time.time()) % 2147483647,
+        "message": {
+            "message_id": int(_time.time()) % 1000000,
+            "from": {"id": int(user_id), "first_name": first, "last_name": last,
+                     "is_bot": False, "language_code": "en"},
+            "chat": {"id": int(user_id), "type": "private"},
+            "date": int(_time.time()),
+            "text": text,
+        },
+    }
+    asyncio.create_task(_process_telegram_update_safe(update))
+    return {"ok": True, "queued": True, "user_id": user_id, "text": text[:80]}
+
+
 async def _process_telegram_update_safe(data: dict):
     """Runs the real handler with its own DB session, detached from the
     request/response cycle so it can take as long as it needs without ever
@@ -6076,6 +6147,71 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 _lines.append(f"{_i}. {_label}{_topic}\n   due {_when} UTC{' · repeats' if _c.get('recurring') else ''} · id `{_c['id'][:8]}`")
             _lines.append("\nCancel: /checkin cancel <id>")
             await bot.send_message(chat_id, "\n".join(_lines))
+        return {"ok": True}
+
+    # ── KNOWLEDGE (Drive/Sheets RAG) ─────────────────────────────────────
+    if _raw_text_early.startswith("/knowledge"):
+        _rest = _raw_text_early[len("/knowledge"):].strip()
+        if _rest.lower() in ("sync", "sync gdrive", "sync drive"):
+            from server.knowledge_service import sync_knowledge as _ksync
+            await bot.send_message(chat_id, "📚 Syncing your Google Drive knowledge…")
+            _res = await _ksync(str(tg_user_early.id), "gdrive")
+            await bot.send_message(chat_id, _res.get("note") or _res.get("error"))
+        elif _rest.lower() in ("sync sheets", "sync gsheets"):
+            from server.knowledge_service import sync_knowledge as _ksync
+            await bot.send_message(chat_id, "📊 Syncing your Google Sheets knowledge…")
+            _res = await _ksync(str(tg_user_early.id), "gsheets")
+            await bot.send_message(chat_id, _res.get("note") or _res.get("error"))
+        else:
+            from sqlalchemy import func as _f, select as _sel
+            from server.database import AsyncSessionLocal as _ASL
+            from server.models import KnowledgeChunk as _KC
+            async with _ASL() as _db:
+                _n = (await _db.execute(_sel(_f.count(_KC.id)).where(
+                    _KC.telegram_user_id == str(tg_user_early.id)))).scalar() or 0
+            await bot.send_message(chat_id, f"📚 *Your Knowledge*\n\n{_n} indexed chunk(s) from your connected Google files.\n\n1. Connect Google Drive/Sheets in the Apps tab of the Mini App (if not connected)\n2. /knowledge sync — pulls your Drive files\n3. Then just ask me: *what do my files say about the budget?*")
+        return {"ok": True}
+
+    # ── USER-SIDE PAYSTACK (their own account) ─────────────────────────────
+    if _raw_text_early.startswith("/setpaystack"):
+        _key = _raw_text_early[len("/setpaystack"):].strip()
+        if not _key:
+            await bot.send_message(chat_id, "💳 *Connect YOUR Paystack account*\n\nSend:\n/setpaystack sk_xxxxx\n\nYour secret key (paystack.com → Settings → API Keys → Secret key). I verify it live and store it encrypted — then I can create payment links, check payments, and list transactions *for your own business*.\n\nTry: *create a payment link for momo@gmail.com for N5,000 for the sneakers*")
+            return {"ok": True}
+        await bot.send_message(chat_id, "💳 Verifying your Paystack key…")
+        from server.paystack_connector import set_user_key as _suk
+        _res = await _suk(str(tg_user_early.id), _key)
+        await bot.send_message(chat_id, ("✅ " + _res.get("note", "Paystack connected.")) if _res.get("ok") else f"❌ {_res.get('error')}")
+        return {"ok": True}
+
+    # ── EVENT TRIGGERS ("when this happens, do that") ─────────────────────
+    if _raw_text_early.startswith("/triggers") or (
+            _raw_text_early.startswith("/trigger") and not _raw_text_early.startswith("/trigger ")):
+        from server.trigger_service import list_triggers
+        _trigs = await list_triggers(str(tg_user_early.id))
+        _base = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/")
+        if not _trigs:
+            await bot.send_message(chat_id, "🪝 *No active triggers.*\n\nJust tell me in chat — *when I get an email from my boss, summarize it and ping me* — and I'll set it up. Sources: new email (Gmail), or a personal webhook URL that any website or form can call.")
+        else:
+            _lines = ["⚡ *Your triggers — they fire me automatically:*"]
+            for _i, _t in enumerate(_trigs, 1):
+                _src = "🪝 webhook" if _t["source"] == "webhook" else "📧 new Gmail"
+                _lines.append(f"{_i}. {_src} — *{_t['name']}*\n   {_t['instruction'][:90]}\n   fired {_t['fires']}x · id `{_t['id'][:8]}`")
+                if _t.get("webhook_url"):
+                    _lines.append(f"   URL: {_base}{_t['webhook_url']}")
+            _lines.append("\nCancel: /trigger off <id> · Create: just describe it in chat")
+            await bot.send_message(chat_id, "\n".join(_lines))
+        return {"ok": True}
+
+    if _raw_text_early.startswith("/trigger off "):
+        from server.trigger_service import cancel_trigger
+        _tid = _raw_text_early.split("/trigger off ", 1)[1].strip()[:36]
+        _done = await cancel_trigger(str(tg_user_early.id), _tid)
+        await bot.send_message(chat_id, "✅ Trigger switched off." if _done else "I couldn't find that trigger — /triggers shows the list.")
+        return {"ok": True}
+
+    if _raw_text_early.startswith("/trigger "):
+        await bot.send_message(chat_id, "🪝 *Triggers — I act the moment something happens.*\n\n1. In chat: *when I get an email from boss@work.com, summarize it and message me*\n2. *when a new order comes in on my webhook, draft a thank-you email*\n\nSources: new Gmail, or a personal webhook URL any site can POST to. List: /triggers · Cancel: /trigger off <id>")
         return {"ok": True}
 
     if _raw_text_early.startswith("/briefing"):
@@ -11995,6 +12131,12 @@ Requirements:
         "audit my videos", "audit my", "not getting views", "not improving",
         "improve my videos", "improve my video", "why is my video", "why are my videos",
         "grow my views", "more views on my", "my worst videos", "underperforming videos",
+        # Event triggers ("when X happens, do Y"), user-side payments, knowledge RAG.
+        "when i get", "when i receive", "whenever i", "when a new", "when my",
+        "webhook", "trigger that", "automatically when",
+        "payment link", "invoice for", "create an invoice", "paystack",
+        "my files", "my documents", "my sheets", "search my drive", "my drive",
+        "knowledge sync", "index my", "read my docs",
     ])
 
     # Anti-hallucination gate: "read my latest email", "check my dms",
