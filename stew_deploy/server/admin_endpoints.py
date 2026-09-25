@@ -168,6 +168,16 @@ async def admin_observability(token: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/triggers")
+async def admin_triggers(token: str, user_id: str = ""):
+    """List event triggers per user (webhook URLs included) for HQ debugging."""
+    admin = _verify_admin(token)
+    from server.trigger_service import list_triggers
+    if not user_id:
+        return {"ok": True, "triggers": []}
+    items = await list_triggers(str(user_id))
+    return {"ok": True, "triggers": items}
+
 @router.get("/users")
 async def admin_list_users(token: str, page: int = 1, limit: int = 50, search: str = "", plan: str = "", status: str = "", db: AsyncSession = Depends(get_db)):
     admin = _verify_admin(token)
