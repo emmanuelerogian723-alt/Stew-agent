@@ -25,7 +25,8 @@ class FakeBot:
         mid = self._next_id
         self._next_id += 1
         self.sent.append((parse_mode, text))
-        return {"message_id": mid}
+        # Real Telegram Bot API shape: {"ok": true, "result": {"message_id": N, ...}}
+        return {"ok": True, "result": {"message_id": mid}}
 
     async def edit_message(self, chat_id, message_id, text, clear_keyboard=False, parse_mode=""):
         self.edits.append((parse_mode, text))
