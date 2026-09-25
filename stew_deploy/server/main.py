@@ -1179,6 +1179,26 @@ async def composio_mini_connections(request: Request):
         logger.error("Mini App connection listing failed: %s", exc)
         raise HTTPException(502, "Could not load app connections") from exc
 
+@app.post("/api/composio/catalog-demo", include_in_schema=False)
+async def composio_catalog_demo(request: Request):
+    """Public app catalog for visitors outside Telegram: names, slugs and
+    real Composio logos only. No user data, no connection states."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    from server.composio_service import list_connections
+    try:
+        return await list_connections(
+            "catalog_demo",
+            search=body.get("search"),
+            next_cursor=body.get("next_cursor"),
+            limit=int(body.get("limit", 50) or 50),
+        )
+    except Exception as exc:
+        logger.error("Demo catalog listing failed: %s", exc)
+        raise HTTPException(502, "Could not load the app catalog") from exc
+
 
 @app.post("/api/composio/connect", include_in_schema=False)
 async def composio_mini_connect(request: Request):
