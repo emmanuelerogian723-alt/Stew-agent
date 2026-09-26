@@ -596,8 +596,9 @@ async def _email_captured_confirm(chat_id: int, email: str, user_name: str) -> N
     try:
         await _tg_send_plain(chat_id,
             f"📧 Saved {email}! You're on the S.T.E.W update list, and your "
-            f"premium image bonus is active: +2 extra flagship-quality images "
-            f"daily. Reply with a different email anytime to change it.")
+            f"thank-you bonus is active: +2 extra flagship-quality images and "
+            f"+5 extra app actions every day. Reply with a different email "
+            f"anytime to change it.")
     except Exception:
         pass
 
@@ -607,8 +608,9 @@ async def _email_capture_ask(chat_id: int) -> None:
     try:
         await _tg_send_plain(chat_id,
             "💬 Quick one — what's your email? I'll send you S.T.E.W product "
-            "updates and unlock a thank-you bonus of +2 extra premium images "
-            "per day. Just reply with it whenever you like.")
+            "updates and unlock a thank-you bonus: +2 extra premium images "
+            "and +5 extra app actions every day. Just reply with it "
+            "whenever you like.")
     except Exception:
         pass
 

@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 # Connected-app caps per plan. Free = 7 (spec: "between 5 to 7" — we give 7).
 APP_LIMITS: Dict[str, int] = {
-    "free": 7,
-    "whatsapp": 7,
+    "free": 3,
+    "whatsapp": 3,
     "student": 15,
     "pro": 60,
     "business": 250,
@@ -33,8 +33,20 @@ APP_LIMITS: Dict[str, int] = {
 _EXPIRY_DAYS = {"student": 30, "pro": 30, "business": 30, "enterprise": 365}
 
 
+def get_plan_limits(plan: str) -> Dict[str, int]:
+    """Single source of truth for what each plan gets per day. Used by the
+    upgrade flow and the paywall walls so the numbers always match."""
+    plan = plan or "free"
+    return {
+        "plan": plan,
+        "apps": APP_LIMITS.get(plan, APP_LIMITS["free"]),
+        "images_per_day": HQ_IMAGE_DAILY.get(plan, 2),
+        "actions_per_day": CONNECTOR_ACTIONS_DAILY.get(plan, 5),
+    }
+
+
 def app_limit_for(plan: str) -> int:
-    return APP_LIMITS.get(plan or "free", 7)
+    return APP_LIMITS.get(plan or "free", 3)
 
 
 async def count_connected_apps(user_id: str) -> int:
@@ -90,9 +102,10 @@ async def check_connect_allowed(plan: str, user_id: str) -> Tuple[bool, int, int
     current = await count_connected_apps(user_id)
     if current >= limit:
         return (False, current, limit,
-                f"🔒 App limit reached ({current}/{limit} connected apps on your "
-                f"{plan.upper()} plan).\n\nDisconnect an app in the Mini App, or "
-                f"upgrade with /upgrade to connect more (Pro = 60 apps, Business = 250).")
+                f"🔒 Free plan connects up to {limit} apps — you're at {current}.\n\n"
+                f"Disconnect one in the Mini App to swap, or unlock the full stack:\n"
+                f"Student 15 apps · PRO 60 apps · Business 250 apps\n\n"
+                f"Send /upgrade — takes 30 seconds.")
     return (True, current, limit, "")
 
 
@@ -102,7 +115,7 @@ async def check_connect_allowed(plan: str, user_id: str) -> Tuple[bool, int, int
 # the owner/admin plan is unlimited.
 
 HQ_IMAGE_DAILY: Dict[str, int] = {
-    "free": 5,       # 5 flagship FLUX-2 images/day, then Pollinations fallback
+    "free": 2,       # 2 flagship FLUX-2 images/day, then Pollinations fallback
     "student": 20,
     "pro": 100,
     "business": 400,
@@ -111,7 +124,7 @@ HQ_IMAGE_DAILY: Dict[str, int] = {
 }
 
 CONNECTOR_ACTIONS_DAILY: Dict[str, int] = {
-    "free": 40,      # 40 connected-app actions/day (reads + writes)
+    "free": 5,       # 5 connected-app actions/day (reads + writes)
     "student": 150,
     "pro": 500,
     "business": 2000,
@@ -154,10 +167,11 @@ async def check_hq_image_quota(db, user) -> Tuple[bool, int, int, str]:
             return (True, used, limit, "")
         await db.commit()
         return (False, used, limit,
-                f"🎨 You've used your {limit} daily premium images on the "
-                f"{plan.upper()} plan — this one uses the free engine instead.\n\n"
-                f"Upgrade with /upgrade for up to 100/day premium quality "
-                f"(Pro) — first images look noticeably sharper, faster.")
+                f"🎨 Free premium-image limit reached — {used}/{limit} used today. "
+                f"This one uses the standard engine instead.\n\n"
+                f"PRO unlocks 100/day flagship-quality images. "
+                f"Send /upgrade — takes 30 seconds.\n\n"
+                f"🎁 Tip: reply in chat with your email for +2 extra every day.")
     except Exception as exc:
         logger.warning(f"hq image quota check failed: {exc}")
         return (True, 0, 0, "")  # fail open — never block on counter errors
@@ -180,17 +194,22 @@ async def check_connector_action_quota(db, user) -> Tuple[bool, int, int, str]:
         plan = getattr(user, "plan", "free") or "free"
         if plan == "owner":
             return (True, 0, 0, "")
-        limit = CONNECTOR_ACTIONS_DAILY.get(plan, 40)
+        limit = CONNECTOR_ACTIONS_DAILY.get(plan, 5)
+        # Thank-you bonus: users who shared their email get +5 daily actions
+        # (email capture powers product-update campaigns and retention).
+        if (getattr(user, "marketing_email", None) or "").strip():
+            limit += 5
         await _ensure_usage_window(user)
         used = int(getattr(user, "connector_actions_used", 0) or 0)
         if used < limit:
             return (True, used, limit, "")
         await db.commit()
         return (False, used, limit,
-                f"🔐 Daily connected-app limit reached ({used}/{limit} on "
-                f"{plan.upper()}).\n\nYour apps stay connected — upgrade "
-                f"with /upgrade to keep the actions flowing today "
-                f"(Pro = 500/day, Business = 2000/day).")
+                f"🔐 Free daily limit reached — {used}/{limit} app actions used today.\n\n"
+                f"Your apps stay connected and nothing was lost. Go unlimited:\n"
+                f"Student 150/day · PRO 500/day + 60 apps · Business 2000/day\n\n"
+                f"Send /upgrade to unlock it now — takes 30 seconds.\n\n"
+                f"🎁 Tip: reply in chat with your email for +5 free actions every day.")
     except Exception as exc:
         logger.warning(f"connector quota check failed: {exc}")
         return (True, 0, 0, "")
@@ -279,7 +298,7 @@ class LiveStatus:
         try:
             await self.bot.send_chat_action(self.chat_id, "typing")
             res = await self.bot.send_message(self.chat_id, f"{self.title}\n⠋ Starting…")
-            self.message_id = (res or {}).get("result", {}).get("message_id")
+            self.message_id = (res or {}).get("message_id")
         except Exception:
             self.message_id = None
         return self
