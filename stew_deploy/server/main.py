@@ -6550,6 +6550,45 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(chat_id, "I couldn't download the image. Please try again.")
                 return {"ok": True}
 
+            # ── Image recreation (premium img2img): upload + "make it beautiful" ──
+            _cap_l = " " + (caption or "").lower() + " "
+            _IMG2IMG_WORDS = (
+                "enhance", "beautify", "recreate", "reimag", "make it beautiful",
+                "beautiful touch", "stunning version", "upgrade this image",
+                "improve this image", "edit this image", "edit my image",
+                "make this beautiful", "make this stunning", "restore this",
+                "make this image look", "retouch", "glow up",
+            )
+            if any(w in _cap_l for w in _IMG2IMG_WORDS):
+                from server.paywall import check_hq_image_quota, bump_hq_image_usage
+                _hq_ok, _hq_used, _hq_limit, _hq_msg = await check_hq_image_quota(db, tg_user_early)
+                if not _hq_ok:
+                    await bot.send_message(chat_id, _hq_msg, parse_mode="")
+                    return {"ok": True}
+                await bot.send_chat_action(chat_id, "upload_photo")
+                await bot.send_message(chat_id, "✨ Recreating your image with a beautiful touch...")
+                try:
+                    from server.image_gen import generate_image_to_image as _i2i
+                    _out, _eng = await _i2i(caption or "Recreate this image with a beautiful touch", file_bytes)
+                    if _out:
+                        await bot.send_photo(chat_id, _out, caption=(
+                            "✨ Recreated with a beautiful touch · " + _eng + " premium engine" + chr(10) +
+                            "Reply 'again' with another style hint for a different take."))
+                        await bump_hq_image_usage(db, tg_user_early)
+                        return {"ok": True}
+                    logger.warning(f"img2img failed: {_eng}")
+                    await bot.send_message(
+                        chat_id,
+                        "The recreation engine hiccupped — I couldn't finish that one. "
+                        "Try again in a moment.", parse_mode="")
+                except Exception as _i2i_exc:
+                    logger.warning(f"img2img error: {_i2i_exc}")
+                    await bot.send_message(
+                        chat_id,
+                        "The recreation engine hiccupped — I couldn't finish that one. "
+                        "Try again in a moment.", parse_mode="")
+                # fall through to normal vision so the user still gets a response
+
             await bot.send_message(chat_id, "Looking at your image...")
             await bot.send_typing(chat_id)
 
