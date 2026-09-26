@@ -1264,7 +1264,7 @@ async def composio_mini_connect(request: Request):
     if not toolkit:
         raise HTTPException(400, "Choose an app to connect")
     from server.composio_service import connect_app
-    # Paywall v3: free users can connect at most 7 apps.
+    # Paywall v3.1: free users can connect at most 3 apps.
     # The connected-app COUNT (provider-based, fail-closed) is the real gate;
     # the plan lookup only raises the limit for paid users, so a DB hiccup must
     # default to "free" instead of bricking every connect with a 503.
