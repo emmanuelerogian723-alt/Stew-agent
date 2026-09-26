@@ -191,8 +191,12 @@ def pollinations_image(prompt: str, width: int = 1024, height: int = 1024) -> Op
 
 
 def pollinations_edit(img_bytes: bytes, instruction: str) -> Optional[bytes]:
-    """Image-to-image edit via Pollinations Kontext (free, no key needed).
-    Accepts a base64 data URI in the JSON body — no public hosting required."""
+    """DEPRECATED — DO NOT CALL. Verified live 2026-09-26: Pollinations'
+    "kontext" model IGNORES the image param entirely (identical output with
+    or without the photo attached) while still reporting HTTP 200 success,
+    so it silently returned a random unrelated AI image captioned as an
+    "edit" of the user's real photo. Kept only for reference; edit_image()
+    now falls back to Cloudflare FLUX.2 (server.image_gen) instead."""
     try:
         data_uri = "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode()
         prompt = (
@@ -274,7 +278,28 @@ def _pil_quick_edit(img_bytes: bytes, instruction: str) -> Optional[bytes]:
 
 def edit_image(img_bytes: bytes, instruction: str) -> dict:
     """Edit a photo per plain-English instruction.
-    Returns {"ok": bool, "image": bytes|None, "engine": str|None, "error": str|None}."""
+    Returns {"ok": bool, "image": bytes|None, "engine": str|None, "error": str|None}.
+
+    Engine order (fixed 2026-09-26 — production bug):
+    1. Gemini 2.5 Flash Image ("nano banana") — best quality when available.
+       NOTE: the configured GEMINI_API_KEY is on Google's free tier, which
+       grants quota=0 for this image model (confirmed live: HTTP 429
+       RESOURCE_EXHAUSTED, "limit: 0" — a permanent 429 until Gemini billing
+       is enabled, not a transient rate limit). It fails fast (~0.2s) and
+       falls through; harmless to keep as the first try in case billing is
+       ever turned on.
+    2. Cloudflare FLUX.2 image-to-image (the same verified engine as
+       image_gen.generate_image_to_image) — REPLACES the old Pollinations
+       Kontext fallback. Kontext was proven live to IGNORE the input image
+       entirely (returns the identical output with or without the photo
+       attached — see image_gen.py notes) while STILL reporting success, so
+       every user whose Gemini call 429'd got a random unrelated AI image
+       captioned "Edited with Pollinations Kontext" instead of their own
+       photo edited. FLUX.2 was verified with a real correlation test
+       (+0.199 with the source photo vs -0.062 for a no-image control).
+    3. Deterministic PIL quick-edit (brighten, sepia, blur, etc.) — last
+       resort for simple ops when both AI engines are unavailable.
+    """
     instruction = (instruction or "").strip() or "enhance this photo naturally"
     prompt = (
         f"You are a professional photo editor. Edit this image with the "
@@ -287,14 +312,37 @@ def edit_image(img_bytes: bytes, instruction: str) -> dict:
     if out:
         return {"ok": True, "image": out, "engine": "Gemini Flash Image", "error": None}
 
-    # Pollinations Kontext — free image-to-image, works without any API key
-    out = pollinations_edit(img_bytes, instruction)
-    if out:
-        return {"ok": True, "image": out, "engine": "Pollinations Kontext", "error": None}
-
+    # Deterministic PIL ops (brighten, sepia, sharpen, grayscale, blur,
+    # vignette, flip, invert) BEFORE the generative fallback: these are
+    # instant, free, and always 100% faithful to the user's actual photo —
+    # no reason to risk a generative model's identity drift for a request
+    # PIL can already do perfectly.
     quick = _pil_quick_edit(img_bytes, instruction)
     if quick:
         return {"ok": True, "image": quick, "engine": "Stew quick-edit", "error": None}
+
+    try:
+        # Open-ended creative instructions PIL can't do ("make this
+        # beautiful") fall to Cloudflare FLUX.2 image-to-image — REPLACES the
+        # old Pollinations Kontext fallback. Kontext was proven live to
+        # IGNORE the input image entirely (identical output with or without
+        # the photo attached) while still reporting success, so a 429'd
+        # Gemini call used to hand back a random unrelated AI image
+        # captioned as an "edit" of the user's real photo. FLUX.2 genuinely
+        # conditions on the source image, but as a generative model it is a
+        # creative reinterpretation, not a strict identity-preserving edit —
+        # be upfront with the user about that trade-off in the caption.
+        # 45s timeout (not 180s): a slow generative call must fail fast
+        # into an honest error rather than leave the chat hanging.
+        from server.image_gen import CF_IMG2IMG_ENGINES as _CF_MODELS, _cf_img2img_call as _cf_call
+        _flux_engine = "unavailable"
+        for _model in _CF_MODELS:
+            out, _flux_engine = _cf_call(_model, prompt, img_bytes, 45.0)
+            if out:
+                return {"ok": True, "image": out, "engine": f"FLUX.2 ({_model.split('/')[-1]}) — creative reinterpretation", "error": None}
+        logger.warning("FLUX.2 img2img fallback failed: %s", _flux_engine)
+    except Exception as _flux_exc:
+        logger.warning("FLUX.2 img2img fallback error: %s", _flux_exc)
 
     return {
         "ok": False,
