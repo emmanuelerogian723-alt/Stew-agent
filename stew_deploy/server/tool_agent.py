@@ -28,21 +28,9 @@ Tools available:
   20. prepare_social_video(video_url) — Add burned captions and create a public posting URL
   21. mcp_search_tools(query)         — Discover tools on the user's own connected MCP servers
   22. mcp_execute(server_id, tool_name, arguments) — Run a discovered MCP tool
-  23. schedule_check_in(kind, when, message, recurring, interval_seconds, goal_id) — Schedule Stew to reach out FIRST (agent-initiated check-in): a live goal-progress digest, a daily personal briefing, or a custom follow-up on any topic. when = ISO datetime or +90m style.
-  24. get_user_media() — Fetch the LAST file (video/document/photo) the user sent in chat. Returns its public URL, filename, kind and size. Use it when the user references "this video/document/photo" they just sent (post it to social, email it, edit it).
-  25. search_web_images(query, count) — Search the REAL internet for images matching a query, download them, and deliver them to the user in chat. Use for "get me images of X", "find me pictures of Y", "download images of Z".
-  26. audit_my_videos(platform) — Thoroughly audit the user's connected social account (youtube/instagram/tiktok): pull their videos and real view/engagement stats, rank the underperformers, and return concrete improvement advice to grow views.
-  27. create_trigger(source, name, instruction, config) — Create an event-driven automation: when source fires (source="gmail": new email, optional config {"from": "...", "subject": "..."}; source="webhook": any service POSTs JSON to the user's personal webhook URL), the instruction runs automatically with the event payload. The instruction must describe what to DO each time.
-  28. search_knowledge(query) — Retrieve the user's indexed Google Drive/Sheets files (RAG). Use when the user asks about "my files", "my documents", "my sheets", "what did I write about X".
-  29. sync_knowledge(source) — Index the user's connected Google Drive ("gdrive") or Google Sheets ("gsheets") files so search_knowledge can answer over them.
-  30. create_invoice(email, amount_ngn, description) — Create a real payment link on the USER'S OWN Paystack account (their customers pay THEM). Requires they first set their key with /setpaystack.
-  31. check_payment(reference) — Verify a Paystack payment on the user's own account.
-  32. my_transactions() — List the user's recent Paystack transactions.
 """
 import json
 import re
-import time
-import os
 import asyncio
 import logging
 from typing import Optional
@@ -124,14 +112,6 @@ Rules:
 18f. Never claim an app is connected from memory or from the user's wording. Always call composio_list_connections and rely on connection.is_active before saying it is connected.
 18i. COMPLETION PIPELINE: composio_search_tools may auto-execute exactly one safe read-only action. If its TOOL_RESULT includes auto_executed.success=true, summarize THAT result and do not execute it twice. Otherwise search only discovered the action; call composio_execute with the exact discovered slug and required schema arguments (or composio_connect if disconnected). NEVER say you fetched, read, sent, posted, uploaded, or created anything unless a successful provider TOOL_RESULT confirms it. The same rule covers mcp_execute: never claim an MCP tool ran, or report data from it, unless a real successful mcp_execute TOOL_RESULT confirms it.
 18j. SOCIAL MANAGER: A broad, vague request to "manage" social accounts is not authorization to invent WHAT to publish — inspect connected account(s) and recent content/analytics first, and ask for missing brand voice, audience, goal, topic, or media only when genuinely undetermined. But once the user gives a concrete instruction ("post this", "reply to this comment", "upload this video"), execute it immediately via composio_execute — do not add an extra "prepare and ask for approval" step of your own on top of the platform's; that step no longer exists for regular writes. Always report the actual provider result or log ID. Never claim cross-posting, scheduling, analytics, or publishing succeeded from a plan alone — only from a real TOOL_RESULT.
-18k. PROACTIVE CHECK-INS: If the user says anything like "check on me", "follow up with me", "check on my goal tomorrow", "ping me Friday about X", "give me a daily briefing" — schedule_check_in. kinds: goal (progress digest; pass goal_id if known), briefing (daily For-You digest; recurring=True, interval_seconds=86400, when=07:30 local), custom (any topic; put the topic in message). when can be ISO datetime or +90m relative. One check-in per request unless the user asks for recurring. Confirm to the user in one line when it fires. /checkins lists them, /checkin cancel <id> stops one.
-18l. USER-SENT MEDIA (video/document/photo): When the user sends a file with an instruction ("post this video to my YouTube", "upload this to TikTok/Instagram with title X and hashtags Y", "email this document to name@x.com"), the goal text will contain [USER_MEDIA: ...] with the hosted public URL. Flow: discover the platform's upload/post action with composio_search_tools (e.g. "youtube upload video", "tiktok post video", "instagram create media"), then composio_execute with the user's exact title, description and hashtags from their message. Public posting pauses for the Approve/Cancel button — that is expected; never post without it. For email requests use the gmail send action, putting the hosted URL in the attachment/body so the recipient can download the document.
-18m. REAL INTERNET IMAGES: For "get/download images of X", call search_web_images, then deliver every downloaded image to the user and briefly list sources. Never fabricate an image URL. If nothing is found, say so and offer AI-generated images instead.
-18n. SOCIAL VIDEO AUDIT: For "which of my videos are not improving / how do I get more views", call audit_my_videos with the platform the user names (default: their connected video platform). Summarize the ranked underperformers with their REAL numbers and give specific, actionable fixes (hook length, title/keyword, posting time, captions, format) referencing each video's actual stats. Never invent stats — only report numbers returned by the tool.
-18o. EVENT TRIGGERS (Business Autopilot): When the user says "when <event>, do <thing>" (e.g. "when I get an email from boss@x.com, summarize it and ping me", "when my form gets a submission, draft a reply"), call create_trigger with source ("gmail" for email events, "webhook" for form/app events — the tool returns their personal webhook URL to share), a short name, and a complete instruction describing the recurring action. Confirm the setup in one line and tell them /triggers lists them, /trigger off <id> cancels.
-18p. BROWSING: When the user asks to read/open a specific web page, portal, or dashboard, call browse_url with the URL and a short what_to_find (e.g. "the registration deadline"). Summarize what the page ACTUALLY says — never invent content.
-18q. USER KNOWLEDGE (Drive/Sheets RAG): For questions about the user's own files/docs/sheets, call search_knowledge. If nothing is indexed, tell them to connect Google Drive/Sheets in the Apps tab, then run /knowledge sync, and answer from general knowledge meanwhile.
-18r. USER PAYSTACK: For "create an invoice for X for N5,000", "send a payment link to x@y.com for 20000", call create_invoice (amount_ngn in NAIRA) and give them the payment link. If no key is set, tell them to run /setpaystack with their Paystack secret key (paystack.com → Settings → API Keys). check_payment verifies a reference; my_transactions lists recent payments.
 18g. For generated media that must be posted18f2. VIDEO GENERATION WITH CONNECTED APPS: If the user asks for AI video generation through a connected creative app (e.g. Higgsfield), search composio for that app's create/generate video action, execute it with the user's prompt, and include the returned video URL as a bare URL in your final response so the video is delivered to the user in chat. If the app is not connected, return the /connect link for it.
 18g. For generated media that must be posted, first generate the image and use its returned public_url. For a public video URL that needs captions, call prepare_social_video first and use its public_url. Then discover the exact social posting schema with composio_search_tools and call composio_execute with it right away — posting a non-destructive write executes immediately once the user has asked for it.
 18h. Read-only app actions and regular writes (send, reply, post, publish, create, update, upload, payment, booking) execute immediately once explicitly requested — call composio_execute right after composio_search_tools discovers the slug, in the SAME turn, without waiting for another user message. Only a permanent delete/remove is intercepted by STEW's approval gateway; for that one case, clearly show the prepared action and ask the user to reply APPROVE or CANCEL. Never claim anything ran without a successful TOOL_RESULT confirming it.
@@ -274,22 +254,18 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         }
 
     elif tool == "browse_url":
-        url = str(args.get("url", "")).strip()
-        what = str(args.get("what_to_find") or "the main content").strip()
-        if not url or not url.startswith("http"):
-            return {"tool": tool, "success": False, "error": "A full http(s) URL is required, e.g. {'url': 'https://jamb.gov.ng', 'what_to_find': 'registration deadline'}."}
-        from server.browser import get_browser
-        try:
-            result = await get_browser().fetch(url[:500], timeout=25)
-        except Exception as exc:
-            return {"tool": tool, "success": False, "error": f"could not open {url}: {exc}"}
-        content = str(result.get("content", ""))[:8000]
+        url = args.get("url", "")
+        if not url:
+            return {"error": "No URL provided"}
+        from server.browser import StewBrowser
+        browser = StewBrowser()
+        result = await browser.fetch(url)
+        content = result.get("content", "")[:8000]
         title = result.get("title", "Unknown")
         return {
             "tool": tool,
             "success": bool(content),
-            "output": (f"Title: {title}\nURL: {url}\nFocus on: {what}.\n"
-                       "Summarize the REAL page content below; never invent what isn't there.\n\n" + content),
+            "output": f"Title: {title}\nURL: {url}\n\n{content}",
         }
 
     elif tool == "generate_document":
@@ -883,20 +859,6 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
             logger.warning("Composio execution failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"Connected-app action failed: {exc}"}
 
-    elif tool == "mcp_list_servers":
-        from server.mcp_service import list_servers
-        try:
-            servers = await list_servers(tg_user_id or chat_id)
-            if not servers:
-                return {"tool": tool, "success": True, "output": "No MCP servers connected yet. The user can add one in the Mini App's MCP tab with any remote MCP server URL.",
-                        "data": {"servers": []}}
-            return {"tool": tool, "success": True,
-                    "output": json.dumps(servers, ensure_ascii=False, default=str)[:20000],
-                    "data": {"servers": servers}}
-        except Exception as exc:
-            logger.warning("MCP server listing failed: %s", exc)
-            return {"tool": tool, "success": False, "error": f"Could not list MCP servers: {exc}"}
-
     elif tool == "mcp_search_tools":
         from server.mcp_service import search_tools as _mcp_search
         query = args.get("query", "")
@@ -948,221 +910,6 @@ async def execute_tool(call: dict, bot=None, chat_id=None, tg_user_id=None) -> d
         except Exception as exc:
             logger.warning("MCP execution failed: %s", exc)
             return {"tool": tool, "success": False, "error": f"MCP tool execution failed: {exc}"}
-
-    elif tool == "schedule_check_in":
-        from server.checkin_service import schedule_check_in
-        kind = str(args.get("kind", "custom")).strip().lower()
-        if kind not in ("custom", "goal", "briefing"):
-            kind = "custom"
-        when = args.get("when") or args.get("time")
-        in_minutes = args.get("in_minutes")
-        if not when and in_minutes is None:
-            return {"tool": tool, "success": False,
-                    "error": "Pass when (ISO datetime like 2026-09-25T17:30:00 or +90m) or in_minutes."}
-        try:
-            rec = await schedule_check_in(
-                tg_user_id or chat_id, str(chat_id), kind,
-                str(args.get("message", "") or args.get("topic", "") or ""),
-                when=when, in_minutes=in_minutes,
-                recurring=bool(args.get("recurring", False)),
-                interval_seconds=args.get("interval_seconds"),
-                goal_id=args.get("goal_id"))
-        except ValueError as exc:
-            return {"tool": tool, "success": False, "error": str(exc)}
-        except Exception as exc:
-            logger.warning("schedule_check_in failed: %s", exc)
-            return {"tool": tool, "success": False, "error": f"Could not schedule the check-in: {exc}"}
-        due = rec.get("due_at", "")
-        _lbl = {"goal": "🎯 goal digest", "briefing": "📰 daily briefing", "custom": "🧭 check-in"}[kind]
-        _msg = (f"✅ Scheduled — I'll reach out first with your {_lbl}"
-                + (f" around {due[:16].replace('T', ' ')} UTC." if due else ".")
-                + (" It repeats until you cancel (/checkin cancel <id>)." if args.get("recurring") else ""))
-        return {"tool": tool, "success": True, "output": _msg, "data": rec}
-
-    elif tool == "get_user_media":
-        from server.user_media import get_media, host_media
-        key = f"tg:{chat_id}"
-        meta = get_media(key)
-        if not meta:
-            return {"tool": tool, "success": False,
-                    "output": "The user hasn't sent a file recently (or it expired after 45 minutes). Ask them to send the video/document/photo again with their instruction."}
-        import os as _os
-        size = 0
-        try:
-            size = _os.path.getsize(meta["path"])
-        except Exception:
-            pass
-        url, _ = await host_media(key)
-        if not url:
-            return {"tool": tool, "success": False,
-                    "error": "Could not host the user's file publicly right now (storage unavailable). Ask them to retry in a minute."}
-        return {"tool": tool, "success": True,
-                "output": (f"User's last file: {meta['filename']} ({meta['kind']}, {size/1024/1024:.1f} MB). "
-                           f"Public URL for upload/email actions: {url}"),
-                "data": {"url": url, "filename": meta["filename"], "kind": meta["kind"], "size_bytes": size}}
-
-    elif tool == "search_web_images":
-        from server import web_images as _wi
-        query = str(args.get("query", "")).strip()
-        count = int(args.get("count", 4) or 4)
-        if not query:
-            return {"tool": tool, "success": False, "error": "A search query is required, e.g. {'query': 'solar panels on African rooftops'}."}
-        hits = _wi.search_images(query, count)
-        if not hits:
-            return {"tool": tool, "success": False,
-                    "output": f"No images found on the open web for '{query}'. Tell the user, and offer to generate images with AI instead."}
-        import base64 as _b64img
-        files, srcs, failed = [], [], 0
-        for h in hits:
-            raw = _wi.download_image(h["url"])
-            if not raw:
-                failed += 1
-                continue
-            ext = _wi.guess_ext(h["url"], raw)
-            files.append({"base64": _b64img.b64encode(raw).decode(),
-                          "filename": f"{query.replace(' ', '_')[:30]}_{len(files)+1}.{ext}",
-                          "mime_type": f"image/{'jpeg' if ext=='jpg' else ext}"})
-            srcs.append({"url": h["url"], "title": h.get("title", ""), "source": h.get("source", "")})
-        if not files:
-            return {"tool": tool, "success": False,
-                    "output": f"Found {len(hits)} image(s) for '{query}' but none could be downloaded. Offer AI-generated images instead."}
-        return {"tool": tool, "success": True,
-                "output": (f"Downloaded {len(files)} image(s) for '{query}' from the open web"
-                           + (f" ({failed} failed to download)" if failed else "")
-                           + ". Deliver them to the user in chat and list the source links. SOURCES:\n"
-                           + "\n".join(f"- {s['title'] or 'image'} — {s['url']}" for s in srcs)),
-                "files": files, "data": {"sources": srcs, "query": query}}
-
-    elif tool == "audit_my_videos":
-        from server.composio_service import search_tools as _csearch, execute_action as _cexec
-        platform = str(args.get("platform", "") or "").strip().lower()
-        if platform not in ("youtube", "instagram", "tiktok", "facebook"):
-            platform = "youtube"
-        _gate = await _connector_quota_gate(tg_user_id, chat_id)
-        if _gate is not None:
-            return {"tool": tool, "success": False, "error": _gate["error"], "output": _gate["output"]}
-        try:
-            found = await _csearch(tg_user_id or chat_id, f"{platform} list my videos with view statistics and engagement")
-        except Exception as exc:
-            return {"tool": tool, "success": False, "error": f"Could not search {platform} tools: {exc}"}
-        results = found.get("results") or []
-        primary = (results[0].get("primary_tool_slugs") or [None])[0] if results else None
-        toolkit = (results[0].get("toolkits") or [None])[0] if results else None
-        statuses = found.get("toolkit_connection_statuses") or []
-        st = next((x for x in statuses if isinstance(x, dict) and x.get("toolkit") == toolkit), None)
-        if not (primary and st and st.get("has_active_connection")):
-            return {"tool": tool, "success": False,
-                    "output": f"{platform.capitalize()} isn't connected yet, or no video-listing action was found. Tell the user to connect it first (/connect {platform}), then ask again."}
-        try:
-            data = await _cexec(tg_user_id or chat_id, primary, {})
-        except Exception as exc:
-            return {"tool": tool, "success": False, "error": f"{platform.capitalize()} audit failed: {exc}"}
-        await _connector_quota_bump(tg_user_id, chat_id)
-        import json as _json_audit
-        blob = _json_audit.dumps(data, ensure_ascii=False, default=str)[:25000]
-        from server.llm_client import get_llm_client
-        _audit_prompt = (
-            "You are a social media growth strategist. Below are the REAL stats pulled from the user's "
-            f"connected {platform} account. Rank the underperforming videos (worst views/engagement first), "
-            "and for EACH underperformer give 3-5 concrete, specific fixes (hook in first 3s, title keywords, "
-            "posting time, captions, format, call-to-action, topic angle). Reference each video's actual "
-            "numbers. End with 3 account-level growth actions. Only use the numbers in the data.\n\nDATA:\n" + blob)
-        try:
-            analysis = get_llm_client().chat(
-                [{"role": "user", "content": _audit_prompt}], max_tokens=1600)
-        except Exception as exc:
-            analysis = f"(LLM analysis unavailable: {exc})\n\nRAW STATS:\n{blob[:6000]}"
-        return {"tool": tool, "success": True,
-                "output": (f"{platform.capitalize()} video audit complete. Here is the ranked underperformer "
-                           f"analysis and growth plan — present it to the user, video by video, with their real numbers:\n\n{analysis}"),
-                "data": {"platform": platform, "raw": data, "analysis": analysis}}
-
-    elif tool == "create_trigger":
-        from server.trigger_service import create_trigger, create_trigger as _ct
-        source = str(args.get("source", "webhook")).lower().strip()
-        name = str(args.get("name") or "").strip() or "My trigger"
-        instruction = str(args.get("instruction") or args.get("do") or "").strip()
-        config = args.get("config") or {}
-        if not instruction:
-            return {"tool": tool, "success": False,
-                    "error": "An instruction is required, e.g. {'source': 'gmail', 'instruction': 'summarize the email and message me'}."}
-        if source not in ("webhook", "gmail", "email"):
-            return {"tool": tool, "success": False, "error": "source must be 'webhook' or 'gmail'."}
-        try:
-            rec = await create_trigger(tg_user_id or chat_id, chat_id, name,
-                                       "gmail" if source in ("gmail", "email") else "webhook",
-                                       instruction, config if isinstance(config, dict) else {})
-        except ValueError as ve:
-            return {"tool": tool, "success": False, "output": str(ve)}
-        except Exception as exc:
-            return {"tool": tool, "success": False, "error": f"could not create trigger: {exc}"}
-        out = (f"✅ Trigger '{rec['name']}' is LIVE ({'new Gmail' if rec['source']=='gmail' else 'webhook'} → your instruction).\n"
-               f"It fires automatically and runs: {instruction[:200]}\n"
-               f"Manage: /triggers (list), /trigger off {rec['id'][:8]}")
-        if rec.get("webhook_token"):
-            _base = os.environ.get("APP_BASE_URL", "https://stew-agent.onrender.com").rstrip("/")
-            out += (f"\nPersonal webhook URL (point any form/service at it, POST JSON):\n"
-                    f"{_base}/api/triggers/hook/{rec['webhook_token']}")
-        return {"tool": tool, "success": True, "output": out, "data": rec}
-
-    elif tool == "sync_knowledge":
-        from server.knowledge_service import sync_knowledge as _ks
-        source = str(args.get("source") or "gdrive").lower().strip()
-        if source not in ("gdrive", "drive", "gsheets", "sheets"):
-            source = "gsheets" if "sheet" in source else "gdrive"
-        res = await _ks(tg_user_id or chat_id, source)
-        return {"tool": tool, "success": bool(res.get("ok")),
-                "output": res.get("note") or res.get("error"),
-                "data": res}
-
-    elif tool == "search_knowledge":
-        from server.knowledge_service import search_knowledge as _sk
-        query = str(args.get("query") or "").strip()
-        res = await _sk(tg_user_id or chat_id, query, int(args.get("top_k", 4) or 4))
-        if not res.get("ok"):
-            return {"tool": tool, "success": False, "output": res.get("error")}
-        hits = res.get("hits") or []
-        if not hits:
-            return {"tool": tool, "success": True,
-                    "output": res.get("note") or "No match in the indexed files."}
-        blocks = [f"From '{h['title']}' ({h['source']}):\n{h['text']}" for h in hits]
-        return {"tool": tool, "success": True,
-                "output": "Retrieved from the user's indexed files. Answer using ONLY this content where it applies, and cite which file each fact came from.\n\n" + "\n\n".join(blocks)}
-
-    elif tool == "create_invoice":
-        from server.paystack_connector import create_invoice as _ci
-        res = await _ci(tg_user_id or chat_id, str(args.get("email") or ""),
-                       float(args.get("amount_ngn") or 0), str(args.get("description") or ""))
-        if not res.get("ok"):
-            return {"tool": tool, "success": False, "output": res.get("error")}
-        return {"tool": tool, "success": True,
-                "output": (f"Payment link created on the USER'S OWN Paystack account:\n{res['payment_link']}\n"
-                           f"Amount: ₦{res['amount_ngn']:,.0f} · Reference: {res['reference']}\n"
-                           f"{res['note']} — give the user the link to share with their customer."),
-                "data": res}
-
-    elif tool == "check_payment":
-        from server.paystack_connector import check_payment as _cp
-        reference = str(args.get("reference") or "").strip()
-        if not reference:
-            return {"tool": tool, "success": False, "error": "A payment reference is required."}
-        res = await _cp(tg_user_id or chat_id, reference)
-        return {"tool": tool, "success": bool(res.get("ok")),
-                "output": (f"Payment status: {res.get('status')} · ₦{res.get('amount_ngn') or 0:,.0f} · "
-                           f"customer {res.get('customer') or 'n/a'} · paid at {res.get('paid_at') or 'not yet'}"),
-                "data": res}
-
-    elif tool == "my_transactions":
-        from server.paystack_connector import my_transactions as _mt
-        res = await _mt(tg_user_id or chat_id)
-        if not res.get("ok"):
-            return {"tool": tool, "success": False, "output": res.get("error")}
-        rows = res.get("transactions") or []
-        if not rows:
-            return {"tool": tool, "success": True, "output": "No transactions found on their Paystack account yet."}
-        lines = [f"{r['status']} · ₦{r['amount_ngn']:,.0f} · {r['email'] or 'n/a'} · {r['paid_at'] or 'pending'}" for r in rows]
-        return {"tool": tool, "success": True,
-                "output": "Their recent Paystack transactions (newest first):\n" + "\n".join(lines)}
 
     elif tool == "run_shell":
         command = args.get("command", "")
@@ -1273,10 +1020,8 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
                 if auto.get('log_id'):
                     receipt += ' (log ' + str(auto['log_id'])[:80] + ')'
                 receipts.append(receipt)
-        if receipts and not (text or '').strip():
-            # Only used when the model's own wrap-up text is empty — the
-            # real answer should always win over a technical receipt line.
-            text = 'Read completed (' + ', '.join(receipts[:2]) + ').'
+        if receipts:
+            text = (text or 'Read completed.') + '\n\nVerified app action: ' + ', '.join(receipts[:3])
     elif 'composio_search_tools' in tools_run and 'composio_execute' not in tools_run and 'composio_connect' not in tools_run:
         # The model discovered the right action but never executed it — yet
         # models in this situation routinely write "Done! I've fetched your
@@ -1304,8 +1049,8 @@ def _verified_app_response(text: str, history: list[dict]) -> str:
             if result.get('log_id'):
                 name += ' (log ' + str(result['log_id'])[:80] + ')'
             receipts.append(name)
-        if receipts and not (text or '').strip():
-            text = 'Action completed (' + ', '.join(receipts[:2]) + ').'
+        if receipts:
+            text = (text or 'Action completed.') + '\n\nVerified app action: ' + ', '.join(receipts[:3])
     return text
 
 
@@ -1382,140 +1127,83 @@ async def _connector_quota_bump(tg_user_id, chat_id) -> None:
                 await bump_connector_action_usage(_bdb, _bu)
     except Exception as _b_exc:
         logger.debug("quota bump skipped: %s", _b_exc)
-# ─────────────────────────────────────────────────────────────────────────
-# Live Execution Streaming — helpers that turn a tool call into something a
-# user can actually watch happen: an icon+name+action label (_tool_display),
-# real evidence extracted from what the tool actually returned rather than
-# a bare "Working…" (_tool_evidence), and varied "thinking" labels so
-# planning never looks like a frozen spinner (_thinking_label). Feeds
-# server.live_motion.LiveActivityStream via progress_cb.
-# ─────────────────────────────────────────────────────────────────────────
-
-_APP_ICONS = {
-    "gmail": "📧", "google_calendar": "📅", "googlecalendar": "📅",
-    "google_drive": "📁", "googledrive": "📁", "google_sheets": "📊",
-    "google_docs": "📄", "googledocs": "📄", "slack": "💬", "notion": "📝",
-    "github": "🐙", "linear": "📐", "trello": "🗂️", "asana": "✅",
-    "dropbox": "📦", "hubspot": "🧡", "salesforce": "☁️", "linkedin": "💼",
-    "youtube": "▶️", "facebook": "📘", "twitter": "🐦", "x": "🐦",
-    "instagram": "📸", "pinterest": "📌", "reddit": "👽", "discord": "🎮",
-    "shopify": "🛍️", "stripe": "💳", "airtable": "🗄️", "twitch": "🎥",
-    "whatsapp": "🟢", "whatsapp_business": "🟢", "wordpress": "📰",
-    "medium": "✍️", "google_ads": "📣", "googleads": "📣",
-    "google_analytics": "📈", "googleanalytics": "📈", "canva": "🎨",
-    "zoom": "🎦", "calendly": "🗓️", "mailchimp": "🐵", "monday": "🧩",
-    "jira": "🧵", "clickup": "🧩",
-}
-
-_THINKING_LABELS = [
-    "Planning execution…", "Finding the best strategy…",
-    "Checking available connectors…", "Selecting the right tool…",
-    "Choosing the fastest workflow…", "Reviewing what's been found…",
-    "Deciding the next step…", "Optimizing the approach…",
-]
 
 
-def _icon_for_app(name) -> str:
-    key = str(name or "").strip().lower().replace(" ", "_").replace("-", "_")
-    return _APP_ICONS.get(key, "🔌")
+async def _llm_generate(messages: list, llm, stream_cb=None) -> dict:
+    """Run one agent-loop LLM turn. With stream_cb attached, generation is
+    REAL token streaming: deltas are bridged from a worker thread into the
+    event loop and pushed to stream_cb (the Telegram live-reply editor) as
+    they arrive.
 
+    Tool-vs-final decision, made live during the stream: the agent protocol
+    says a tool request is exactly one TOOL_CALL line. So while buffering:
+      - if 'TOOL_CALL' appears in the head of the text, this turn is a tool
+        request — nothing is shown to the user, streaming stays silent;
+      - once 48 chars accumulate without TOOL_CALL, the turn is a final
+        answer and its text is streamed to the user live (throttled).
+    Returns the same dict shape llm.chat() returns, so the loop is otherwise
+    unchanged.
+    """
+    if stream_cb is None:
+        return await asyncio.to_thread(llm.chat, messages)
 
-def _thinking_label(iteration: int, tools_used: set) -> str:
-    if iteration <= 1:
-        return "Planning execution…"
-    if not tools_used:
-        return _THINKING_LABELS[(iteration - 1) % len(_THINKING_LABELS)]
-    return _THINKING_LABELS[(iteration + len(tools_used)) % len(_THINKING_LABELS)]
+    import time as _time
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue()
+    meta: dict = {}
 
+    def _worker():
+        try:
+            for delta in llm.chat_stream(messages, meta=meta):
+                loop.call_soon_threadsafe(q.put_nowait, ("d", delta))
+            loop.call_soon_threadsafe(q.put_nowait, ("e", None))
+        except Exception as e:
+            loop.call_soon_threadsafe(q.put_nowait, ("x", str(e)))
 
-def _tool_display(tool: str, args: dict) -> dict:
-    """Icon + friendly name + a human action label for the live tool card.
-    Returns {"icon", "name", "label", "connector", "app"}."""
-    args = args or {}
-    if tool == "composio_execute":
-        app = args.get("toolkit") or args.get("app") or args.get("slug") or "Connected App"
-        action = str(args.get("action") or args.get("tool_slug") or "action").replace("_", " ").title()
-        return {"icon": _icon_for_app(app), "name": str(app).replace("_", " ").title(),
-                "label": f"Running {action}…", "connector": True, "app": app}
-    if tool == "composio_search_tools":
-        return {"icon": "🔎", "name": "Connected Apps", "label": "Searching available tools…",
-                "connector": True, "app": None}
-    if tool == "composio_connect":
-        app = args.get("app") or args.get("toolkit") or "app"
-        return {"icon": _icon_for_app(app), "name": str(app).replace("_", " ").title(),
-                "label": "Connecting…", "connector": True, "app": app}
-    if tool == "mcp_execute":
-        return {"icon": "🧩", "name": args.get("server_id") or "MCP Server",
-                "label": f"Running {args.get('tool_name', 'tool')}…", "connector": True,
-                "app": args.get("server_id")}
-    if tool in ("mcp_search_tools", "mcp_list_servers"):
-        return {"icon": "🧩", "name": "MCP", "label": "Checking connected MCP servers…",
-                "connector": True, "app": None}
-    if tool == "web_search":
-        q = str(args.get("query", ""))[:40]
-        return {"icon": "🔍", "name": "Web Search", "label": f'Searching "{q}"…' if q else "Searching the web…",
-                "connector": False, "app": None}
-    if tool == "browse_url":
-        return {"icon": "🌐", "name": "Browser", "label": "Reading a page…", "connector": False, "app": None}
-    if tool == "run_python_code":
-        return {"icon": "🧮", "name": "Python", "label": "Crunching the numbers…", "connector": False, "app": None}
-    if tool == "run_terminal_code":
-        return {"icon": "💻", "name": "Terminal", "label": "Running code…", "connector": False, "app": None}
-    if tool == "generate_document":
-        return {"icon": "📄", "name": "Document Studio", "label": "Writing your document…", "connector": False, "app": None}
-    if tool == "generate_image":
-        return {"icon": "🎨", "name": "Image Studio", "label": "Creating an image…", "connector": False, "app": None}
-    if tool == "generate_qr_code":
-        return {"icon": "🔳", "name": "QR Code", "label": "Generating your QR code…", "connector": False, "app": None}
-    if tool == "build_website":
-        return {"icon": "🏗️", "name": "Website Builder", "label": "Building your website…", "connector": False, "app": None}
-    if tool == "schedule_check_in":
-        return {"icon": "⏰", "name": "Check-in", "label": "Scheduling a follow-up…", "connector": False, "app": None}
-    if tool in ("prepare_social_video", "smart_clips"):
-        return {"icon": "🎬", "name": "Video Studio", "label": "Preparing your video…", "connector": False, "app": None}
-    if tool in ("get_crypto_price", "get_stock_price", "get_exchange_rate"):
-        return {"icon": "📈", "name": "Market Data", "label": "Fetching live prices…", "connector": False, "app": None}
-    if tool == "get_weather":
-        return {"icon": "🌤️", "name": "Weather", "label": "Checking the forecast…", "connector": False, "app": None}
-    if tool == "wikipedia_search":
-        return {"icon": "📚", "name": "Wikipedia", "label": "Looking up facts…", "connector": False, "app": None}
-    if tool == "ocr_image":
-        return {"icon": "🖼️", "name": "OCR", "label": "Reading the image…", "connector": False, "app": None}
-    return {"icon": "⚙️", "name": tool.replace("_", " ").title(), "label": "Working…", "connector": False, "app": None}
+    import threading as _threading
+    _threading.Thread(target=_worker, daemon=True).start()
 
-
-def _tool_evidence(tool: str, args: dict, result: dict) -> tuple:
-    """Best-effort real evidence string from a completed tool result —
-    never a bare 'Working…'. Returns (evidence_text, ok_bool)."""
-    result = result or {}
-    ok = bool(result.get("success", True))
-    if not ok:
-        return str(result.get("error") or "Ran into an issue")[:110], False
-
-    data = result.get("data")
-    if isinstance(data, dict):
-        if data.get("approval_required"):
-            return "Waiting for your approval…", True
-        ax = data.get("auto_executed")
-        if isinstance(ax, dict) and ax.get("success") is False:
-            return f"Ran into an issue: {str(ax.get('error') or '')[:70]}", False
-        for key in ("items", "messages", "emails", "files", "events", "results",
-                    "tools", "servers", "hits", "records", "rows", "comments",
-                    "connections", "videos", "posts"):
-            v = data.get(key)
-            if isinstance(v, list):
-                return f"Found {len(v)} {key}", True
-    if isinstance(data, list):
-        return f"Found {len(data)} results", True
-
-    out = str(result.get("output") or "").strip()
-    if out:
-        return out.splitlines()[0][:120], True
-    if result.get("file_base64") or result.get("files"):
-        return "File generated", True
-    if result.get("figures"):
-        return f"Generated {len(result['figures'])} chart(s)", True
-    return "Completed", True
+    buffer = ""
+    decided = None          # 'tool' | 'final'
+    last_push = 0.0
+    while True:
+        kind, val = await q.get()
+        if kind == "d":
+            buffer += val
+            if decided is None:
+                if "TOOL_CALL" in buffer[:200]:
+                    decided = "tool"
+                elif len(buffer) >= 48:
+                    decided = "final"
+            if decided == "final":
+                now = _time.monotonic()
+                if now - last_push >= 2.2 and len(buffer) >= 24:
+                    last_push = now
+                    try:
+                        await stream_cb(buffer)
+                    except Exception:
+                        pass
+        elif kind == "e":
+            break
+        else:  # error from the stream worker
+            if not buffer:
+                # No content ever arrived — fall back to the normal
+                # non-streaming call, preserving the old behaviour entirely.
+                return await asyncio.to_thread(llm.chat, messages)
+            break
+    if decided is None:
+        decided = "tool" if "TOOL_CALL" in buffer else "final"
+    if decided == "final":
+        try:
+            await stream_cb(buffer)
+        except Exception:
+            pass
+    return {
+        "content": buffer,
+        "provider": meta.get("provider", "stream"),
+        "model": meta.get("model", "stream"),
+        "tokens": {"prompt": 0, "completion": 0, "total": 0},
+    }
 
 
 async def run_agent_loop(
@@ -1525,6 +1213,7 @@ async def run_agent_loop(
     max_iterations: int = 5,
     tg_user_id=None,
     progress_cb=None,
+    stream_cb=None,
 ) -> dict:
     """
     Run the agentic tool-calling loop.
@@ -1636,13 +1325,12 @@ async def run_agent_loop(
     for iteration in range(max_iterations):
         if progress_cb:
             try:
-                progress_cb({"kind": "thinking", "stage": "thinking", "iteration": iteration + 1,
-                             "tools_used": sorted(tools_used),
-                             "label": _thinking_label(iteration + 1, tools_used)})
+                progress_cb({"stage": "thinking", "iteration": iteration + 1,
+                             "tools_used": sorted(tools_used)})
             except Exception:
                 pass
-        # Get LLM response
-        result = await asyncio.to_thread(llm.chat, messages)
+        # Get LLM response (real token streaming when stream_cb is attached)
+        result = await _llm_generate(messages, llm, stream_cb=stream_cb)
         # Some providers occasionally return content=None (e.g. a native
         # tool-call completion with empty text). Every downstream regex
         # expects a string, so a None here crashed the whole agent loop
@@ -1787,42 +1475,16 @@ async def run_agent_loop(
         # Execute each tool call
         for call in tool_calls:
             tool_name = call.get("tool", "unknown")
-            _disp = _tool_display(tool_name, call.get("args"))
-            if progress_cb:
-                try:
-                    progress_cb({"kind": "tool_start", "tool": tool_name, "iteration": iteration + 1,
-                                 **_disp})
-                except Exception:
-                    pass
             if bot and chat_id:
                 # Don't leak tool names to users — just show typing indicator
                 await bot.send_chat_action(chat_id, "typing")
 
-            _t0 = time.time()
             tool_result = await execute_tool(call, bot, chat_id, tg_user_id)
-            try:
-                # HQ observability: every agent tool call is logged with
-                # success, latency and error so /hq can show failure rates.
-                from server.database import AsyncSessionLocal as _ASL
-                from server.models import ToolLog as _TL
-                async def _log_tool():
-                    async with _ASL() as _db:
-                        _db.add(_TL(telegram_user_id=str(tg_user_id or chat_id),
-                                    tool=str(tool_name)[:64],
-                                    ok=bool(tool_result.get("success", True)),
-                                    duration_ms=int((time.time() - _t0) * 1000),
-                                    error=(str(tool_result.get("error") or "")[:500] or None)))
-                        await _db.commit()
-                await _log_tool()
-            except Exception:
-                pass
             if progress_cb:
                 try:
-                    _evidence, _ok = _tool_evidence(tool_name, call.get("args"), tool_result)
-                    progress_cb({"kind": "tool_done", "tool": tool_name, "iteration": iteration + 1,
-                                 "icon": _disp["icon"], "name": _disp["name"],
-                                 "connector": _disp["connector"], "evidence": _evidence, "ok": _ok,
-                                 "tools_used": sorted(tools_used | {tool_name})})
+                    progress_cb({"stage": "executing", "tool": call.get("tool", "?"),
+                                 "iteration": iteration + 1,
+                                 "tools_used": sorted(tools_used | {call.get("tool", "?")})})
                 except Exception:
                     pass
             tool_history.append({

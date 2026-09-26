@@ -514,23 +514,6 @@ async def agent_status_endpoint(job_id: str, api_key: str = "", db: AsyncSession
 app.include_router(openai_router)
 app.include_router(whatsapp_router)
 
-# ── EVENT TRIGGER WEBHOOKS (Feature: Business Autopilot) ─────────────────────
-@app.post("/api/triggers/hook/{token}")
-async def trigger_webhook(token: str, request: Request):
-    """Any internet service POSTs JSON here; the user's agent instruction
-    fires with the payload. Public by design (secret token = the auth)."""
-    from server.trigger_service import get_by_token, fire
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    rule = await get_by_token(token)
-    if not rule:
-        return {"ok": False, "error": "unknown or inactive trigger"}
-    await fire(rule, payload if isinstance(payload, dict) else {"payload": payload})
-    return {"ok": True, "fired": rule.name}
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -644,6 +627,98 @@ async def _remember_media(user_id, kind: str, summary: str,
         )
     except Exception as _mem_err:
         logger.debug(f"media memory save skipped: {_mem_err}")
+
+
+class _TgStreamReply:
+    """LIVE streamed chat replies: one Telegram message that gets edited in
+    real time as REAL LLM tokens arrive from the provider (nothing simulated).
+    Telegram flood limits make per-token edits impossible, so updates are
+    throttled to one edit per ~2.2s and only when meaningful new text exists.
+    """
+
+    def __init__(self, bot, chat_id: int):
+        self.bot = bot
+        self.chat_id = chat_id
+        self.message_id = None
+        self.last_edit = 0.0
+        self.sent_len = 0
+
+    async def update(self, text: str) -> None:
+        display = (text or "")[:3900]
+        if not display.strip():
+            return
+        now = time.monotonic()
+        if self.message_id is None:
+            try:
+                resp = await self.bot.send_message(self.chat_id, display + " ▌")
+                self.message_id = ((resp or {}).get("result") or {}).get("message_id") \
+                    or (resp or {}).get("message_id")
+            except Exception:
+                self.message_id = None
+                return
+            self.last_edit = now
+            self.sent_len = len(display)
+            return
+        if (now - self.last_edit) < 2.2 or (len(display) - self.sent_len) < 30:
+            return
+        try:
+            await self.bot.edit_message(self.chat_id, self.message_id, display + " ▌")
+            self.last_edit = now
+            self.sent_len = len(display)
+        except Exception:
+            pass
+
+    async def finalize(self, text: str) -> None:
+        text = text or ""
+        if self.message_id is not None:
+            try:
+                resp = await self.bot.edit_message(self.chat_id, self.message_id, text[:4000])
+                if (resp or {}).get("ok"):
+                    return
+            except Exception:
+                pass
+        await self.bot.send_message(self.chat_id, text)
+
+
+async def _stream_plain_chat(llm, messages: list, stream: _TgStreamReply,
+                             temperature: float = 0.7, max_tokens: int = 4096) -> str:
+    """Plain-chat reply with REAL token streaming. Bridges provider deltas
+    from a worker thread into the event loop, pushes them to the live reply
+    editor, and returns the final full text. Falls back to the normal
+    non-streaming call if the stream dies before producing anything."""
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue()
+
+    def _worker():
+        try:
+            for delta in llm.chat_stream(messages, temperature=temperature,
+                                         max_tokens=max_tokens):
+                loop.call_soon_threadsafe(q.put_nowait, ("d", delta))
+            loop.call_soon_threadsafe(q.put_nowait, ("e", None))
+        except Exception as e:
+            loop.call_soon_threadsafe(q.put_nowait, ("x", str(e)))
+
+    import threading as _threading
+    _threading.Thread(target=_worker, daemon=True).start()
+
+    buffer = ""
+    while True:
+        kind, val = await q.get()
+        if kind == "d":
+            buffer += val
+            await stream.update(buffer)
+        elif kind == "e":
+            break
+        else:
+            if not buffer:
+                result = await asyncio.to_thread(llm.chat, messages)
+                return (result.get("content") or "")
+            break
+    if buffer:
+        await stream.update(buffer)
+        return buffer
+    result = await asyncio.to_thread(llm.chat, messages)
+    return (result.get("content") or "")
 
 
 async def _tg_send_plain(chat_id: int, text: str) -> None:
@@ -1179,26 +1254,6 @@ async def composio_mini_connections(request: Request):
         logger.error("Mini App connection listing failed: %s", exc)
         raise HTTPException(502, "Could not load app connections") from exc
 
-@app.post("/api/composio/catalog-demo", include_in_schema=False)
-async def composio_catalog_demo(request: Request):
-    """Public app catalog for visitors outside Telegram: names, slugs and
-    real Composio logos only. No user data, no connection states."""
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    from server.composio_service import list_connections
-    try:
-        return await list_connections(
-            "catalog_demo",
-            search=body.get("search"),
-            next_cursor=body.get("next_cursor"),
-            limit=int(body.get("limit", 50) or 50),
-        )
-    except Exception as exc:
-        logger.error("Demo catalog listing failed: %s", exc)
-        raise HTTPException(502, "Could not load the app catalog") from exc
-
 
 @app.post("/api/composio/connect", include_in_schema=False)
 async def composio_mini_connect(request: Request):
@@ -1207,24 +1262,6 @@ async def composio_mini_connect(request: Request):
     if not toolkit:
         raise HTTPException(400, "Choose an app to connect")
     from server.composio_service import connect_app
-    # Pro-gated advanced connectors (Claude-style directory tiers): money and
-    # business-critical apps are Pro+. Owner/admin bypasses for testing.
-    _ADVANCED_TOOLKITS = {"stripe", "shopify", "hubspot", "airtable", "calendly",
-                          "zoom", "mailchimp", "monday", "clickup", "jira"}
-    try:
-        from server.database import AsyncSessionLocal as _AdvDB
-        from sqlalchemy import select as _asel
-        async with _AdvDB() as _adb:
-            _au = (await _adb.execute(_asel(User).where(
-                User.email == f"tg_{tg_user['id']}@telegram.stew"))).scalars().first()
-            _aplan = (_au.plan if _au and _au.plan else "free")
-    except Exception:
-        _aplan = "free"
-    if toolkit in _ADVANCED_TOOLKITS and _aplan not in ("pro", "business", "owner"):
-        raise HTTPException(
-            402,
-            "⚡ Advanced connector. Stripe, Shopify, HubSpot and other business-grade "
-            "apps are part of the Pro plan. Send /upgrade in STEW chat to unlock them.")
     # Paywall v3: free users can connect at most 7 apps.
     # The connected-app COUNT (provider-based, fail-closed) is the real gate;
     # the plan lookup only raises the limit for paid users, so a DB hiccup must
@@ -1395,7 +1432,14 @@ async def debug_agent_run_api(request: Request):
         raise HTTPException(400, "text required")
     from server.tool_agent import run_agent_loop
     try:
-        result = await run_agent_loop(text, bot=None, chat_id=None, max_iterations=8, tg_user_id=str(tg_user["id"]))
+        _stream_capture = []
+        async def _dbg_stream(partial):
+            _stream_capture.append({
+                "t": round(time.monotonic(), 3),
+                "chars": len(partial or ""),
+                "head": (partial or "")[:60],
+            })
+        result = await run_agent_loop(text, bot=None, chat_id=None, max_iterations=8, tg_user_id=str(tg_user["id"]), stream_cb=_dbg_stream)
     except Exception as exc:
         logger.error("Debug agent-run failed: %s", exc, exc_info=True)
         raise HTTPException(500, f"agent run failed: {type(exc).__name__}: {exc}")
@@ -1406,6 +1450,7 @@ async def debug_agent_run_api(request: Request):
         "files": len(result.get("files", [])),
         "figures": len(result.get("figures", [])),
         "trace": result.get("trace", []),
+        "stream_proof": _stream_capture,
     }
 
 
@@ -5509,56 +5554,6 @@ async def _handle_tg_poster(chat_id: int, kind: str, brief: str):
             pass
 
 
-async def _handle_media_task(chat_id: int, instruction: str, kind: str,
-                                filename: str, user_id: Optional[str]):
-    """A user sent a file with a DO-something caption: post it to social,
-    email it, share it. The file is already in the user_media registry;
-    the tool agent fetches its public URL via get_user_media and executes
-    the real connected-app action (with the Approve/Cancel gateway for
-    public posts)."""
-    from server.tool_agent import run_agent_loop
-    from server.live_motion import LiveActivityStream
-    try:
-        stream = LiveActivityStream(bot, chat_id)
-        await stream.start()
-        goal = (f"The user sent a {kind} ({filename}) with this instruction: \"{instruction}\"\n"
-                f"[USER_MEDIA: the file is registered under key tg:{chat_id} — call get_user_media() "
-                f"first to get its public URL, then follow prompt rule 18l to complete the instruction "
-                f"with their connected apps.]")
-        result = await run_agent_loop(goal, bot=bot, chat_id=chat_id,
-                                     max_iterations=12, tg_user_id=user_id,
-                                     progress_cb=stream.record)
-        await stream.finish()
-        files = result.get("files") or []
-        import base64 as _b64_mt
-        for f in files:
-            try:
-                raw = _b64_mt.b64decode(f["base64"])
-                if str(f.get("mime_type", "")).startswith("image/"):
-                    await bot.send_photo(chat_id, raw)
-                else:
-                    await bot.send_document(chat_id, raw, f.get("filename", "stew_media"),
-                                            "S.T.E.W processed your file")
-            except Exception as fe:
-                logger.error(f"media task file send error: {fe}")
-        response = result.get("response", "")
-        if response:
-            import re as _re_mt
-            response = _re_mt.sub(r'TOOL_CALL:\s*\{.*?\}', '', response, flags=_re_mt.DOTALL).strip()
-            response = _re_mt.sub(r'TOOL_RESULT[\s\S]*', '', response).strip()
-            if response:
-                for i in range(0, len(response), 3800):
-                    await bot.send_message(chat_id, clean_response(response[i:i+3800]))
-        if not files and not response:
-            await bot.send_message(chat_id, "I couldn't complete that — try rephrasing, or check the app is connected with /apps.")
-    except Exception as e:
-        logger.error(f"media task error: {e}", exc_info=True)
-        try:
-            await bot.send_message(chat_id, "Something went wrong handling your file. Please try again.")
-        except Exception:
-            pass
-
-
 async def _handle_tg_video_edit(chat_id: int, vid_path: str, text: str, user_id: Optional[str]):
     """S.T.E.W Video Editor worker (Telegram): runs the requested edits on a
     previously uploaded video and sends the result. Runs detached with its own
@@ -5654,42 +5649,6 @@ async def telegram_webhook(request: Request):
     # Fire-and-forget — do NOT await. Return to Telegram immediately.
     asyncio.create_task(_process_telegram_update_safe(data))
     return {"ok": True}
-
-
-@app.post("/api/admin/simulate-message")
-async def admin_simulate_message(request: Request):
-    """Owner-only test harness: injects a synthetic Telegram update through
-    the REAL message pipeline (classifier → agent loop → tools → replies)
-    for a given telegram user id. Guarded by the admin secret header. Used to
-    live-test connectors, write/publish/read access and triggers as a real
-    user without touching Telegram's servers."""
-    secret = request.headers.get("x-admin-secret", "")
-    if not settings.STEW_ADMIN_SECRET or secret != settings.STEW_ADMIN_SECRET:
-        raise HTTPException(403, "admin secret required")
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "JSON body required")
-    user_id = str(body.get("user_id", "")).strip()
-    text = str(body.get("text", "")).strip()
-    first = str(body.get("first_name") or "Admin")
-    last = str(body.get("last_name") or "Test")
-    if not user_id.isdigit() or not text:
-        raise HTTPException(400, "user_id (numeric telegram id) and text are required")
-    import time as _time
-    update = {
-        "update_id": int(_time.time()) % 2147483647,
-        "message": {
-            "message_id": int(_time.time()) % 1000000,
-            "from": {"id": int(user_id), "first_name": first, "last_name": last,
-                     "is_bot": False, "language_code": "en"},
-            "chat": {"id": int(user_id), "type": "private"},
-            "date": int(_time.time()),
-            "text": text,
-        },
-    }
-    asyncio.create_task(_process_telegram_update_safe(update))
-    return {"ok": True, "queued": True, "user_id": user_id, "text": text[:80]}
 
 
 async def _process_telegram_update_safe(data: dict):
@@ -5859,23 +5818,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
 
     _raw_text_early = (msg.get("text") or "").strip()
     _is_callback_early = bool(msg.get("is_callback"))
-
-    # ── AGENTIC MEDIA (text follow-up): the user sent a file earlier and now
-    # types "post this to my youtube" / "email it to x@y.com" as a NEW message.
-    # The file sits in the user_media registry — route the instruction to the
-    # tool agent instead of plain chat.
-    if not _raw_text_early.startswith("/") and not _is_callback_early:
-        try:
-            from server.user_media import get_media as _um_get, is_media_task_intent as _um_intent_t
-            _um_media = _um_get(f"tg:{chat_id}")
-            if _um_media and _um_intent_t(_raw_text_early):
-                await bot.send_message(chat_id, "🚀 On it — handling your file with your connected apps…")
-                asyncio.create_task(_handle_media_task(chat_id, _raw_text_early, _um_media["kind"],
-                                                       _um_media["filename"],
-                                                       tg_user_early.id if tg_user_early else None))
-                return {"ok": True}
-        except Exception as _um_route_err:
-            logger.warning(f"media task text route skipped: {_um_route_err}")
 
     # ── S.T.E.W VIDEO EDITOR (video uploads) ─────────────────────────────────
     # /videoedit — menu; plain text + pending video + edit intent → editor
@@ -6139,130 +6081,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 await bot.send_message(cid, "Podcast generation failed — please try again.")
 
         asyncio.create_task(_run_podcast(chat_id, _topic))
-        return {"ok": True}
-
-    # ── AGENT-INITIATED CHECK-INS (Stew reaches out first) ──────────────────
-    if _raw_text_early.startswith("/checkin") and not _raw_text_early.startswith("/checkins"):
-        # /checkin cancel <id>
-        _m = re.match(r"^/checkin\s+cancel\s+(\S+)", _raw_text_early, re.I)
-        if _m:
-            from server.checkin_service import cancel_check_in
-            _done = await cancel_check_in(str(tg_user_early.id), _m.group(1))
-            await bot.send_message(chat_id, "✅ Check-in cancelled — I won't reach out for that anymore." if _done else "I couldn't find that check-in — /checkins shows the list.")
-            return {"ok": True}
-        await bot.send_message(chat_id, "Use /checkins to list your check-ins, then /checkin cancel <id>.")
-        return {"ok": True}
-
-    if _raw_text_early.startswith("/checkins"):
-        from server.checkin_service import list_check_ins
-        _items = await list_check_ins(str(tg_user_early.id))
-        if not _items:
-            await bot.send_message(chat_id, "📭 No active check-ins. Just tell me in chat — *check on me Friday about my thesis* or *give me a daily briefing* — and I'll reach out first.")
-        else:
-            _lines = ["🫡 *Your check-ins — I message you first:*"]
-            for _i, _c in enumerate(_items, 1):
-                _when = (_c.get("next_run_at") or "")[:16].replace("T", " ")
-                _label = {"goal": "🎯 Goal digest", "briefing": "📰 Daily briefing", "custom": "🧭 Custom check-in"}.get(_c["kind"], _c["kind"])
-                _topic = (" — " + _c["message"][:60]) if _c["message"] else (f" — goal {_c['goal_id'][:8]}" if _c.get("goal_id") else "")
-                _lines.append(f"{_i}. {_label}{_topic}\n   due {_when} UTC{' · repeats' if _c.get('recurring') else ''} · id `{_c['id'][:8]}`")
-            _lines.append("\nCancel: /checkin cancel <id>")
-            await bot.send_message(chat_id, "\n".join(_lines))
-        return {"ok": True}
-
-    # ── KNOWLEDGE (Drive/Sheets RAG) ─────────────────────────────────────
-    if _raw_text_early.startswith("/knowledge"):
-        _rest = _raw_text_early[len("/knowledge"):].strip()
-        if _rest.lower() in ("sync", "sync gdrive", "sync drive"):
-            from server.knowledge_service import sync_knowledge as _ksync
-            await bot.send_message(chat_id, "📚 Syncing your Google Drive knowledge…")
-            _res = await _ksync(str(tg_user_early.id), "gdrive")
-            await bot.send_message(chat_id, _res.get("note") or _res.get("error"))
-        elif _rest.lower() in ("sync sheets", "sync gsheets"):
-            from server.knowledge_service import sync_knowledge as _ksync
-            await bot.send_message(chat_id, "📊 Syncing your Google Sheets knowledge…")
-            _res = await _ksync(str(tg_user_early.id), "gsheets")
-            await bot.send_message(chat_id, _res.get("note") or _res.get("error"))
-        else:
-            from sqlalchemy import func as _f, select as _sel
-            from server.database import AsyncSessionLocal as _ASL
-            from server.models import KnowledgeChunk as _KC
-            async with _ASL() as _db:
-                _n = (await _db.execute(_sel(_f.count(_KC.id)).where(
-                    _KC.telegram_user_id == str(tg_user_early.id)))).scalar() or 0
-            await bot.send_message(chat_id, f"📚 *Your Knowledge*\n\n{_n} indexed chunk(s) from your connected Google files.\n\n1. Connect Google Drive/Sheets in the Apps tab of the Mini App (if not connected)\n2. /knowledge sync — pulls your Drive files\n3. Then just ask me: *what do my files say about the budget?*")
-        return {"ok": True}
-
-    # ── USER-SIDE PAYSTACK (their own account) ─────────────────────────────
-    if _raw_text_early.startswith("/setpaystack"):
-        _key = _raw_text_early[len("/setpaystack"):].strip()
-        if not _key:
-            await bot.send_message(chat_id, "💳 *Connect YOUR Paystack account*\n\nSend:\n/setpaystack sk_xxxxx\n\nYour secret key (paystack.com → Settings → API Keys → Secret key). I verify it live and store it encrypted — then I can create payment links, check payments, and list transactions *for your own business*.\n\nTry: *create a payment link for momo@gmail.com for N5,000 for the sneakers*")
-            return {"ok": True}
-        await bot.send_message(chat_id, "💳 Verifying your Paystack key…")
-        from server.paystack_connector import set_user_key as _suk
-        _res = await _suk(str(tg_user_early.id), _key)
-        await bot.send_message(chat_id, ("✅ " + _res.get("note", "Paystack connected.")) if _res.get("ok") else f"❌ {_res.get('error')}")
-        return {"ok": True}
-
-    # ── EVENT TRIGGERS ("when this happens, do that") ─────────────────────
-    if _raw_text_early.startswith("/triggers") or (
-            _raw_text_early.startswith("/trigger") and not _raw_text_early.startswith("/trigger ")):
-        from server.trigger_service import list_triggers
-        _trigs = await list_triggers(str(tg_user_early.id))
-        _base = (settings.APP_BASE_URL or "https://stew-agent.onrender.com").rstrip("/")
-        if not _trigs:
-            await bot.send_message(chat_id, "🪝 *No active triggers.*\n\nJust tell me in chat — *when I get an email from my boss, summarize it and ping me* — and I'll set it up. Sources: new email (Gmail), or a personal webhook URL that any website or form can call.")
-        else:
-            _lines = ["⚡ *Your triggers — they fire me automatically:*"]
-            for _i, _t in enumerate(_trigs, 1):
-                _src = "🪝 webhook" if _t["source"] == "webhook" else "📧 new Gmail"
-                _lines.append(f"{_i}. {_src} — *{_t['name']}*\n   {_t['instruction'][:90]}\n   fired {_t['fires']}x · id `{_t['id'][:8]}`")
-                if _t.get("webhook_url"):
-                    _lines.append(f"   URL: {_base}{_t['webhook_url']}")
-            _lines.append("\nCancel: /trigger off <id> · Create: just describe it in chat")
-            await bot.send_message(chat_id, "\n".join(_lines))
-        return {"ok": True}
-
-    if _raw_text_early.startswith("/trigger off "):
-        from server.trigger_service import cancel_trigger
-        _tid = _raw_text_early.split("/trigger off ", 1)[1].strip()[:36]
-        _done = await cancel_trigger(str(tg_user_early.id), _tid)
-        await bot.send_message(chat_id, "✅ Trigger switched off." if _done else "I couldn't find that trigger — /triggers shows the list.")
-        return {"ok": True}
-
-    if _raw_text_early.startswith("/trigger "):
-        await bot.send_message(chat_id, "🪝 *Triggers — I act the moment something happens.*\n\n1. In chat: *when I get an email from boss@work.com, summarize it and message me*\n2. *when a new order comes in on my webhook, draft a thank-you email*\n\nSources: new Gmail, or a personal webhook URL any site can POST to. List: /triggers · Cancel: /trigger off <id>")
-        return {"ok": True}
-
-    if _raw_text_early.startswith("/briefing"):
-        from server.checkin_service import schedule_check_in, cancel_check_in, list_check_ins
-        _arg = _raw_text_early[len("/briefing"):].strip().lower()
-        if _arg in ("daily", "on", "auto"):
-            # next 07:30 WAT (UTC+1), then every 24h
-            _wat = timezone(timedelta(hours=1))
-            _now_wat = datetime.now(_wat)
-            _due = _now_wat.replace(hour=7, minute=30, second=0, microsecond=0)
-            if _due <= _now_wat:
-                _due += timedelta(days=1)
-            _utc_due = _due.astimezone(timezone.utc).replace(tzinfo=None)
-            await schedule_check_in(str(tg_user_early.id), str(chat_id), "briefing",
-                                    "daily personal briefing", when=_utc_due.isoformat(),
-                                    recurring=True, interval_seconds=86400)
-            await bot.send_message(chat_id, "📰 *Daily briefing on.* Every morning at 7:30 I'll reach out first — goals, calendar, weather, headlines. /briefing off stops it.")
-            return {"ok": True}
-        if _arg in ("off", "stop"):
-            _stopped = 0
-            for _c in await list_check_ins(str(tg_user_early.id)):
-                if _c["kind"] == "briefing":
-                    await cancel_check_in(str(tg_user_early.id), _c["id"])
-                    _stopped += 1
-            await bot.send_message(chat_id, "Daily briefing off." if _stopped else "You had no daily briefing on.")
-            return {"ok": True}
-        # on-demand: send one right now
-        await bot.send_message(chat_id, "📰 Pulling your morning briefing — one moment…")
-        from server.checkin_service import compose_daily_briefing
-        _brief = await compose_daily_briefing(str(tg_user_early.id))
-        await bot.send_message(chat_id, _brief or "I couldn't build the briefing right now — try again in a minute.")
         return {"ok": True}
 
     # ── STEW REMINDERS (natural language → scheduled Telegram pings) ─────────
@@ -6684,16 +6502,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 _vf.write(file_bytes)
             from server.video_editor import store_pending as _ve_store, is_edit_intent as _ve_intent
             _ve_store(f"tg:{chat_id}", _vid_path)
-            # ── AGENTIC MEDIA: register the video so get_user_media can host it,
-            # then route upload/share/email captions to the tool agent ──
-            from server.user_media import store_media as _um_store, is_media_task_intent as _um_intent
-            _vname = msg.get("file_name") or "video.mp4"
-            _um_store(f"tg:{chat_id}", _vid_path, _vname, "video/mp4", "video")
-            if caption and _um_intent(caption):
-                await bot.send_message(chat_id, "🚀 On it — posting/sharing your video with your connected apps…")
-                asyncio.create_task(_handle_media_task(chat_id, caption, "video", _vname,
-                                                       tg_user_early.id if tg_user_early else None))
-                return {"ok": True}
             if caption and _ve_intent(caption):
                 if tg_user_early is not None:
                     _ve_allowed, _ve_used, _ve_limit = await _check_quota(tg_user_early, db, "video")
@@ -6854,29 +6662,6 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                 elif _status:
                     await bot.send_message(chat_id, _status, parse_mode="Markdown")
                 return {"ok": True}
-
-            # ── AGENTIC MEDIA: register the document so get_user_media can host it,
-            # then route "email/send this to X" captions to the tool agent ──
-            if ext not in _AUDIO_EXTENSIONS:
-                import tempfile as _tmp_doc
-                _doc_dir = _tmp_doc.mkdtemp(prefix="stew_tgdoc_")
-                _doc_path = os.path.join(_doc_dir, file_name)
-                with open(_doc_path, "wb") as _df:
-                    _df.write(file_bytes)
-                from server.user_media import store_media as _um_store_d, is_media_task_intent as _um_intent_d
-                _MIME_BY_EXT = {"pdf": "application/pdf", "doc": "application/msword",
-                                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                "xls": "application/vnd.ms-excel", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                "ppt": "application/vnd.ms-powerpoint", "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                                "txt": "text/plain", "csv": "text/csv", "png": "image/png", "jpg": "image/jpeg",
-                                "jpeg": "image/jpeg", "zip": "application/zip"}
-                _um_store_d(f"tg:{chat_id}", _doc_path, file_name,
-                             _MIME_BY_EXT.get(ext, "application/octet-stream"), "document")
-                if caption and _um_intent_d(caption):
-                    await bot.send_message(chat_id, "🚀 On it — sending your document as instructed…")
-                    asyncio.create_task(_handle_media_task(chat_id, caption, "document", file_name,
-                                                           tg_user_early.id if tg_user_early else None))
-                    return {"ok": True}
 
             # Songs/audio sent via the file picker land here as "document" instead of
             # "voice"/"audio" — detect and route to transcription instead of text extraction.
@@ -8624,6 +8409,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
             await bot.send_message(chat_id, "Send: /solve 2x + 5 = 15, find x")
             return {"ok": True}
         await bot.send_chat_action(chat_id, "typing")
+        _stream_reply = _TgStreamReply(bot, chat_id)
         try:
             from server.tool_agent import run_agent_loop
             agent_result = await run_agent_loop(f"Solve step by step: {problem}", max_iterations=3)
@@ -8737,10 +8523,7 @@ async def _handle_telegram_update(data: dict, db: AsyncSession):
                     try:
                         file_bytes = _b64_agent.b64decode(f["base64"])
                         filename = f.get("filename", f"stew_document.{f.get('doc_type','pdf')}")
-                        if str(f.get("mime_type", "")).startswith("image/"):
-                            await bot.send_photo(chat_id, file_bytes)
-                        else:
-                            await bot.send_document(chat_id, file_bytes, filename, "S.T.E.W generated this for you")
+                        await bot.send_document(chat_id, file_bytes, filename, "S.T.E.W generated this for you")
                     except Exception as fe:
                         logger.error(f"Agent file send error: {fe}")
 
@@ -12136,27 +11919,6 @@ Requirements:
         "my messages", "read my messages", "unread message", "my notifications",
         "latest notification", "my uploads", "latest upload", "my videos",
         "latest video", "my posts", "latest post", "my comments",
-        # MCP connectors (any remote MCP server the user added in the Mini
-        # App) — missing this previously meant "check the mcp that's
-        # connected" fell through to plain chat, and the model answered
-        # from general knowledge about Microchip's MCP-series hardware
-        # chips instead of checking the user's actual MCP servers.
-        "mcp", "mcp server", "mcp servers", "mcp connector", "mcp connectors",
-        "mcp tool", "mcp tools", "connected mcp", "my mcp",
-        # Agentic media intents — real internet images, social audits.
-        # Missing these meant "get me images of X" and "which of my videos
-        # are not improving" fell through to knowledge answers.
-        "get me images of", "get images of", "download images of", "find me pictures of",
-        "find images of", "pictures of", "images of", "photos of",
-        "audit my videos", "audit my", "not getting views", "not improving",
-        "improve my videos", "improve my video", "why is my video", "why are my videos",
-        "grow my views", "more views on my", "my worst videos", "underperforming videos",
-        # Event triggers ("when X happens, do Y"), user-side payments, knowledge RAG.
-        "when i get", "when i receive", "whenever i", "when a new", "when my",
-        "webhook", "trigger that", "automatically when",
-        "payment link", "invoice for", "create an invoice", "paystack",
-        "my files", "my documents", "my sheets", "search my drive", "my drive",
-        "knowledge sync", "index my", "read my docs",
     ])
 
     # Anti-hallucination gate: "read my latest email", "check my dms",
@@ -12231,18 +11993,43 @@ Requirements:
             await bot.set_message_reaction(chat_id, msg.get("message_id"), "👀")
         except Exception:
             pass
-        _stream = None
+        _ta_banner = None
         try:
-            from server.live_motion import LiveActivityStream
-            _stream = LiveActivityStream(bot, chat_id, "⚡ Stew is on it — Live Execution")
-            await _stream.start()
+            from server.live_motion import WorkingBanner
+            _ta_banner = WorkingBanner(bot, chat_id, "⚡ Stew is on it")
+            await _ta_banner.start()
+            await _ta_banner.update("🧠 Planning the steps…")
         except Exception:
             pass
-        # progress_cb is the stream's own sync record() method — tool_agent
-        # feeds it structured {kind, tool, icon, name, label, evidence, ok}
-        # events (see _tool_display/_tool_evidence there); the stream's own
-        # background ticker turns that into the live animated message.
-        _agent_progress = _stream.record if _stream else None
+        # Live motion: translate real agent progress into human-readable
+        # banner stages so the user SEES each step as it happens.
+        _TOOL_STAGE_LABELS = {
+            "web_search": "🔍 Searching the web…",
+            "browse_url": "🌐 Reading a page…",
+            "run_python_code": "🧮 Crunching the numbers…",
+            "run_terminal_code": "💻 Running code…",
+            "generate_document": "📄 Writing your document…",
+            "generate_image": "🎨 Creating an image…",
+            "generate_qr_code": "🔳 Generating your QR code…",
+            "build_website": "🏗️ Building your website…",
+            "composio_search_tools": "🔎 Checking your connected apps…",
+            "composio_execute": "🛠️ Working on your connected app…",
+            "composio_connect": "🔗 Setting up an app connection…",
+            "prepare_social_video": "🎬 Preparing your video…",
+            "smart_clips": "✂️ Cutting your clips…",
+        }
+        def _agent_progress(event):
+            try:
+                _stage = (event or {}).get("stage")
+                if _stage == "thinking":
+                    _label = f"🧠 Thinking — step {event.get('iteration', 1)}…"
+                else:
+                    _label = _TOOL_STAGE_LABELS.get(
+                        event.get("tool"), f"⚙️ Working — step {event.get('iteration', 1)}…")
+                if _ta_banner:
+                    asyncio.get_event_loop().create_task(_ta_banner.update(_label))
+            except Exception:
+                pass
         # Reply-awareness: if the user replied to a specific message, tell the
         # agent exactly which message is being answered.
         _agent_input = user_text
@@ -12255,7 +12042,10 @@ Requirements:
             )
         try:
             from server.tool_agent import run_agent_loop
-            agent_result = await run_agent_loop(_agent_input, bot=bot, chat_id=chat_id, max_iterations=8, tg_user_id=str(msg['user_id']), progress_cb=_agent_progress)
+            _stream_reply = _TgStreamReply(bot, chat_id)
+            agent_result = await run_agent_loop(_agent_input, bot=bot, chat_id=chat_id, max_iterations=8, tg_user_id=str(msg['user_id']), progress_cb=_agent_progress, stream_cb=_stream_reply.update)
+            if _ta_banner:
+                await _ta_banner.update("🔧 Working with your connected apps…")
 
             # Send any generated figures (matplotlib charts, QR codes, etc.)
             if agent_result.get("figures"):
@@ -12292,11 +12082,11 @@ Requirements:
                 # If response is too long (wall of text), truncate
                 if len(response) > 800:
                     response = response[:800] + "..."
-                await bot.send_message(chat_id, response)
+                await _stream_reply.finalize(response)
             elif agent_result.get("files"):
-                await bot.send_message(chat_id, "Done! Your file is ready above.")
+                await _stream_reply.finalize("Done! Your file is ready above.")
             else:
-                await bot.send_message(chat_id, "Task completed.")
+                await _stream_reply.finalize("Task completed.")
 
             # ── Deliver any generated videos (Higgsfield/other app results) in-chat ──
             try:
@@ -12308,8 +12098,8 @@ Requirements:
                 ))[:3]
                 for _vu in _vid_urls:
                     try:
-                        if _stream:
-                            _stream.note("🎬 Fetching your generated video…")
+                        if _ta_banner:
+                            await _ta_banner.update("🎬 Fetching your generated video…")
                         _vresp = await asyncio.to_thread(http_requests.get, _vu, timeout=60)
                         if _vresp.status_code == 200 and len(_vresp.content) > 1000:
                             await bot.send_video(chat_id, _vresp.content, caption="🎬 Your AI-generated video — by Stew")
@@ -12331,13 +12121,13 @@ Requirements:
                 )
             except Exception:
                 pass
-            if _stream:
+            if _ta_banner:
                 _BANNER_FINISH = {
                     "done": "✅ Done ✨",
                     "needs_confirmation": "⏸️ Paused — needs your confirmation",
                     "failed": "⚠️ Hit an error — nothing changed",
                 }
-                await _stream.finish(_BANNER_FINISH.get(agent_result.get("outcome"), "✅ Done ✨"))
+                await _ta_banner.finish(_BANNER_FINISH.get(agent_result.get("outcome"), "✅ Done ✨"))
 
             # Log
             if tg_user:
@@ -12346,12 +12136,7 @@ Requirements:
             return {"ok": True}
         except Exception as e:
             logger.error(f"Tool agent error: {e}", exc_info=True)
-            if _stream:
-                try:
-                    await _stream.finish("⚠️ Hit an error — switching to regular mode…")
-                except Exception:
-                    pass
-            await bot.send_message(chat_id, "Agent encountered an error. Trying regular mode...")
+            await _stream_reply.finalize("Agent encountered an error. Trying regular mode...")
             # Fall through to regular chat
 
     # ── MOOD DNA: Analyze and store user mood (non-blocking) ────────────────
@@ -12589,7 +12374,13 @@ Requirements:
             logger.debug(f"reply-context injection skipped: {_rt_err}")
 
     try:
-        result = await asyncio.to_thread(llm.chat, messages)
+        _voice_mode = bool(getattr(tg_user, "voice_enabled", False))
+        _stream_reply = None if _voice_mode else _TgStreamReply(bot, chat_id)
+        if _stream_reply is not None:
+            content = await _stream_plain_chat(llm, messages, _stream_reply)
+            result = {"content": content}
+        else:
+            result = await asyncio.to_thread(llm.chat, messages)
         reply = clean_response(result["content"])
         await append_message(db, conv, "assistant", reply, platform="telegram")
 
@@ -12599,7 +12390,7 @@ Requirements:
             asyncio.create_task(supa_save_conv(str(msg['user_id']), "assistant", reply))
 
         # If user has voice replies enabled, send as voice note
-        if getattr(tg_user, "voice_enabled", False):
+        if _voice_mode:
             voice_name = getattr(tg_user, "preferred_voice", None) or "en-US-AriaNeural"
             audio_bytes, voice_err = await _synthesize_voice(reply, voice_name)
             if audio_bytes:
@@ -12607,6 +12398,8 @@ Requirements:
             else:
                 logger.warning(f"Voice synthesis failed: {voice_err}")
                 await bot.send_message(chat_id, reply, parse_mode="")
+        elif _stream_reply is not None:
+            await _stream_reply.finalize(reply)
         else:
             await bot.send_message(chat_id, reply, parse_mode="")
 
@@ -12661,11 +12454,6 @@ Requirements:
 
     except Exception as e:
         logger.error(f"Telegram LLM error: {e}")
-        if locals().get('_gw_banner'):
-            try:
-                await _gw_banner.finish("⚠️ Hit an error")
-            except Exception:
-                pass
         await bot.send_message(chat_id, "I encountered an error. Please try again in a moment.")
 
     return {"ok": True}

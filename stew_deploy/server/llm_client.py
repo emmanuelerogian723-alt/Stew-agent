@@ -445,6 +445,76 @@ class LLMClient:
             },
         }
 
+    def chat_stream(self, messages: list[dict], temperature: float = 0.7,
+                    max_tokens: int = 4096, meta: Optional[dict] = None):
+        """REAL token-by-token streaming across the same provider fallback
+        chain as chat(). A sync generator yielding text deltas.
+
+        Fills `meta` (a plain dict) with provider/model/first-token info
+        before the first yield so callers can attribute the stream.
+
+        Failover rules mirror chat(): a candidate that errors or completes
+        with zero content BEFORE any delta was produced is skipped and the
+        next candidate is tried. Once deltas have been yielded, the stream
+        is live for the user — a later error propagates to the caller, who
+        should finalize with whatever partial text arrived.
+        """
+        meta = meta if meta is not None else {}
+        if not self.providers:
+            raise RuntimeError("No LLM providers configured")
+
+        def _candidates():
+            for name in self.fallback_order:
+                if name == "groq":
+                    for m in GROQ_FALLBACKS:
+                        yield name, m
+                elif name == "openrouter":
+                    for m in OPENROUTER_FALLBACKS:
+                        yield name, m
+                elif name == "mistral":
+                    # Mistral uses a different client shape — no streaming here;
+                    # chat() fallback covers it if the chain reaches this point.
+                    continue
+                else:
+                    yield name, PROVIDER_MODELS.get(name, "openai")
+
+        last_error = None
+        for provider_name, model in _candidates():
+            client = self.providers.get(provider_name)
+            if client is None:
+                continue
+            produced = 0
+            try:
+                stream = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True,
+                )
+                for chunk in stream:
+                    try:
+                        piece = chunk.choices[0].delta.content
+                    except (IndexError, AttributeError):
+                        piece = None
+                    if piece:
+                        produced += 1
+                        if produced == 1:
+                            meta.clear()
+                            meta.update({"provider": provider_name, "model": model})
+                        yield piece
+                if produced == 0:
+                    last_error = RuntimeError(f"empty stream from {provider_name}/{model}")
+                    continue
+                return
+            except Exception as e:
+                if produced:
+                    raise
+                last_error = e
+                logger.warning(f"stream candidate {provider_name}/{model} failed: {e}")
+                continue
+        raise last_error or RuntimeError("All streaming providers failed")
+
     def chat(self, messages: list[dict], model: Optional[str] = None,
              temperature: float = 0.7, _retry: int = 0, max_tokens: int = 4096) -> dict:
         """Try each provider in fallback order until one succeeds. Auto-retries once on 429."""
