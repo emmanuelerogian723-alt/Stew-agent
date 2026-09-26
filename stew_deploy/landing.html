@@ -148,7 +148,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:200;height:64px;display:flex;ali
 /* ── HERO RIGHT: floating UI cards ── */
 .hero-right{position:relative;animation:fadeUp .7s .15s ease both;height:480px;}
 @media(max-width:900px){.hero-right{height:320px;}}
-.float-card{position:absolute;background:rgba(13,31,20,.9);border:1px solid var(--border);border-radius:var(--r16);backdrop-filter:blur(20px);padding:1.25rem 1.5rem;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.float-card{position:absolute;background:rgba(250,247,247,.9);border:1px solid var(--border);border-radius:var(--r16);backdrop-filter:blur(20px);padding:1.25rem 1.5rem;box-shadow:0 20px 60px rgba(20,20,25,.14);}
 .fc-main{top:0;left:0;right:0;padding:1.5rem;}
 .fc-main-label{font-size:.7rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem;}
 .fc-main-val{font-size:2.5rem;font-weight:900;color:var(--accent);font-family:var(--mono);}
@@ -188,7 +188,7 @@ h2.s-title em{font-style:normal;color:var(--accent);}
 
 /* ── FEATURES BENTO ── */
 .bento{display:grid;grid-template-columns:repeat(12,1fr);gap:1rem;margin-top:3.5rem;}
-.b-card{background:rgba(13,31,20,.7);border:1px solid var(--border);border-radius:var(--r20);padding:2rem;position:relative;overflow:hidden;transition:all .25s;}
+.b-card{background:rgba(250,247,247,.7);border:1px solid var(--border);border-radius:var(--r20);padding:2rem;position:relative;overflow:hidden;transition:all .25s;}
 .b-card:hover{border-color:var(--border2);transform:translateY(-3px);box-shadow:0 16px 50px rgba(163,18,18,.1);}
 .b-card::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 100% 0%,rgba(163,18,18,.06),transparent 60%);opacity:0;transition:opacity .25s;}
 .b-card:hover::after{opacity:1;}
@@ -237,7 +237,7 @@ select.fi option{background:#f7f7f8;}
 .ft-result.show{display:block;}
 .ft-ok{background:rgba(163,18,18,.08);border:1px solid rgba(163,18,18,.2);color:var(--accent2);}
 .ft-err{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);color:#fca5a5;}
-.ft-info{background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.2);color:#67e8f9;}
+.ft-info{background:rgba(163,18,18,.07);border:1px solid rgba(163,18,18,.2);color:#67e8f9;}
 
 /* ── AUTH ── */
 .auth-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;}
